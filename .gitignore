@@ -1,0 +1,10 @@
+*.exe
+*.dll
+*.exp
+*.lib
+*.ttf
+*.txt
+*.ini
+*.clap
+*.json
+bin/
