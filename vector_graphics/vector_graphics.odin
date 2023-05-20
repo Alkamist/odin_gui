@@ -19,10 +19,6 @@ atlas_as_rgba :: proc() -> (result: [len(mu.default_atlas_alpha) * 4]u8) {
 
 atlas := atlas_as_rgba()
 
-atlas_id: u32
-shader_id: u32
-uniforms: gl.Uniforms
-
 Vertex :: struct {
     position: [2]f32,
     uv: [2]f32,
@@ -42,25 +38,30 @@ Context :: struct {
     vao: u32,
     vbo: u32,
     ebo: u32,
+    atlas: u32,
+    shader: u32,
+    uniforms: gl.Uniforms,
     vertices: [MAX_QUADS * 4]Vertex,
     indices: [MAX_QUADS * 6]u16,
     state: State,
     saved_states: [dynamic]State,
 }
 
-init :: proc() {
+create :: proc() -> ^Context {
+    ctx := new(Context)
+
     compiled_ok: bool
-    shader_id, compiled_ok = gl.load_shaders_source(VERTEX_SOURCE, FRAGMENT_SOURCE)
+    ctx.shader, compiled_ok = gl.load_shaders_source(VERTEX_SOURCE, FRAGMENT_SOURCE)
 	if !compiled_ok {
 		fmt.eprintln("Failed to compile shader.")
-		return
+		return nil
 	}
-    gl.UseProgram(shader_id)
+    gl.UseProgram(ctx.shader)
 
-    uniforms = gl.get_uniforms_from_program(shader_id)
+    ctx.uniforms = gl.get_uniforms_from_program(ctx.shader)
 
-    gl.GenTextures(1, &atlas_id)
-    gl.BindTexture(gl.TEXTURE_2D, atlas_id)
+    gl.GenTextures(1, &ctx.atlas)
+    gl.BindTexture(gl.TEXTURE_2D, ctx.atlas)
     gl.TexImage2D(
         gl.TEXTURE_2D,
         0,
@@ -73,16 +74,6 @@ init :: proc() {
     )
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
-}
-
-shutdown :: proc() {
-    gl.DeleteTextures(1, &atlas_id)
-    gl.DeleteProgram(shader_id)
-    delete(uniforms)
-}
-
-create :: proc() -> ^Context {
-    ctx := new(Context)
 
     gl.GenVertexArrays(1, &ctx.vao)
     gl.GenBuffers(1, &ctx.vbo)
@@ -102,9 +93,12 @@ create :: proc() -> ^Context {
 }
 
 destroy :: proc(ctx: ^Context) {
+    gl.DeleteTextures(1, &ctx.atlas)
+    gl.DeleteProgram(ctx.shader)
     gl.DeleteVertexArrays(1, &ctx.vao)
     gl.DeleteBuffers(1, &ctx.vbo)
     gl.DeleteBuffers(1, &ctx.ebo)
+    delete(ctx.uniforms)
     delete(ctx.saved_states)
     free(ctx)
 }
@@ -288,8 +282,8 @@ _flush :: proc(ctx: ^Context) {
         return
     }
 
-    gl.UseProgram(shader_id)
-    gl.BindTexture(gl.TEXTURE_2D, atlas_id)
+    gl.UseProgram(ctx.shader)
+    gl.BindTexture(gl.TEXTURE_2D, ctx.atlas)
     gl.BindBuffer(gl.ARRAY_BUFFER, ctx.vbo)
     gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ctx.ebo)
 
@@ -297,7 +291,7 @@ _flush :: proc(ctx: ^Context) {
     gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, ctx.write_index * 6 * size_of(ctx.indices[0]), &ctx.indices[0], gl.DYNAMIC_DRAW)
 
     projection_matrix := glm.mat4Ortho3d(0.0, f32(ctx.size.x), f32(ctx.size.y), 0.0, -1.0, 1.0)
-    gl.UniformMatrix4fv(uniforms["ProjMtx"].location, 1, false, &projection_matrix[0, 0])
+    gl.UniformMatrix4fv(ctx.uniforms["ProjMtx"].location, 1, false, &projection_matrix[0, 0])
 
     gl.DrawElements(gl.TRIANGLES, i32(ctx.write_index * 6), gl.UNSIGNED_SHORT, nil)
 
