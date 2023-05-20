@@ -37,13 +37,13 @@ Keyboard_Key :: enum {
 }
 
 Shared_State :: struct {
-    vg_ctx: ^vg.Context
+    vg_ctx: ^vg.Context,
     hovers: [dynamic]^Widget,
     time: f32,
-    previous_time: f32,
+    time_previous: f32,
     mouse_capture: ^Widget,
     mouse_position: [2]f32,
-    mouse_delta: [2]f32,
+    mouse_position_previous: [2]f32,
     mouse_wheel: [2]f32,
     mouse_presses: [dynamic]Mouse_Button,
     mouse_releases: [dynamic]Mouse_Button,
@@ -62,6 +62,7 @@ shared_state_create :: proc() -> ^Shared_State {
     reserve(&state.key_presses, 16)
     reserve(&state.key_releases, 16)
     strings.builder_init_none(&state.text_input)
+    state.vg_ctx = vg.create()
     return state
 }
 
@@ -72,5 +73,17 @@ shared_state_destroy :: proc(state: ^Shared_State) {
     delete(state.key_presses)
     delete(state.key_releases)
     strings.builder_destroy(&state.text_input)
+    vg.destroy(state.vg_ctx)
     free(state)
+}
+
+shared_state_update :: proc(state: ^Shared_State) {
+    clear(&state.hovers)
+    clear(&state.mouse_presses)
+    clear(&state.mouse_releases)
+    clear(&state.key_presses)
+    clear(&state.key_releases)
+    strings.builder_reset(&state.text_input)
+    state.mouse_position_previous = state.mouse_position
+    state.time_previous = state.time
 }

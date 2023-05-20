@@ -26,11 +26,114 @@ Widget :: struct {
     children: [dynamic]^Widget,
     position: [2]f32,
     size: [2]f32,
+
+    // Make these into bit flags maybe?
     dont_draw: bool,
     clip_drawing: bool,
     clip_input: bool,
     consume_input: bool,
 }
+
+// =================================================================================
+// Root procedures
+// =================================================================================
+
+new_root :: proc() -> ^Widget {
+    widget := new(Widget)
+
+    widget.dont_draw = false
+    widget.consume_input = false
+    widget.clip_input = false
+    widget.clip_drawing = false
+
+    widget.shared_state = shared_state_create()
+    widget.destroy = proc(widget: ^Widget) {
+        shared_state_destroy(widget.shared_state)
+    }
+    widget.update = proc(widget: ^Widget) {
+        update_children(widget)
+    }
+    widget.draw = proc(widget: ^Widget) {
+        draw_children(widget)
+    }
+    return widget
+}
+process_frame :: proc(widget: ^Widget, time: f32) {
+    state := widget.shared_state
+    ctx := state.vg_ctx
+
+    _update_hovers(widget)
+    vg.begin_frame(ctx, {int(widget.size.x), int(widget.size.y)})
+
+    update(widget)
+    draw(widget)
+
+    vg.end_frame(ctx)
+    shared_state_update(state)
+}
+input_resize :: proc(widget: ^Widget, size: [2]f32) {
+    widget.size = size
+}
+input_mouse_move :: proc(widget: ^Widget, position: [2]f32) {
+    state := widget.shared_state
+    state.mouse_position = position
+}
+input_mouse_press :: proc(widget: ^Widget, button: Mouse_Button, position: [2]f32) {
+    state := widget.shared_state
+    append(&state.mouse_presses, button)
+}
+input_mouse_release :: proc(widget: ^Widget, button: Mouse_Button, position: [2]f32) {
+    state := widget.shared_state
+    append(&state.mouse_releases, button)
+}
+input_mouse_wheel :: proc(widget: ^Widget, wheel: [2]f32) {
+    state := widget.shared_state
+    state.mouse_wheel = wheel
+}
+input_key_press :: proc(widget: ^Widget, key: Keyboard_Key) {
+    state := widget.shared_state
+    append(&state.key_presses, key)
+}
+input_key_release :: proc(widget: ^Widget, key: Keyboard_Key) {
+    state := widget.shared_state
+    append(&state.key_releases, key)
+}
+input_text :: proc(widget: ^Widget, text: string) {
+    state := widget.shared_state
+    strings.write_string(&state.text_input, text)
+}
+
+_update_hovers :: proc(widget: ^Widget) {
+    if !is_root(widget) {
+        return
+    }
+
+    state := widget.shared_state
+    clear(&state.hovers)
+
+    child_hit_test := _child_mouse_hit_test(widget)
+    defer delete(child_hit_test)
+
+    for i := len(child_hit_test) - 1; i >= 0; i -= 1 {
+        hit := child_hit_test[i]
+        append(&state.hovers, hit)
+        if hit.consume_input {
+            return
+        }
+    }
+
+    if point_is_inside(widget, state.mouse_position) && state.mouse_capture == nil {
+        append(&state.hovers, widget)
+    }
+
+    if state.mouse_capture != nil {
+        append(&state.hovers, state.mouse_capture)
+    }
+}
+
+// =================================================================================
+// Widget procedures
+// =================================================================================
 
 global_position :: proc(widget: ^Widget) -> [2]f32 {
     if is_root(widget) {
@@ -40,14 +143,19 @@ global_position :: proc(widget: ^Widget) -> [2]f32 {
     }
 }
 global_mouse_position :: proc(widget: ^Widget) -> [2]f32 {
-    return widget.shared_state.mouse_position
+    state := widget.shared_state
+    return state.mouse_position
 }
 mouse_position :: proc(widget: ^Widget) -> [2]f32 {
     return global_position(widget) + widget.shared_state.mouse_position
 }
+mouse_delta :: proc(widget: ^Widget) -> [2]f32 {
+    state := widget.shared_state
+    return state.mouse_position - state.mouse_position_previous
+}
 delta_time :: proc(widget: ^Widget) -> f32 {
     state := widget.shared_state
-    return state.time - state.previous_time
+    return state.time - state.time_previous
 }
 mouse_down :: proc(widget: ^Widget, button: Mouse_Button) -> bool {
     state := widget.shared_state
@@ -58,8 +166,7 @@ key_down :: proc(widget: ^Widget, key: Keyboard_Key) -> bool {
     return state.key_down_states[key]
 }
 mouse_moved :: proc(widget: ^Widget) -> bool {
-    state := widget.shared_state
-    return state.mouse_delta != {0, 0}
+    return mouse_delta(widget) != {0, 0}
 }
 mouse_wheel_moved :: proc(widget: ^Widget) -> bool {
     state := widget.shared_state
@@ -118,27 +225,11 @@ capture_mouse :: proc(widget: ^Widget) {
 release_mouse_capture :: proc(widget: ^Widget) {
     widget.shared_state.mouse_capture = nil
 }
-
 is_root :: proc(widget: ^Widget) -> bool {
     return widget.parent == nil
 }
-
 get_vg_ctx :: proc(widget: ^Widget) -> ^vg.Context {
     return widget.shared_state.vg_ctx
-}
-
-new_root :: proc() -> ^Widget {
-    widget := new(Widget)
-
-    widget.dont_draw = false
-    widget.consume_input = false
-    widget.clip_input = false
-    widget.clip_drawing = false
-
-    widget.shared_state = shared_state_create()
-    widget.update = proc(widget: ^Widget) { update_children(widget) }
-    widget.draw = proc(widget: ^Widget) { draw_children(widget) }
-    return widget
 }
 
 add_widget :: proc(parent: ^Widget, $T: typeid) -> ^T {
@@ -159,16 +250,13 @@ add_widget :: proc(parent: ^Widget, $T: typeid) -> ^T {
 }
 
 destroy :: proc(widget: ^Widget) {
-    if widget.destroy != nil {
-        widget->destroy()
-    }
     for child in widget.children {
         destroy(child)
     }
-    delete(widget.children)
-    if is_root(widget) {
-        shared_state_destroy(widget.shared_state)
+    if widget.destroy != nil {
+        widget->destroy()
     }
+    delete(widget.children)
     free(widget)
 }
 
@@ -245,32 +333,6 @@ point_is_inside :: proc(widget: ^Widget, point: [2]f32) -> bool {
     w_size := widget.size
     return point.x >= w_pos.x && point.x <= w_pos.x + w_size.x &&
            point.y >= w_pos.y && point.y <= w_pos.y + w_size.y
-}
-
-update_hovers :: proc(root: ^Widget) {
-    if !is_root(root) {
-        return
-    }
-
-    state := root.shared_state
-    clear(&state.hovers)
-
-    child_hit_test := _child_mouse_hit_test(root)
-    for i := len(child_hit_test) - 1; i >= 0; i -= 1 {
-        hit := child_hit_test[i]
-        append(&state.hovers, hit)
-        if hit.consume_input {
-            return
-        }
-    }
-
-    if point_is_inside(root, state.mouse_position) && state.mouse_capture == nil {
-        append(&state.hovers, root)
-    }
-
-    if state.mouse_capture != nil {
-        append(&state.hovers, state.mouse_capture)
-    }
 }
 
 _child_mouse_hit_test :: proc(widget: ^Widget) -> (res: [dynamic]^Widget) {
