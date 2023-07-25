@@ -1,9 +1,13 @@
-package os_window
+package gui
 
-Child_Status :: enum {
-    None,
-    Embedded,
-    Floating,
+Vec2 :: [2]f32
+Color :: [4]f32
+
+Font :: int
+
+Program_Kind :: enum {
+    Parent,
+    Child,
 }
 
 Cursor_Style :: enum {
