@@ -167,7 +167,7 @@ Vector_Graphics :: struct {
 Layer :: struct {
     z_index: int,
     draw_commands: [dynamic]Draw_Command,
-    final_hover_request: rawptr,
+    final_hover_request: Id,
 }
 
 Begin_Path_Command :: struct {}

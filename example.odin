@@ -4,26 +4,27 @@ import "core:fmt"
 import "core:time"
 import "core:runtime"
 import "gui"
+import "gui/color"
+import "gui/widgets"
 import nvg "vendor:nanovg"
+
+button := widgets.init_button()
+button2 := widgets.init_button(position = {100, 100})
 
 on_frame :: proc(ctx: ^gui.Context) {
     gui.begin_frame(ctx)
 
-    gui.begin_clip_region(ctx, {{100, 100}, {100, 100}})
+    widgets.update_button(ctx, &button)
+    widgets.draw_button(ctx, &button)
 
-    gui.begin_offset(ctx, {300, 300})
+    gui.end_frame(ctx)
+}
 
-    gui.begin_path(ctx)
-    gui.rounded_rect(ctx, {50, 50}, {200, 200}, 50)
-    gui.fill_path(ctx, {1, 0, 0, 1})
+on_frame2 :: proc(ctx: ^gui.Context) {
+    gui.begin_frame(ctx)
 
-    gui.end_offset(ctx)
-
-    gui.begin_path(ctx)
-    gui.rounded_rect(ctx, {75, 75}, {200, 200}, 50)
-    gui.fill_path(ctx, {0, 1, 0, 1})
-
-    gui.end_clip_region(ctx)
+    widgets.update_button(ctx, &button2)
+    widgets.draw_button(ctx, &button2)
 
     gui.end_frame(ctx)
 }
@@ -35,12 +36,18 @@ main :: proc() {
     ctx := gui.create_context("Hello")
     defer gui.destroy_context(ctx)
 
-    gui.set_background_color(ctx, {0.05, 0.05, 0.05, 1})
-
+    gui.set_background_color(ctx, color.rgb(49, 51, 56))
     gui.set_frame_proc(ctx, on_frame)
     gui.show(ctx)
 
-    for !gui.should_close(ctx) {
+    ctx2 := gui.create_context("Hello 2")
+    defer gui.destroy_context(ctx2)
+
+    gui.set_background_color(ctx2, color.rgb(150, 51, 56))
+    gui.set_frame_proc(ctx2, on_frame2)
+    gui.show(ctx2)
+
+    for gui.window_is_open(ctx) {
         gui.update()
     }
 }

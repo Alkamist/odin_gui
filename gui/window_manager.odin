@@ -59,6 +59,7 @@ init_window :: proc(ctx: ^Context, title: string) {
         fmt.eprintln("A window failed to open.")
     }
 
+    ctx.window_is_open = true
     ctx.window.view = view
 
     pugl.SetHandle(view, ctx)
@@ -86,6 +87,11 @@ show :: proc(ctx: ^Context) {
 
 hide :: proc(ctx: ^Context) {
     pugl.Hide(ctx.window.view)
+}
+
+close :: proc(ctx: ^Context) {
+    ctx.window_is_open = false
+    pugl.Unrealize(ctx.window.view)
 }
 
 _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
@@ -148,7 +154,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         input_rune(ctx, r)
 
     case .CLOSE:
-        ctx.should_close = true
+        close(ctx)
 
     }
 

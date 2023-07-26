@@ -48,11 +48,11 @@ input_mouse_move :: proc(ctx: ^Context, position: [2]f32) {
 }
 
 input_mouse_enter :: proc(ctx: ^Context) {
-    ctx.is_hovered = true
+    ctx.window_is_hovered = true
 }
 
 input_mouse_exit :: proc(ctx: ^Context) {
-    ctx.is_hovered = false
+    ctx.window_is_hovered = false
 }
 
 input_mouse_wheel :: proc(ctx: ^Context, amount: [2]f32) {
@@ -83,8 +83,16 @@ input_rune :: proc(ctx: ^Context, r: rune) {
     strings.write_rune(&ctx.text_input, r)
 }
 
-is_hovered :: proc(ctx: ^Context) -> bool {
-    return ctx.is_hovered
+window_is_open :: proc(ctx: ^Context) -> bool {
+    return ctx.window_is_open
+}
+
+window_is_hovered :: proc(ctx: ^Context) -> bool {
+    return ctx.window_is_hovered
+}
+
+mouse_position :: proc(ctx: ^Context) -> Vec2 {
+    return ctx.global_mouse_position - current_offset(ctx)
 }
 
 mouse_delta :: proc(ctx: ^Context) -> Vec2 {

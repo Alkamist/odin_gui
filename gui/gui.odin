@@ -3,12 +3,15 @@ package gui
 import "core:time"
 import "core:slice"
 import "core:strings"
+import "core:intrinsics"
 import gl "vendor:OpenGL"
+import "color"
 
 Vec2 :: [2]f32
-Color :: [4]f32
+Color :: color.Color
 
 Font :: int
+Id :: u64
 
 Cursor_Style :: enum {
     Arrow,
@@ -33,14 +36,24 @@ update :: proc() {
     update_window_manager()
 }
 
+generate_id :: proc "contextless" () -> Id {
+    @(static) last_id: Id
+    return 1 + intrinsics.atomic_add(&last_id, 1)
+}
+
+Interaction_Tracker :: struct {
+    detected_hover: bool,
+    detected_mouse_over: bool,
+}
+
 Context :: struct {
     on_frame: proc(ctx: ^Context),
     background_color: [4]f32,
-    should_close: bool,
     highest_z_index: int,
 
+    window_is_open: bool,
+    window_is_hovered: bool,
     tick: time.Tick,
-    is_hovered: bool,
     content_scale: f32,
     size: Vec2,
     global_mouse_position: Vec2,
@@ -53,14 +66,21 @@ Context :: struct {
     key_down_states: [Keyboard_Key]bool,
     text_input: strings.Builder,
 
+    hover: Id,
+    mouse_over: Id,
+    hover_capture: Id,
+
     offset_stack: [dynamic]Vec2,
     clip_region_stack: [dynamic]Region,
+    interaction_tracker_stack: [dynamic]Interaction_Tracker,
     layer_stack: [dynamic]Layer,
 
     layers: [dynamic]Layer,
 
     gfx: Vector_Graphics,
     window: Window,
+
+    last_id: Id,
 
     previous_global_mouse_position: Vec2,
     previous_tick: time.Tick,
@@ -78,17 +98,11 @@ destroy_context :: proc(ctx: ^Context) {
     destroy_vector_graphics(ctx)
     destroy_window(ctx)
     delete(ctx.offset_stack)
+    delete(ctx.clip_region_stack)
+    delete(ctx.interaction_tracker_stack)
     delete(ctx.layers)
     delete(ctx.layer_stack)
     free(ctx)
-}
-
-close :: proc(ctx: ^Context) {
-    ctx.should_close = true
-}
-
-should_close :: proc(ctx: ^Context) -> bool {
-    return ctx.should_close
 }
 
 set_background_color :: proc(ctx: ^Context, color: Color) {
@@ -105,16 +119,19 @@ begin_frame :: proc(ctx: ^Context) {
     begin_z_index(ctx, 0, global = true)
     begin_offset(ctx, 0, global = true)
     begin_clip_region(ctx, {{0, 0}, ctx.size}, global = true, intersect = false)
+    append(&ctx.interaction_tracker_stack, Interaction_Tracker{})
     ctx.tick = time.tick_now()
 }
 
 end_frame :: proc(ctx: ^Context) {
+    pop(&ctx.interaction_tracker_stack)
     end_clip_region(ctx)
     end_offset(ctx)
     end_z_index(ctx)
 
     assert(len(ctx.offset_stack) == 0, "Mismatch in begin_offset and end_offset calls.")
     assert(len(ctx.clip_region_stack) == 0, "Mismatch in begin_clip_region and end_clip_region calls.")
+    assert(len(ctx.interaction_tracker_stack) == 0, "Mismatch in begin_interaction_tracker and end_interaction_tracker calls.")
     assert(len(ctx.layer_stack) == 0, "Mismatch in begin_z_index and end_z_index calls.")
 
     // The layers are in reverse order because they were added in end_z_index.
@@ -125,6 +142,8 @@ end_frame :: proc(ctx: ^Context) {
         return i.z_index < j.z_index
     })
 
+    ctx.hover = 0
+    ctx.mouse_over = 0
     highest_z_index := min(int)
 
     for layer in ctx.layers {
@@ -132,7 +151,18 @@ end_frame :: proc(ctx: ^Context) {
             highest_z_index = layer.z_index
         }
         render_draw_commands(ctx, layer.draw_commands[:])
+
+        hover_request := layer.final_hover_request
+        if hover_request != 0 {
+            ctx.hover = hover_request
+            ctx.mouse_over = hover_request
+        }
+
         delete(layer.draw_commands)
+    }
+
+    if ctx.hover_capture != 0 {
+        ctx.hover = ctx.hover_capture
     }
 
     ctx.highest_z_index = highest_z_index
@@ -227,4 +257,62 @@ end_z_index :: proc(ctx: ^Context) -> int {
     layer := pop(&ctx.layer_stack)
     append(&ctx.layers, layer)
     return layer.z_index
+}
+
+begin_interaction_tracker :: proc(ctx: ^Context) {
+    append(&ctx.interaction_tracker_stack, Interaction_Tracker{})
+}
+
+end_interaction_tracker :: proc(ctx: ^Context) -> Interaction_Tracker {
+    tracker := pop(&ctx.interaction_tracker_stack)
+
+    if tracker.detected_hover {
+        ctx.interaction_tracker_stack[len(ctx.interaction_tracker_stack) - 1].detected_hover = true
+    }
+
+    if tracker.detected_mouse_over {
+        ctx.interaction_tracker_stack[len(ctx.interaction_tracker_stack) - 1].detected_mouse_over = true
+    }
+
+    return tracker
+}
+
+is_hovered :: proc(ctx: ^Context, id: Id) -> bool {
+    return ctx.hover == id
+}
+
+mouse_is_over :: proc(ctx: ^Context, id: Id) -> bool {
+    return ctx.mouse_over == id
+}
+
+request_hover :: proc(ctx: ^Context, id: Id) {
+    current_layer(ctx).final_hover_request = id
+
+    if ctx.hover == id {
+        ctx.interaction_tracker_stack[len(ctx.interaction_tracker_stack) - 1].detected_hover = true
+    }
+
+    if ctx.mouse_over == id {
+        ctx.interaction_tracker_stack[len(ctx.interaction_tracker_stack) - 1].detected_mouse_over = true
+    }
+}
+
+capture_hover :: proc(ctx: ^Context, id: Id) {
+    if ctx.hover_capture == 0 {
+        ctx.hover_capture = id
+    }
+}
+
+release_hover :: proc(ctx: ^Context, id: Id) {
+    if ctx.hover_capture == id {
+        ctx.hover_capture = 0
+    }
+}
+
+mouse_hit_test :: proc(ctx: ^Context, position, size: Vec2) -> bool {
+    m := mouse_position(ctx)
+    return window_is_hovered(ctx) &&
+           m.x >= position.x && m.x <= position.x + size.x &&
+           m.y >= position.y && m.y <= position.y + size.y &&
+           region_contains_position(current_clip_region(ctx), m)
 }
