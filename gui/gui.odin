@@ -97,6 +97,10 @@ create_context :: proc(title: string) -> ^Context {
 destroy_context :: proc(ctx: ^Context) {
     destroy_vector_graphics(ctx)
     destroy_window(ctx)
+    delete(ctx.mouse_presses)
+    delete(ctx.mouse_releases)
+    delete(ctx.key_presses)
+    delete(ctx.key_releases)
     delete(ctx.offset_stack)
     delete(ctx.clip_region_stack)
     delete(ctx.interaction_tracker_stack)
