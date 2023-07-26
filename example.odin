@@ -31,8 +31,8 @@ main :: proc() {
 		}
 	}
 
-    ctx := state.make_context()
-    defer state.destroy_context(ctx)
+    ctx := state.context_make()
+    defer state.context_destroy(&ctx)
 
     foo := state.get_state(&ctx, "Foo", Foo{1, 2, 3})
     foo2 := state.get_state(&ctx, "Foo2", Foo{4, 5, 6})
