@@ -3,6 +3,7 @@ package gui
 import "core:fmt"
 import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
+import gl "vendor:OpenGL"
 
 Paint :: nvg.Paint
 
@@ -21,33 +22,33 @@ solid_color :: proc(color: Color) -> Paint {
     return paint
 }
 
-begin_path :: proc(window: ^Window) {
-    layer := _current_layer(window)
+begin_path :: proc(ctx: ^Context) {
+    layer := current_layer(ctx)
     append(&layer.draw_commands, Begin_Path_Command{})
 }
 
-close_path :: proc(window: ^Window) {
-    layer := _current_layer(window)
+close_path :: proc(ctx: ^Context) {
+    layer := current_layer(ctx)
     append(&layer.draw_commands, Close_Path_Command{})
 }
 
-move_to :: proc(window: ^Window, position: Vec2) {
-    layer := _current_layer(window)
+move_to :: proc(ctx: ^Context, position: Vec2) {
+    layer := current_layer(ctx)
     append(&layer.draw_commands, Move_To_Command{
-        position + current_offset(window),
+        position + current_offset(ctx),
     })
 }
 
-line_to :: proc(window: ^Window, position: Vec2) {
-    layer := _current_layer(window)
+line_to :: proc(ctx: ^Context, position: Vec2) {
+    layer := current_layer(ctx)
     append(&layer.draw_commands, Line_To_Command{
-        position + current_offset(window),
+        position + current_offset(ctx),
     })
 }
 
-arc_to :: proc(window: ^Window, p0, p1: Vec2, radius: f32) {
-    layer := _current_layer(window)
-    offset := current_offset(window)
+arc_to :: proc(ctx: ^Context, p0, p1: Vec2, radius: f32) {
+    layer := current_layer(ctx)
+    offset := current_offset(ctx)
     append(&layer.draw_commands, Arc_To_Command{
         p0 + offset,
         p1 + offset,
@@ -55,19 +56,19 @@ arc_to :: proc(window: ^Window, p0, p1: Vec2, radius: f32) {
     })
 }
 
-rect :: proc(window: ^Window, position, size: Vec2, winding: Path_Winding = .Positive) {
-    layer := _current_layer(window)
+rect :: proc(ctx: ^Context, position, size: Vec2, winding: Path_Winding = .Positive) {
+    layer := current_layer(ctx)
     append(&layer.draw_commands, Rect_Command{
-        position + current_offset(window),
+        position + current_offset(ctx),
         size,
     })
     append(&layer.draw_commands, Winding_Command{winding})
 }
 
-rounded_rect_varying :: proc(window: ^Window, position, size: Vec2, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius: f32, winding: Path_Winding = .Positive) {
-    layer := _current_layer(window)
+rounded_rect_varying :: proc(ctx: ^Context, position, size: Vec2, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius: f32, winding: Path_Winding = .Positive) {
+    layer := current_layer(ctx)
     append(&layer.draw_commands, Rounded_Rect_Command{
-        position + current_offset(window),
+        position + current_offset(ctx),
         size,
         top_left_radius, top_right_radius,
         bottom_right_radius, bottom_left_radius,
@@ -75,36 +76,37 @@ rounded_rect_varying :: proc(window: ^Window, position, size: Vec2, top_left_rad
     append(&layer.draw_commands, Winding_Command{winding})
 }
 
-rounded_rect :: proc(window: ^Window, position, size: Vec2, radius: f32, winding: Path_Winding = .Positive) {
-    rounded_rect_varying(window, position, size, radius, radius, radius, radius, winding)
+rounded_rect :: proc(ctx: ^Context, position, size: Vec2, radius: f32, winding: Path_Winding = .Positive) {
+    rounded_rect_varying(ctx, position, size, radius, radius, radius, radius, winding)
 }
 
-fill_path_paint :: proc(window: ^Window, paint: Paint) {
-    layer := _current_layer(window)
+fill_path_paint :: proc(ctx: ^Context, paint: Paint) {
+    layer := current_layer(ctx)
     append(&layer.draw_commands, Fill_Path_Command{paint})
 }
 
-fill_path :: proc(window: ^Window, color: Color) {
-    fill_path_paint(window, solid_color(color))
+fill_path :: proc(ctx: ^Context, color: Color) {
+    fill_path_paint(ctx, solid_color(color))
 }
 
-add_font :: proc(ctx: ^Vg_Context, data: []byte) -> Font {
-    font := nvg.CreateFontMem(ctx.nvg_ctx, "", data, false)
+add_font :: proc(ctx: ^Context, data: []byte) -> Font {
+    font := nvg.CreateFontMem(ctx.gfx.nvg_ctx, "", data, false)
     if font == -1 {
         fmt.eprintln("Failed to load font.")
     }
     return font
 }
 
-text_metrics :: proc(ctx: ^Vg_Context, font: Font, font_size: f32) -> (ascender, descender, line_height: f32) {
-    _set_font(ctx, font)
-    _set_font_size(ctx, font_size)
-    return nvg.TextMetrics(ctx.nvg_ctx)
+text_metrics :: proc(ctx: ^Context, font: Font, font_size: f32) -> (ascender, descender, line_height: f32) {
+    gfx := &ctx.gfx
+    _set_font(gfx, font)
+    _set_font_size(gfx, font_size)
+    return nvg.TextMetrics(ctx.gfx.nvg_ctx)
 }
 
-render_draw_commands :: proc(window: ^Window, commands: []Draw_Command) {
-    vg_ctx := window.vg_ctx
-    nvg_ctx := vg_ctx.nvg_ctx
+render_draw_commands :: proc(ctx: ^Context, commands: []Draw_Command) {
+    gfx := &ctx.gfx
+    nvg_ctx := gfx.nvg_ctx
     for command in commands {
         switch in command {
         case Begin_Path_Command:
@@ -145,10 +147,10 @@ render_draw_commands :: proc(window: ^Window, commands: []Draw_Command) {
             nvg.Stroke(nvg_ctx)
         case Fill_Text_Command:
             c := command.(Fill_Text_Command)
-            _set_font(vg_ctx, c.font)
-            _set_font_size(vg_ctx, c.font_size)
+            _set_font(gfx, c.font)
+            _set_font_size(gfx, c.font_size)
             nvg.FillColor(nvg_ctx, c.color)
-            _render_text_raw(vg_ctx, c.position.x, c.position.y, c.text)
+            _render_text_raw(gfx, c.position.x, c.position.y, c.text)
         case Clip_Command:
             c := command.(Clip_Command)
             nvg.Scissor(nvg_ctx, c.position.x, c.position.y, c.size.x, c.size.y)
@@ -156,7 +158,7 @@ render_draw_commands :: proc(window: ^Window, commands: []Draw_Command) {
     }
 }
 
-Vg_Context :: struct {
+Vector_Graphics :: struct {
     nvg_ctx: ^nvg.Context,
     font: Font,
     font_size: f32,
@@ -239,62 +241,67 @@ Draw_Command :: union {
     Clip_Command,
 }
 
-_vg_init_context :: proc(ctx: ^Vg_Context) {
-    ctx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
+init_vector_graphics :: proc(ctx: ^Context) {
+    activate_gl_context(ctx)
+    ctx.gfx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
+    deactivate_gl_context(ctx)
 }
 
-_vg_destroy_context :: proc(ctx: ^Vg_Context) {
-    nvg_gl.Destroy(ctx.nvg_ctx)
+destroy_vector_graphics :: proc(ctx: ^Context) {
+    activate_gl_context(ctx)
+    nvg_gl.Destroy(ctx.gfx.nvg_ctx)
+    deactivate_gl_context(ctx)
 }
 
-_vg_begin_frame :: proc(ctx: ^Vg_Context, size: Vec2, content_scale: f32) {
-    nvg.BeginFrame(ctx.nvg_ctx, size.x, size.y, content_scale)
-    nvg.TextAlign(ctx.nvg_ctx, .LEFT, .TOP)
-    ctx.font = 0
-    ctx.font_size = 16.0
+vector_graphics_begin_frame :: proc(ctx: ^Context, size: Vec2, content_scale: f32) {
+    gfx := ctx.gfx
+    nvg.BeginFrame(gfx.nvg_ctx, size.x, size.y, content_scale)
+    nvg.TextAlign(gfx.nvg_ctx, .LEFT, .TOP)
+    gfx.font = 0
+    gfx.font_size = 16.0
 }
 
-_vg_end_frame :: proc(ctx: ^Vg_Context) {
-    nvg.EndFrame(ctx.nvg_ctx)
+vector_graphics_end_frame :: proc(ctx: ^Context) {
+    nvg.EndFrame(ctx.gfx.nvg_ctx)
 }
 
-_current_layer :: proc(window: ^Window) -> ^Layer {
-    return &window.layer_stack[len(window.layer_stack) - 1]
+current_layer :: proc(ctx: ^Context) -> ^Layer {
+    return &ctx.layer_stack[len(ctx.layer_stack) - 1]
 }
 
-_render_text_raw :: proc(ctx: ^Vg_Context, x, y: f32, text: string) {
+_render_text_raw :: proc(gfx: ^Vector_Graphics, x, y: f32, text: string) {
     if len(text) == 0 {
         return
     }
-    nvg.Text(ctx.nvg_ctx, x, y, text)
+    nvg.Text(gfx.nvg_ctx, x, y, text)
 }
 
-_set_font :: proc(ctx: ^Vg_Context, font: Font) {
-    if font == ctx.font {
+_set_font :: proc(gfx: ^Vector_Graphics, font: Font) {
+    if font == gfx.font {
         return
     }
-    nvg.FontFaceId(ctx.nvg_ctx, font)
-    ctx.font = font
+    nvg.FontFaceId(gfx.nvg_ctx, font)
+    gfx.font = font
 }
 
-_set_font_size :: proc(ctx: ^Vg_Context, font_size: f32) {
-    if font_size == ctx.font_size {
+_set_font_size :: proc(gfx: ^Vector_Graphics, font_size: f32) {
+    if font_size == gfx.font_size {
         return
     }
-    nvg.FontSize(ctx.nvg_ctx, font_size)
-    ctx.font_size = font_size
+    nvg.FontSize(gfx.nvg_ctx, font_size)
+    gfx.font_size = font_size
 }
 
-// proc measureGlyphs*(ctx: ^Context, text: openArray[char], font: Font, fontSize: float): seq[Glyph] =
+// proc measureGlyphs*(gfx: ^Context, text: openArray[char], font: Font, fontSize: float): seq[Glyph] =
 //   if text.len == 0:
 //     return
 
-//   ctx.setFont(font)
-//   ctx.setFontSize(fontSize)
+//   gfx.setFont(font)
+//   gfx.setFontSize(fontSize)
 
 //   var nvgPositions = newSeq[NVGglyphPosition](text.len)
 //   let positionCount = nvgTextGlyphPositions(
-//     ctx.nvg_ctx, 0, 0,
+//     gfx.nvg_ctx, 0, 0,
 //     cast[cstring](unsafeAddr(text[0])),
 //     cast[cstring](cast[uint64](unsafeAddr(text[text.len - 1])) + 1),
 //     addr(nvgPositions[0]),

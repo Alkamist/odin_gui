@@ -12,12 +12,12 @@ Rect :: struct {
     height: Span,
 }
 
-StringHint :: enum {
+StringHint :: enum c.int {
     CLASS_NAME = 1,
     WINDOW_TITLE,
 }
 
-EventType :: enum {
+EventType :: enum c.int {
     NOTHING,
     REALIZE,
     UNREALIZE,
@@ -44,14 +44,14 @@ EventType :: enum {
     DATA,
 }
 
-EventFlag :: enum {
+EventFlag :: enum u32 {
     IS_SEND_EVENT,
     IS_HINT,
 }
 
 EventFlags :: bit_set[EventFlag; u32]
 
-CrossingMode :: enum {
+CrossingMode :: enum c.int {
     NORMAL,
     GRAB,
     UNGRAB,
@@ -62,7 +62,7 @@ AnyEvent :: struct {
     flags: EventFlags,
 }
 
-ViewStyleFlag :: enum {
+ViewStyleFlag :: enum u32 {
     MAPPED,
     MODAL,
     ABOVE,
@@ -104,7 +104,7 @@ ExposeEvent :: struct {
     height: Span,
 }
 
-Key :: enum {
+Key :: enum u32 {
     BACKSPACE = 0x00000008,
     ENTER = 0x0000000D,
     ESCAPE = 0x0000001B,
@@ -176,7 +176,7 @@ Key :: enum {
     PAD_DIVIDE,
 }
 
-Mod :: enum {
+Mod :: enum u32 {
     SHIFT,
     CTRL,
     ALT,
@@ -218,7 +218,7 @@ TextEvent :: struct {
     string: [8]u8,
 }
 
-ScrollDirection :: enum {
+ScrollDirection :: enum c.int {
     UP,
     DOWN,
     LEFT,
@@ -319,7 +319,7 @@ Event :: struct #raw_union {
     data: DataEvent,
 }
 
-Status :: enum {
+Status :: enum c.int {
     SUCCESS,
     FAILURE,
     UNKNOWN_ERROR,
@@ -338,12 +338,12 @@ Status :: enum {
 World :: struct {}
 WorldHandle :: rawptr
 
-WorldType :: enum {
+WorldType :: enum c.int {
     PROGRAM,
     MODULE,
 }
 
-WorldFlag :: enum {
+WorldFlag :: enum u32 {
     WORLD_THREADS,
 }
 
@@ -355,7 +355,7 @@ Backend :: struct {}
 NativeView :: uintptr
 Handle :: rawptr
 
-ViewHint :: enum {
+ViewHint :: enum c.int {
     CONTEXT_API,
     CONTEXT_VERSION_MAJOR,
     CONTEXT_VERSION_MINOR,
@@ -378,7 +378,7 @@ ViewHint :: enum {
     DARK_FRAME,
 }
 
-ViewHintValue :: enum {
+ViewHintValue :: enum c.int {
     DONT_CARE = -1,
     FALSE = 0,
     TRUE = 1,
@@ -388,13 +388,13 @@ ViewHintValue :: enum {
     OPENGL_COMPATIBILITY_PROFILE = 5,
 }
 
-ViewType :: enum {
+ViewType :: enum c.int {
     NORMAL,
     UTILITY,
     DIALOG,
 }
 
-SizeHint :: enum {
+SizeHint :: enum c.int {
     DEFAULT_SIZE,
     MIN_SIZE,
     MAX_SIZE,
@@ -403,13 +403,13 @@ SizeHint :: enum {
     MAX_ASPECT,
 }
 
-ShowCommand :: enum {
+ShowCommand :: enum c.int {
     PASSIVE,
     RAISE,
     FORCE_RAISE,
 }
 
-Cursor :: enum {
+Cursor :: enum c.int {
     ARROW,
     CARET,
     CROSSHAIR,
