@@ -1,6 +1,5 @@
 package widgets
 
-import "../color"
 import "../gui"
 
 Button :: struct {
@@ -26,11 +25,11 @@ draw_button :: proc(ctx: ^Context, button: ^Button) {
         gui.fill_path(ctx, color)
     }
 
-    draw_frame(ctx, button, color.rgb(31, 32, 34))
+    draw_frame(ctx, button, rgb(31, 32, 34))
     if button.is_down {
-        draw_frame(ctx, button, color.rgba(0, 0, 0, 8))
+        draw_frame(ctx, button, rgba(0, 0, 0, 8))
     } else if gui.is_hovered(ctx, button.id) {
-        draw_frame(ctx, button, color.rgba(255, 255, 255, 8))
+        draw_frame(ctx, button, rgba(255, 255, 255, 8))
     }
 }
 
