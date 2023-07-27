@@ -67,7 +67,10 @@ create :: proc(
 
     view := pugl.NewView(world)
 
-    pugl.SetViewString(view, .WINDOW_TITLE, "Hello")
+    title_cstring := strings.clone_to_cstring(title)
+    defer delete(title_cstring)
+
+    pugl.SetViewString(view, .WINDOW_TITLE, title_cstring)
     pugl.SetSizeHint(view, .DEFAULT_SIZE, u16(size.x), u16(size.y))
 
     if min_size, ok := min_size.?; ok {

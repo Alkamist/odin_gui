@@ -46,7 +46,7 @@ main :: proc() {
     defer gui.destroy(ctx2)
 
     gui.set_background_color(ctx2, {0.05, 0.05, 0.05, 1})
-    gui.set_on_frame(ctx2, on_frame)
+    gui.set_on_frame(ctx2, on_frame2)
     gui.show(ctx2)
 
 	for {
@@ -68,6 +68,16 @@ on_frame :: proc(ctx: ^gui.Context) {
     gui.fill_path(ctx, {1, 0, 0, 1})
 
 	gui.end_offset(ctx)
+
+    gui.end_frame(ctx)
+}
+
+on_frame2 :: proc(ctx: ^gui.Context) {
+    gui.begin_frame(ctx)
+
+    gui.begin_path(ctx)
+    gui.rounded_rect(ctx, {50, 50}, {200, 200}, 20)
+    gui.fill_path(ctx, {1, 1, 0, 1})
 
     gui.end_frame(ctx)
 }
