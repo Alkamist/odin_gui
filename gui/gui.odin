@@ -4,42 +4,18 @@ import "core:time"
 import "core:slice"
 import "core:strings"
 import "core:intrinsics"
+import nvg "vendor:nanovg"
+import nvg_gl "vendor:nanovg/gl"
 import gl "vendor:OpenGL"
-import "color"
+import wnd "../window"
 
-Vec2 :: [2]f32
-Color :: color.Color
-
-Font :: int
 Id :: u64
+Vec2 :: [2]f32
 
-Cursor_Style :: enum {
-    Arrow,
-    I_Beam,
-    Crosshair,
-    Pointing_Hand,
-    Resize_Left_Right,
-    Resize_Top_Bottom,
-    Resize_Top_Left_Bottom_Right,
-    Resize_Top_Right_Bottom_Left,
-}
-
-startup :: proc() {
-    startup_window_manager()
-}
-
-shutdown :: proc() {
-    shutdown_window_manager()
-}
-
-update :: proc() {
-    update_window_manager()
-}
-
-generate_id :: proc "contextless" () -> Id {
-    @(static) last_id: Id
-    return 1 + intrinsics.atomic_add(&last_id, 1)
-}
+Cursor_Style :: wnd.Cursor_Style
+Mouse_Button :: wnd.Mouse_Button
+Keyboard_Key :: wnd.Keyboard_Key
+Context_Error :: wnd.Window_Error
 
 Interaction_Tracker :: struct {
     detected_hover: bool,
@@ -48,15 +24,13 @@ Interaction_Tracker :: struct {
 
 Context :: struct {
     on_frame: proc(ctx: ^Context),
-    background_color: [4]f32,
-    highest_z_index: int,
 
-    window_is_open: bool,
-    window_is_hovered: bool,
     tick: time.Tick,
-    content_scale: f32,
-    size: Vec2,
+    previous_tick: time.Tick,
+    background_color: Color,
+    window_is_hovered: bool,
     global_mouse_position: Vec2,
+    previous_global_mouse_position: Vec2,
     mouse_wheel_state: Vec2,
     mouse_presses: [dynamic]Mouse_Button,
     mouse_releases: [dynamic]Mouse_Button,
@@ -70,6 +44,8 @@ Context :: struct {
     mouse_over: Id,
     hover_capture: Id,
 
+    highest_z_index: int,
+
     offset_stack: [dynamic]Vec2,
     clip_region_stack: [dynamic]Region,
     interaction_tracker_stack: [dynamic]Interaction_Tracker,
@@ -77,111 +53,203 @@ Context :: struct {
 
     layers: [dynamic]Layer,
 
-    gfx: Vector_Graphics,
-    window: Window,
+    font: Font,
+    font_size: f32,
 
-    last_id: Id,
-
-    previous_global_mouse_position: Vec2,
-    previous_tick: time.Tick,
+    window: ^wnd.Window,
+    nvg_ctx: ^nvg.Context,
 }
 
-create_context :: proc(title: string) -> ^Context {
+generate_id :: proc "contextless" () -> Id {
+    @(static) last_id: Id
+    return 1 + intrinsics.atomic_add(&last_id, 1)
+}
+
+create :: proc(
+    title := "",
+    size := Vec2{400, 300},
+    min_size: Maybe(Vec2) = nil,
+    max_size: Maybe(Vec2) = nil,
+    swap_interval := 1,
+    dark_mode := true,
+    resizable := true,
+    double_buffer := true,
+) -> (^Context, Context_Error) {
     ctx := new(Context)
-    ctx.content_scale = 1.0
-    init_window(ctx, title)
-    init_vector_graphics(ctx)
-    return ctx
+    window, err := wnd.create(
+        title,
+        size,
+        min_size,
+        max_size,
+        swap_interval,
+        dark_mode,
+        resizable,
+        double_buffer,
+    )
+    if err != nil {
+        free(ctx)
+        return nil, err
+    }
+
+    ctx.window = window
+    window.user_data = ctx
+
+    wnd.activate_context(window)
+    gl.load_up_to(3, 3, wnd.gl_set_proc_address)
+    ctx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
+    wnd.deactivate_context(window)
+
+    return ctx, nil
 }
 
-destroy_context :: proc(ctx: ^Context) {
-    destroy_vector_graphics(ctx)
-    destroy_window(ctx)
+destroy :: proc(ctx: ^Context) {
+    wnd.activate_context(ctx.window)
+    nvg_gl.Destroy(ctx.nvg_ctx)
+    wnd.deactivate_context(ctx.window)
+
+    wnd.destroy(ctx.window)
+
     delete(ctx.mouse_presses)
     delete(ctx.mouse_releases)
     delete(ctx.key_presses)
     delete(ctx.key_releases)
+    strings.builder_destroy(&ctx.text_input)
+
     delete(ctx.offset_stack)
     delete(ctx.clip_region_stack)
     delete(ctx.interaction_tracker_stack)
     delete(ctx.layers)
     delete(ctx.layer_stack)
+
     free(ctx)
+}
+
+update :: proc(ctx: ^Context) {
+    wnd.update(ctx.window)
+}
+
+activate_gl_context :: proc(ctx: ^Context) {
+    wnd.activate_context(ctx.window)
+}
+
+deactivate_gl_context :: proc(ctx: ^Context) {
+    wnd.deactivate_context(ctx.window)
+}
+
+close :: proc(ctx: ^Context) {
+    wnd.close(ctx.window)
+}
+
+close_requested :: proc(ctx: ^Context) -> bool {
+    return wnd.close_requested(ctx.window)
+}
+
+show :: proc(ctx: ^Context) {
+    wnd.show(ctx.window)
+}
+
+hide :: proc(ctx: ^Context) {
+    wnd.hide(ctx.window)
+}
+
+size :: proc(ctx: ^Context) -> Vec2 {
+    return wnd.size(ctx.window)
+}
+
+content_scale :: proc(ctx: ^Context) -> f32 {
+    return wnd.content_scale(ctx.window)
 }
 
 set_background_color :: proc(ctx: ^Context, color: Color) {
     ctx.background_color = color
 }
 
-set_frame_proc :: proc(ctx: ^Context, on_frame: proc(ctx: ^Context)) {
+set_on_frame :: proc(ctx: ^Context, on_frame: proc(^Context)) {
     ctx.on_frame = on_frame
-}
-
-begin_frame :: proc(ctx: ^Context) {
-    gl.Viewport(0, 0, i32(ctx.size.x), i32(ctx.size.y))
-    vector_graphics_begin_frame(ctx, ctx.size, ctx.content_scale)
-    begin_z_index(ctx, 0, global = true)
-    begin_offset(ctx, 0, global = true)
-    begin_clip_region(ctx, {{0, 0}, ctx.size}, global = true, intersect = false)
-    append(&ctx.interaction_tracker_stack, Interaction_Tracker{})
-    ctx.tick = time.tick_now()
-}
-
-end_frame :: proc(ctx: ^Context) {
-    pop(&ctx.interaction_tracker_stack)
-    end_clip_region(ctx)
-    end_offset(ctx)
-    end_z_index(ctx)
-
-    assert(len(ctx.offset_stack) == 0, "Mismatch in begin_offset and end_offset calls.")
-    assert(len(ctx.clip_region_stack) == 0, "Mismatch in begin_clip_region and end_clip_region calls.")
-    assert(len(ctx.interaction_tracker_stack) == 0, "Mismatch in begin_interaction_tracker and end_interaction_tracker calls.")
-    assert(len(ctx.layer_stack) == 0, "Mismatch in begin_z_index and end_z_index calls.")
-
-    // The layers are in reverse order because they were added in end_z_index.
-    // Sort preserves the order of layers with the same z index, so they
-    // must first be reversed and then sorted to keep that ordering in tact.
-    slice.reverse(ctx.layers[:])
-    slice.stable_sort_by(ctx.layers[:], proc(i, j: Layer) -> bool {
-        return i.z_index < j.z_index
+    wnd.set_on_frame(ctx.window, proc(window: ^wnd.Window) {
+        ctx := cast(^Context)window.user_data
+        ctx->on_frame()
     })
+}
 
-    ctx.hover = 0
-    ctx.mouse_over = 0
-    highest_z_index := min(int)
+window_is_hovered :: proc(ctx: ^Context) -> bool {
+    return ctx.window_is_hovered
+}
 
-    for layer in ctx.layers {
-        if layer.z_index > highest_z_index {
-            highest_z_index = layer.z_index
-        }
-        render_draw_commands(ctx, layer.draw_commands[:])
+mouse_position :: proc(ctx: ^Context) -> Vec2 {
+    return ctx.global_mouse_position - current_offset(ctx)
+}
 
-        hover_request := layer.final_hover_request
-        if hover_request != 0 {
-            ctx.hover = hover_request
-            ctx.mouse_over = hover_request
-        }
+mouse_delta :: proc(ctx: ^Context) -> Vec2 {
+    return ctx.global_mouse_position - ctx.previous_global_mouse_position
+}
 
-        delete(layer.draw_commands)
-    }
+delta_time :: proc(ctx: ^Context) -> time.Duration {
+    return time.tick_diff(ctx.previous_tick, ctx.tick)
+}
 
-    if ctx.hover_capture != 0 {
-        ctx.hover = ctx.hover_capture
-    }
+mouse_down :: proc(ctx: ^Context, button: Mouse_Button) -> bool {
+    return ctx.mouse_down_states[button]
+}
 
-    ctx.highest_z_index = highest_z_index
+key_down :: proc(ctx: ^Context, key: Keyboard_Key) -> bool {
+    return ctx.key_down_states[key]
+}
 
-    clear(&ctx.layers)
-    clear(&ctx.mouse_presses)
-    clear(&ctx.mouse_releases)
-    clear(&ctx.key_presses)
-    clear(&ctx.key_releases)
-    strings.builder_reset(&ctx.text_input)
-    ctx.mouse_wheel_state = {0, 0}
-    ctx.previous_global_mouse_position = ctx.global_mouse_position
-    ctx.previous_tick = ctx.tick
+mouse_wheel :: proc(ctx: ^Context) -> Vec2 {
+    return ctx.mouse_wheel_state
+}
 
-    vector_graphics_end_frame(ctx)
+mouse_moved :: proc(ctx: ^Context) -> bool {
+    return mouse_delta(ctx) != {0, 0}
+}
+
+mouse_wheel_moved :: proc(ctx: ^Context) -> bool {
+    return ctx.mouse_wheel_state != {0, 0}
+}
+
+mouse_pressed :: proc(ctx: ^Context, button: Mouse_Button) -> bool {
+    return slice.contains(ctx.mouse_presses[:], button)
+}
+
+mouse_released :: proc(ctx: ^Context, button: Mouse_Button) -> bool {
+    return slice.contains(ctx.mouse_releases[:], button)
+}
+
+any_mouse_pressed :: proc(ctx: ^Context) -> bool {
+    return len(ctx.mouse_presses) > 0
+}
+
+any_mouse_released :: proc(ctx: ^Context) -> bool {
+    return len(ctx.mouse_releases) > 0
+}
+
+key_pressed :: proc(ctx: ^Context, key: Keyboard_Key) -> bool {
+    return slice.contains(ctx.key_presses[:], key)
+}
+
+key_released :: proc(ctx: ^Context, key: Keyboard_Key) -> bool {
+    return slice.contains(ctx.key_releases[:], key)
+}
+
+any_key_pressed :: proc(ctx: ^Context) -> bool {
+    return len(ctx.key_presses) > 0
+}
+
+any_key_released :: proc(ctx: ^Context) -> bool {
+    return len(ctx.key_releases) > 0
+}
+
+key_presses :: proc(ctx: ^Context) -> []Keyboard_Key {
+    return ctx.key_presses[:]
+}
+
+key_releases :: proc(ctx: ^Context) -> []Keyboard_Key {
+    return ctx.key_releases[:]
+}
+
+text_input :: proc(ctx: ^Context) -> string {
+    return strings.to_string(ctx.text_input)
 }
 
 current_offset :: proc(ctx: ^Context) -> Vec2 {
@@ -222,7 +290,6 @@ begin_clip_region :: proc(ctx: ^Context, region: Region, global := false, inters
     }
 
     append(&ctx.clip_region_stack, region)
-
     append(&current_layer(ctx).draw_commands, Clip_Command{
         region.position,
         region.size,
@@ -319,4 +386,82 @@ mouse_hit_test :: proc(ctx: ^Context, position, size: Vec2) -> bool {
            m.x >= position.x && m.x <= position.x + size.x &&
            m.y >= position.y && m.y <= position.y + size.y &&
            region_contains_position(current_clip_region(ctx), m)
+}
+
+begin_frame :: proc(ctx: ^Context) {
+    bg := ctx.background_color
+    gl.ClearColor(bg.r, bg.g, bg.b, bg.a)
+    gl.Clear(gl.COLOR_BUFFER_BIT)
+
+    size := size(ctx)
+    content_scale := content_scale(ctx)
+    gl.Viewport(0, 0, i32(size.x), i32(size.y))
+    nvg.BeginFrame(ctx.nvg_ctx, size.x, size.y, content_scale)
+    nvg.TextAlign(ctx.nvg_ctx, .LEFT, .TOP)
+    ctx.font = 0
+    ctx.font_size = 16.0
+
+    begin_z_index(ctx, 0, global = true)
+    begin_offset(ctx, 0, global = true)
+    begin_clip_region(ctx, {{0, 0}, size}, global = true, intersect = false)
+    append(&ctx.interaction_tracker_stack, Interaction_Tracker{})
+
+    ctx.tick = time.tick_now()
+}
+
+end_frame :: proc(ctx: ^Context) {
+    pop(&ctx.interaction_tracker_stack)
+    end_clip_region(ctx)
+    end_offset(ctx)
+    end_z_index(ctx)
+
+    assert(len(ctx.offset_stack) == 0, "Mismatch in begin_offset and end_offset calls.")
+    assert(len(ctx.clip_region_stack) == 0, "Mismatch in begin_clip_region and end_clip_region calls.")
+    assert(len(ctx.interaction_tracker_stack) == 0, "Mismatch in begin_interaction_tracker and end_interaction_tracker calls.")
+    assert(len(ctx.layer_stack) == 0, "Mismatch in begin_z_index and end_z_index calls.")
+
+    // The layers are in reverse order because they were added in end_z_index.
+    // Sort preserves the order of layers with the same z index, so they
+    // must first be reversed and then sorted to keep that ordering in tact.
+    slice.reverse(ctx.layers[:])
+    slice.stable_sort_by(ctx.layers[:], proc(i, j: Layer) -> bool {
+        return i.z_index < j.z_index
+    })
+
+    ctx.hover = 0
+    ctx.mouse_over = 0
+    highest_z_index := min(int)
+
+    for layer in ctx.layers {
+        if layer.z_index > highest_z_index {
+            highest_z_index = layer.z_index
+        }
+        _render_draw_commands(ctx, layer.draw_commands[:])
+
+        hover_request := layer.final_hover_request
+        if hover_request != 0 {
+            ctx.hover = hover_request
+            ctx.mouse_over = hover_request
+        }
+
+        delete(layer.draw_commands)
+    }
+
+    if ctx.hover_capture != 0 {
+        ctx.hover = ctx.hover_capture
+    }
+
+    ctx.highest_z_index = highest_z_index
+
+    clear(&ctx.layers)
+    clear(&ctx.mouse_presses)
+    clear(&ctx.mouse_releases)
+    clear(&ctx.key_presses)
+    clear(&ctx.key_releases)
+    strings.builder_reset(&ctx.text_input)
+    ctx.mouse_wheel_state = {0, 0}
+    ctx.previous_global_mouse_position = ctx.global_mouse_position
+    ctx.previous_tick = ctx.tick
+
+    nvg.EndFrame(ctx.nvg_ctx)
 }

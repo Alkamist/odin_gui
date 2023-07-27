@@ -5,6 +5,8 @@ import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
 import gl "vendor:OpenGL"
 
+Font :: int
+Color :: [4]f32
 Paint :: nvg.Paint
 
 Path_Winding :: enum {
@@ -12,7 +14,13 @@ Path_Winding :: enum {
     Negative,
 }
 
-solid_color :: proc(color: Color) -> Paint {
+Layer :: struct {
+    z_index: int,
+    draw_commands: [dynamic]Draw_Command,
+    final_hover_request: Id,
+}
+
+solid_paint :: proc(color: Color) -> Paint {
     paint: Paint
     nvg.TransformIdentity(&paint.xform)
     paint.radius = 0.0
@@ -86,11 +94,11 @@ fill_path_paint :: proc(ctx: ^Context, paint: Paint) {
 }
 
 fill_path :: proc(ctx: ^Context, color: Color) {
-    fill_path_paint(ctx, solid_color(color))
+    fill_path_paint(ctx, solid_paint(color))
 }
 
 add_font :: proc(ctx: ^Context, data: []byte) -> Font {
-    font := nvg.CreateFontMem(ctx.gfx.nvg_ctx, "", data, false)
+    font := nvg.CreateFontMem(ctx.nvg_ctx, "", data, false)
     if font == -1 {
         fmt.eprintln("Failed to load font.")
     }
@@ -98,15 +106,17 @@ add_font :: proc(ctx: ^Context, data: []byte) -> Font {
 }
 
 text_metrics :: proc(ctx: ^Context, font: Font, font_size: f32) -> (ascender, descender, line_height: f32) {
-    gfx := &ctx.gfx
-    _set_font(gfx, font)
-    _set_font_size(gfx, font_size)
-    return nvg.TextMetrics(ctx.gfx.nvg_ctx)
+    _set_font(ctx, font)
+    _set_font_size(ctx, font_size)
+    return nvg.TextMetrics(ctx.nvg_ctx)
 }
 
-render_draw_commands :: proc(ctx: ^Context, commands: []Draw_Command) {
-    gfx := &ctx.gfx
-    nvg_ctx := gfx.nvg_ctx
+current_layer :: proc(ctx: ^Context) -> ^Layer {
+    return &ctx.layer_stack[len(ctx.layer_stack) - 1]
+}
+
+_render_draw_commands :: proc(ctx: ^Context, commands: []Draw_Command) {
+    nvg_ctx := ctx.nvg_ctx
     for command in commands {
         switch in command {
         case Begin_Path_Command:
@@ -147,10 +157,10 @@ render_draw_commands :: proc(ctx: ^Context, commands: []Draw_Command) {
             nvg.Stroke(nvg_ctx)
         case Fill_Text_Command:
             c := command.(Fill_Text_Command)
-            _set_font(gfx, c.font)
-            _set_font_size(gfx, c.font_size)
+            _set_font(ctx, c.font)
+            _set_font_size(ctx, c.font_size)
             nvg.FillColor(nvg_ctx, c.color)
-            _render_text_raw(gfx, c.position.x, c.position.y, c.text)
+            _render_text_raw(ctx, c.position.x, c.position.y, c.text)
         case Clip_Command:
             c := command.(Clip_Command)
             nvg.Scissor(nvg_ctx, c.position.x, c.position.y, c.size.x, c.size.y)
@@ -158,16 +168,27 @@ render_draw_commands :: proc(ctx: ^Context, commands: []Draw_Command) {
     }
 }
 
-Vector_Graphics :: struct {
-    nvg_ctx: ^nvg.Context,
-    font: Font,
-    font_size: f32,
+_render_text_raw :: proc(ctx: ^Context, x, y: f32, text: string) {
+    if len(text) == 0 {
+        return
+    }
+    nvg.Text(ctx.nvg_ctx, x, y, text)
 }
 
-Layer :: struct {
-    z_index: int,
-    draw_commands: [dynamic]Draw_Command,
-    final_hover_request: Id,
+_set_font :: proc(ctx: ^Context, font: Font) {
+    if font == ctx.font {
+        return
+    }
+    nvg.FontFaceId(ctx.nvg_ctx, font)
+    ctx.font = font
+}
+
+_set_font_size :: proc(ctx: ^Context, font_size: f32) {
+    if font_size == ctx.font_size {
+        return
+    }
+    nvg.FontSize(ctx.nvg_ctx, font_size)
+    ctx.font_size = font_size
 }
 
 Begin_Path_Command :: struct {}
@@ -240,89 +261,3 @@ Draw_Command :: union {
     Fill_Text_Command,
     Clip_Command,
 }
-
-init_vector_graphics :: proc(ctx: ^Context) {
-    activate_gl_context(ctx)
-    ctx.gfx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
-    deactivate_gl_context(ctx)
-}
-
-destroy_vector_graphics :: proc(ctx: ^Context) {
-    activate_gl_context(ctx)
-    nvg_gl.Destroy(ctx.gfx.nvg_ctx)
-    deactivate_gl_context(ctx)
-}
-
-vector_graphics_begin_frame :: proc(ctx: ^Context, size: Vec2, content_scale: f32) {
-    gfx := ctx.gfx
-    nvg.BeginFrame(gfx.nvg_ctx, size.x, size.y, content_scale)
-    nvg.TextAlign(gfx.nvg_ctx, .LEFT, .TOP)
-    gfx.font = 0
-    gfx.font_size = 16.0
-}
-
-vector_graphics_end_frame :: proc(ctx: ^Context) {
-    nvg.EndFrame(ctx.gfx.nvg_ctx)
-}
-
-current_layer :: proc(ctx: ^Context) -> ^Layer {
-    return &ctx.layer_stack[len(ctx.layer_stack) - 1]
-}
-
-_render_text_raw :: proc(gfx: ^Vector_Graphics, x, y: f32, text: string) {
-    if len(text) == 0 {
-        return
-    }
-    nvg.Text(gfx.nvg_ctx, x, y, text)
-}
-
-_set_font :: proc(gfx: ^Vector_Graphics, font: Font) {
-    if font == gfx.font {
-        return
-    }
-    nvg.FontFaceId(gfx.nvg_ctx, font)
-    gfx.font = font
-}
-
-_set_font_size :: proc(gfx: ^Vector_Graphics, font_size: f32) {
-    if font_size == gfx.font_size {
-        return
-    }
-    nvg.FontSize(gfx.nvg_ctx, font_size)
-    gfx.font_size = font_size
-}
-
-// proc measureGlyphs*(gfx: ^Context, text: openArray[char], font: Font, fontSize: float): seq[Glyph] =
-//   if text.len == 0:
-//     return
-
-//   gfx.setFont(font)
-//   gfx.setFontSize(fontSize)
-
-//   var nvgPositions = newSeq[NVGglyphPosition](text.len)
-//   let positionCount = nvgTextGlyphPositions(
-//     gfx.nvg_ctx, 0, 0,
-//     cast[cstring](unsafeAddr(text[0])),
-//     cast[cstring](cast[uint64](unsafeAddr(text[text.len - 1])) + 1),
-//     addr(nvgPositions[0]),
-//     cint(text.len),
-//   )
-
-//   result = newSeq[Glyph](positionCount)
-
-//   for i in 0 ..< positionCount:
-//     let byteOffset = cast[uint64](unsafeAddr(text[0]))
-
-//     let lastByte =
-//       if i == positionCount - 1:
-//         text.len - 1
-//       else:
-//         int(cast[uint64](nvgPositions[i + 1].str) - byteOffset - 1)
-
-//     result[i] = Glyph(
-//       firstByte: int(cast[uint64](nvgPositions[i].str) - byteOffset),
-//       lastByte: lastByte,
-//       left: nvgPositions[i].minx,
-//       right: nvgPositions[i].maxx,
-//       drawOffsetX: nvgPositions[i].x - nvgPositions[i].minx,
-//     )

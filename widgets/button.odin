@@ -1,7 +1,7 @@
 package widgets
 
 import "../color"
-import "../../gui"
+import "../gui"
 
 Vec2 :: gui.Vec2
 
@@ -15,15 +15,10 @@ Button :: struct {
     clicked: bool,
 }
 
-init_button :: proc(
-    position := Vec2{0, 0},
-    size := Vec2{96, 32},
-) -> Button {
-    return {
-        id = gui.generate_id(),
-        position = position,
-        size = size,
-    }
+init_button :: proc(ctx: ^gui.Context, button: ^Button, position := Vec2{0, 0}, size := Vec2{96, 32}) {
+    button.id = gui.generate_id()
+    button.position = position
+    button.size = size
 }
 
 draw_button :: proc(ctx: ^gui.Context, button: ^Button) {
