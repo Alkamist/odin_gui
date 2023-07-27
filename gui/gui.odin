@@ -23,6 +23,7 @@ Interaction_Tracker :: struct {
 }
 
 Context :: struct {
+    user_data: rawptr,
     on_frame: proc(ctx: ^Context),
 
     tick: time.Tick,
@@ -56,13 +57,10 @@ Context :: struct {
     font: Font,
     font_size: f32,
 
+    last_id: Id,
+
     window: ^wnd.Window,
     nvg_ctx: ^nvg.Context,
-}
-
-generate_id :: proc "contextless" () -> Id {
-    @(static) last_id: Id
-    return 1 + intrinsics.atomic_add(&last_id, 1)
 }
 
 create :: proc(
@@ -99,6 +97,47 @@ create :: proc(
     ctx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
     wnd.deactivate_context(window)
 
+    wnd.set_on_mouse_move(ctx.window, proc(window: ^wnd.Window, position: [2]f32) {
+        ctx := cast(^Context)window.user_data
+        ctx.global_mouse_position = position
+    })
+    wnd.set_on_mouse_enter(ctx.window, proc(window: ^wnd.Window) {
+        ctx := cast(^Context)window.user_data
+        ctx.window_is_hovered = true
+    })
+    wnd.set_on_mouse_exit(ctx.window, proc(window: ^wnd.Window) {
+        ctx := cast(^Context)window.user_data
+        ctx.window_is_hovered = false
+    })
+    wnd.set_on_mouse_wheel(ctx.window, proc(window: ^wnd.Window, amount: [2]f32) {
+        ctx := cast(^Context)window.user_data
+        ctx.mouse_wheel_state = amount
+    })
+    wnd.set_on_mouse_press(ctx.window, proc(window: ^wnd.Window, button: Mouse_Button) {
+        ctx := cast(^Context)window.user_data
+        ctx.mouse_down_states[button] = true
+        append(&ctx.mouse_presses, button)
+    })
+    wnd.set_on_mouse_release(ctx.window, proc(window: ^wnd.Window, button: Mouse_Button) {
+        ctx := cast(^Context)window.user_data
+        ctx.mouse_down_states[button] = false
+        append(&ctx.mouse_releases, button)
+    })
+    wnd.set_on_key_press(ctx.window, proc(window: ^wnd.Window, key: Keyboard_Key) {
+        ctx := cast(^Context)window.user_data
+        ctx.key_down_states[key] = true
+        append(&ctx.key_presses, key)
+    })
+    wnd.set_on_key_release(ctx.window, proc(window: ^wnd.Window, key: Keyboard_Key) {
+        ctx := cast(^Context)window.user_data
+        ctx.key_down_states[key] = false
+        append(&ctx.key_releases, key)
+    })
+    wnd.set_on_rune(ctx.window, proc(window: ^wnd.Window, r: rune) {
+        ctx := cast(^Context)window.user_data
+        strings.write_rune(&ctx.text_input, r)
+    })
+
     return ctx, nil
 }
 
@@ -128,6 +167,11 @@ update :: proc(ctx: ^Context) {
     wnd.update(ctx.window)
 }
 
+generate_id :: proc(ctx: ^Context) -> Id {
+    ctx.last_id += 1
+    return ctx.last_id
+}
+
 activate_gl_context :: proc(ctx: ^Context) {
     wnd.activate_context(ctx.window)
 }
@@ -150,6 +194,10 @@ show :: proc(ctx: ^Context) {
 
 hide :: proc(ctx: ^Context) {
     wnd.hide(ctx.window)
+}
+
+position :: proc(ctx: ^Context) -> Vec2 {
+    return wnd.position(ctx.window)
 }
 
 size :: proc(ctx: ^Context) -> Vec2 {
@@ -421,7 +469,7 @@ end_frame :: proc(ctx: ^Context) {
     assert(len(ctx.layer_stack) == 0, "Mismatch in begin_z_index and end_z_index calls.")
 
     // The layers are in reverse order because they were added in end_z_index.
-    // Sort preserves the order of layers with the same z index, so they
+    // Stable sort preserves the order of layers with the same z index, so they
     // must first be reversed and then sorted to keep that ordering in tact.
     slice.reverse(ctx.layers[:])
     slice.stable_sort_by(ctx.layers[:], proc(i, j: Layer) -> bool {

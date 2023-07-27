@@ -149,6 +149,10 @@ is_visible :: proc(window: ^Window) -> bool {
     return window.is_visible
 }
 
+position :: proc(window: ^Window) -> [2]f32 {
+    return window.position
+}
+
 size :: proc(window: ^Window) -> [2]f32 {
     return window.size
 }
@@ -157,8 +161,52 @@ content_scale :: proc(window: ^Window) -> f32 {
     return window.content_scale
 }
 
-set_on_frame :: proc(window: ^Window, on_frame: proc(^Window)) {
+set_on_frame :: proc(window: ^Window, on_frame: proc(window: ^Window)) {
     window.on_frame = on_frame
+}
+
+set_on_move :: proc(window: ^Window, on_move: proc(window: ^Window, position: [2]f32)) {
+    window.on_move = on_move
+}
+
+set_on_resize :: proc(window: ^Window, on_resize: proc(window: ^Window, size: [2]f32)) {
+    window.on_resize = on_resize
+}
+
+set_on_mouse_move :: proc(window: ^Window, on_mouse_move: proc(window: ^Window, position: [2]f32)) {
+    window.on_mouse_move = on_mouse_move
+}
+
+set_on_mouse_enter :: proc(window: ^Window, on_mouse_enter: proc(window: ^Window)) {
+    window.on_mouse_enter = on_mouse_enter
+}
+
+set_on_mouse_exit :: proc(window: ^Window, on_mouse_exit: proc(window: ^Window)) {
+    window.on_mouse_exit = on_mouse_exit
+}
+
+set_on_mouse_wheel :: proc(window: ^Window, on_mouse_wheel: proc(window: ^Window, amount: [2]f32)) {
+    window.on_mouse_wheel = on_mouse_wheel
+}
+
+set_on_mouse_press :: proc(window: ^Window, on_mouse_press: proc(window: ^Window, button: Mouse_Button)) {
+    window.on_mouse_press = on_mouse_press
+}
+
+set_on_mouse_release :: proc(window: ^Window, on_mouse_release: proc(window: ^Window, button: Mouse_Button)) {
+    window.on_mouse_release = on_mouse_release
+}
+
+set_on_key_press :: proc(window: ^Window, on_key_press: proc(window: ^Window, key: Keyboard_Key)) {
+    window.on_key_press = on_key_press
+}
+
+set_on_key_release :: proc(window: ^Window, on_key_release: proc(window: ^Window, key: Keyboard_Key)) {
+    window.on_key_release = on_key_release
+}
+
+set_on_rune :: proc(window: ^Window, on_rune: proc(window: ^Window, r: rune)) {
+    window.on_rune = on_rune
 }
 
 _get_window_class_id :: proc "contextless" () -> u64 {

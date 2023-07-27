@@ -3,6 +3,11 @@ package main
 import "core:mem"
 import "core:fmt"
 import "gui"
+import "widgets"
+
+Data :: struct {
+	button: widgets.Button,
+}
 
 main :: proc() {
 	when ODIN_DEBUG {
@@ -34,50 +39,36 @@ main :: proc() {
     }
     defer gui.destroy(ctx)
 
+	data := new(Data)
+	defer free(data)
+
+	widgets.init_button(ctx, &data.button)
+	ctx.user_data = data
+
     gui.set_background_color(ctx, {0.05, 0.05, 0.05, 1})
     gui.set_on_frame(ctx, on_frame)
     gui.show(ctx)
 
-	ctx2, err2 := gui.create("Hello 2")
-    if err2 != nil {
-        fmt.eprintln("Failed to create gui.")
-        return
-    }
-    defer gui.destroy(ctx2)
-
-    gui.set_background_color(ctx2, {0.05, 0.05, 0.05, 1})
-    gui.set_on_frame(ctx2, on_frame2)
-    gui.show(ctx2)
-
-	for {
+	for !gui.close_requested(ctx) {
 		gui.update(ctx)
-		gui.update(ctx2)
-        if gui.close_requested(ctx) || gui.close_requested(ctx2) {
-            break
-        }
 	}
 }
 
 on_frame :: proc(ctx: ^gui.Context) {
     gui.begin_frame(ctx)
 
+	data := cast(^Data)ctx.user_data
+
 	gui.begin_offset(ctx, {100, 100})
+
+	widgets.update_button(ctx, &data.button)
+	widgets.draw_button(ctx, &data.button)
 
     gui.begin_path(ctx)
     gui.rounded_rect(ctx, {50, 50}, {200, 200}, 20)
     gui.fill_path(ctx, {1, 0, 0, 1})
 
 	gui.end_offset(ctx)
-
-    gui.end_frame(ctx)
-}
-
-on_frame2 :: proc(ctx: ^gui.Context) {
-    gui.begin_frame(ctx)
-
-    gui.begin_path(ctx)
-    gui.rounded_rect(ctx, {50, 50}, {200, 200}, 20)
-    gui.fill_path(ctx, {1, 1, 0, 1})
 
     gui.end_frame(ctx)
 }

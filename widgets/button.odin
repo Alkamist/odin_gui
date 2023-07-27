@@ -3,10 +3,8 @@ package widgets
 import "../color"
 import "../gui"
 
-Vec2 :: gui.Vec2
-
 Button :: struct {
-    id: gui.Id,
+    id: Id,
     position: Vec2,
     size: Vec2,
     is_down: bool,
@@ -15,25 +13,28 @@ Button :: struct {
     clicked: bool,
 }
 
-init_button :: proc(ctx: ^gui.Context, button: ^Button, position := Vec2{0, 0}, size := Vec2{96, 32}) {
-    button.id = gui.generate_id()
+init_button :: proc(ctx: ^Context, button: ^Button, position := Vec2{0, 0}, size := Vec2{96, 32}) {
+    button.id = gui.generate_id(ctx)
     button.position = position
     button.size = size
 }
 
-draw_button :: proc(ctx: ^gui.Context, button: ^Button) {
-    gui.rounded_rect(ctx, button.position, button.size, 3)
+draw_button :: proc(ctx: ^Context, button: ^Button) {
+    draw_frame :: proc(ctx: ^Context, button: ^Button, color: Color) {
+        gui.begin_path(ctx)
+        gui.rounded_rect(ctx, button.position, button.size, 3)
+        gui.fill_path(ctx, color)
+    }
 
-    gui.fill_path(ctx, color.rgb(31, 32, 34))
-
+    draw_frame(ctx, button, color.rgb(31, 32, 34))
     if button.is_down {
-        gui.fill_path(ctx, color.rgba(0, 0, 0, 8))
+        draw_frame(ctx, button, color.rgba(0, 0, 0, 8))
     } else if gui.is_hovered(ctx, button.id) {
-        gui.fill_path(ctx, color.rgba(255, 255, 255, 8))
+        draw_frame(ctx, button, color.rgba(255, 255, 255, 8))
     }
 }
 
-update_button_ex :: proc(ctx: ^gui.Context, button: ^Button, hover, press, release: bool) {
+update_button_ex :: proc(ctx: ^Context, button: ^Button, hover, press, release: bool) {
     id := button.id
 
     button.pressed = false
@@ -67,7 +68,7 @@ update_button_ex :: proc(ctx: ^gui.Context, button: ^Button, hover, press, relea
     }
 }
 
-update_button :: proc(ctx: ^gui.Context, button: ^Button, mouse_button := gui.Mouse_Button.Left) {
+update_button :: proc(ctx: ^Context, button: ^Button, mouse_button := Mouse_Button.Left) {
     update_button_ex(ctx, button,
         hover = gui.mouse_hit_test(ctx, button.position, button.size),
         press = gui.mouse_pressed(ctx, mouse_button),
