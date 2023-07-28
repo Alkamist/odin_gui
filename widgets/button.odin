@@ -25,11 +25,18 @@ draw_button :: proc(ctx: ^Context, button: ^Button) {
         gui.fill_path(ctx, color)
     }
 
-    draw_frame(ctx, button, rgb(31, 32, 34))
+    gui.begin_path(ctx)
+    gui.rounded_rect(ctx, button.position, button.size, 3)
+    gui.fill_path(ctx, rgb(31, 32, 34))
+
     if button.is_down {
-        draw_frame(ctx, button, rgba(0, 0, 0, 8))
+        gui.begin_path(ctx)
+        gui.rounded_rect(ctx, button.position, button.size, 3)
+        gui.fill_path(ctx, rgba(0, 0, 0, 8))
     } else if gui.is_hovered(ctx, button.id) {
-        draw_frame(ctx, button, rgba(255, 255, 255, 8))
+        gui.begin_path(ctx)
+        gui.rounded_rect(ctx, button.position, button.size, 3)
+        gui.fill_path(ctx, rgba(255, 255, 255, 8))
     }
 }
 

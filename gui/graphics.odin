@@ -1,6 +1,7 @@
 package gui
 
 import "core:fmt"
+import "core:math"
 import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
 import gl "vendor:OpenGL"
@@ -18,6 +19,20 @@ Layer :: struct {
     z_index: int,
     draw_commands: [dynamic]Draw_Command,
     final_hover_request: Id,
+}
+
+pixel_align :: proc{
+    pixel_align_f32,
+    pixel_align_vec2,
+}
+
+pixel_align_f32 :: proc(ctx: ^Context, value: f32) -> f32 {
+    scale := content_scale(ctx)
+    return math.round(value * scale) / scale
+}
+
+pixel_align_vec2 :: proc(ctx: ^Context, position: Vec2) -> Vec2 {
+    return {pixel_align_f32(ctx, position.x), pixel_align_f32(ctx, position.y)}
 }
 
 solid_paint :: proc(color: Color) -> Paint {
@@ -97,7 +112,18 @@ fill_path :: proc(ctx: ^Context, color: Color) {
     fill_path_paint(ctx, solid_paint(color))
 }
 
-add_font :: proc(ctx: ^Context, data: []byte) -> Font {
+fill_text_line :: proc(ctx: ^Context, text: string, position: Vec2, color := Color{1, 1, 1, 1}, font: Font = 0, font_size: f32 = 13.0) {
+    layer := current_layer(ctx)
+    append(&layer.draw_commands, Fill_Text_Command{
+      font = font,
+      font_size = font_size,
+      position = pixel_align(ctx, current_offset(ctx) + position),
+      text = text,
+      color = color,
+    })
+}
+
+load_font_data :: proc(ctx: ^Context, data: []byte) -> Font {
     font := nvg.CreateFontMem(ctx.nvg_ctx, "", data, false)
     if font == -1 {
         fmt.eprintln("Failed to load font.")

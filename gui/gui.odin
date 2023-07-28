@@ -224,6 +224,10 @@ window_is_hovered :: proc(ctx: ^Context) -> bool {
     return ctx.window_is_hovered
 }
 
+global_mouse_position :: proc(ctx: ^Context) -> Vec2 {
+    return ctx.global_mouse_position
+}
+
 mouse_position :: proc(ctx: ^Context) -> Vec2 {
     return ctx.global_mouse_position - current_offset(ctx)
 }
