@@ -13,12 +13,12 @@ Window :: struct {
     user_data: rawptr,
 
     on_frame: proc(window: ^Window),
-    on_move: proc(window: ^Window, position: [2]f32),
-    on_resize: proc(window: ^Window, size: [2]f32),
-    on_mouse_move: proc(window: ^Window, position: [2]f32),
+    on_move: proc(window: ^Window, position: Vec2),
+    on_resize: proc(window: ^Window, size: Vec2),
+    on_mouse_move: proc(window: ^Window, position: Vec2),
     on_mouse_enter: proc(window: ^Window),
     on_mouse_exit: proc(window: ^Window),
-    on_mouse_wheel: proc(window: ^Window, amount: [2]f32),
+    on_mouse_wheel: proc(window: ^Window, amount: Vec2),
     on_mouse_press: proc(window: ^Window, button: Mouse_Button),
     on_mouse_release: proc(window: ^Window, button: Mouse_Button),
     on_key_press: proc(window: ^Window, key: Keyboard_Key),
@@ -27,8 +27,8 @@ Window :: struct {
 
     close_requested: bool,
     is_visible: bool,
-    position: [2]f32,
-    size: [2]f32,
+    position: Vec2,
+    size: Vec2,
     content_scale: f32,
 
     view: ^pugl.View,
@@ -39,9 +39,9 @@ Window :: struct {
 
 create :: proc(
     title := "",
-    size := [2]f32{400, 300},
-    min_size: Maybe([2]f32) = nil,
-    max_size: Maybe([2]f32) = nil,
+    size := Vec2{400, 300},
+    min_size: Maybe(Vec2) = nil,
+    max_size: Maybe(Vec2) = nil,
     swap_interval := 1,
     dark_mode := true,
     resizable := true,
@@ -149,11 +149,11 @@ is_visible :: proc(window: ^Window) -> bool {
     return window.is_visible
 }
 
-position :: proc(window: ^Window) -> [2]f32 {
+position :: proc(window: ^Window) -> Vec2 {
     return window.position
 }
 
-size :: proc(window: ^Window) -> [2]f32 {
+size :: proc(window: ^Window) -> Vec2 {
     return window.size
 }
 
@@ -165,15 +165,15 @@ set_on_frame :: proc(window: ^Window, on_frame: proc(window: ^Window)) {
     window.on_frame = on_frame
 }
 
-set_on_move :: proc(window: ^Window, on_move: proc(window: ^Window, position: [2]f32)) {
+set_on_move :: proc(window: ^Window, on_move: proc(window: ^Window, position: Vec2)) {
     window.on_move = on_move
 }
 
-set_on_resize :: proc(window: ^Window, on_resize: proc(window: ^Window, size: [2]f32)) {
+set_on_resize :: proc(window: ^Window, on_resize: proc(window: ^Window, size: Vec2)) {
     window.on_resize = on_resize
 }
 
-set_on_mouse_move :: proc(window: ^Window, on_mouse_move: proc(window: ^Window, position: [2]f32)) {
+set_on_mouse_move :: proc(window: ^Window, on_mouse_move: proc(window: ^Window, position: Vec2)) {
     window.on_mouse_move = on_mouse_move
 }
 
@@ -185,7 +185,7 @@ set_on_mouse_exit :: proc(window: ^Window, on_mouse_exit: proc(window: ^Window))
     window.on_mouse_exit = on_mouse_exit
 }
 
-set_on_mouse_wheel :: proc(window: ^Window, on_mouse_wheel: proc(window: ^Window, amount: [2]f32)) {
+set_on_mouse_wheel :: proc(window: ^Window, on_mouse_wheel: proc(window: ^Window, amount: Vec2)) {
     window.on_mouse_wheel = on_mouse_wheel
 }
 
@@ -234,8 +234,8 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         context = window.odin_context
         event := event.configure
 
-        position := [2]f32{f32(event.x), f32(event.y)}
-        size := [2]f32{f32(event.width), f32(event.height)}
+        position := Vec2{f32(event.x), f32(event.y)}
+        size := Vec2{f32(event.width), f32(event.height)}
 
         if window.on_move != nil && position != window.position {
             window->on_move(position)

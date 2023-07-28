@@ -1,5 +1,7 @@
 package window
 
+Vec2 :: [2]f32
+
 Cursor_Style :: enum {
     Arrow,
     I_Beam,

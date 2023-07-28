@@ -6,6 +6,7 @@ import "gui"
 import "widgets"
 
 Data :: struct {
+	performance: widgets.Performance,
 	button: widgets.Button,
 	slider: widgets.Slider,
 }
@@ -47,6 +48,9 @@ main :: proc() {
 	data := new(Data)
 	defer free(data)
 
+	widgets.init_performance(ctx, &data.performance)
+	defer widgets.destroy_performance(ctx, &data.performance)
+
 	widgets.init_button(ctx, &data.button)
 	widgets.init_slider(ctx, &data.slider, position = {30, 200})
 
@@ -80,7 +84,8 @@ on_frame :: proc(ctx: ^gui.Context) {
 
 	gui.end_offset(ctx)
 
-	gui.fill_text_line(ctx, "Hello World", gui.mouse_position(ctx))
+	widgets.update_performance(ctx, &data.performance)
+	widgets.draw_performance(ctx, &data.performance)
 
     gui.end_frame(ctx)
 }
