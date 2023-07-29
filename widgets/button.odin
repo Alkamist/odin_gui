@@ -33,6 +33,7 @@ draw_button :: proc(ctx: ^Context, button: ^Button) {
         gui.begin_path(ctx)
         gui.rounded_rect(ctx, button.position, button.size, 3)
         gui.fill_path(ctx, rgba(0, 0, 0, 8))
+
     } else if gui.is_hovered(ctx, button.id) {
         gui.begin_path(ctx)
         gui.rounded_rect(ctx, button.position, button.size, 3)

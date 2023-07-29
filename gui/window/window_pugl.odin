@@ -1,5 +1,6 @@
 package window
 
+import "core:c"
 import "core:fmt"
 import "core:strings"
 import "core:runtime"
@@ -9,10 +10,19 @@ import "pugl"
 
 gl_set_proc_address :: pugl.gl_set_proc_address
 
+Native_Handle :: rawptr
+
+Child_Kind :: enum {
+    None,
+    Embedded,
+    Transient,
+}
+
 Window :: struct {
     user_data: rawptr,
 
-    on_frame: proc(window: ^Window),
+    on_draw: proc(window: ^Window),
+    on_update: proc(window: ^Window),
     on_move: proc(window: ^Window, position: Vec2),
     on_resize: proc(window: ^Window, size: Vec2),
     on_mouse_move: proc(window: ^Window, position: Vec2),
@@ -26,10 +36,11 @@ Window :: struct {
     on_rune: proc(window: ^Window, r: rune),
 
     close_requested: bool,
-    is_visible: bool,
-    position: Vec2,
-    size: Vec2,
-    content_scale: f32,
+    last_position: Vec2,
+    last_size: Vec2,
+
+    child_kind: Child_Kind,
+    parent_handle: rawptr,
 
     view: ^pugl.View,
     world: ^pugl.World,
@@ -46,24 +57,37 @@ create :: proc(
     dark_mode := true,
     resizable := true,
     double_buffer := true,
+    child_kind: Child_Kind = .None,
+    parent_handle: Native_Handle = nil,
 ) -> (^Window, Window_Error) {
+    child_kind := child_kind
+
     window := new(Window)
     window.odin_context = context
 
-    window_class_name := fmt.aprintln("WindowClass")
-    window_class_name_cstring := strings.clone_to_cstring(window_class_name)
-    defer {
-        delete(window_class_name)
-        delete(window_class_name_cstring)
+    world_type := pugl.WorldType.PROGRAM
+
+    if parent_handle != nil {
+        if child_kind == .None {
+            child_kind = .Embedded
+        }
+        window.child_kind = child_kind
+        window.parent_handle = parent_handle
     }
 
-    when ODIN_BUILD_MODE == .Dynamic {
-        world_type := pugl.WorldType.MODULE
-    } else {
-        world_type := pugl.WorldType.PROGRAM
+    if child_kind == .Embedded {
+        world_type = .MODULE
     }
+
     world := pugl.NewWorld(world_type, {})
-    pugl.SetWorldString(world, .CLASS_NAME, window_class_name_cstring)
+
+    class_name := fmt.aprint("WindowClass#d", _get_window_class_id())
+    defer delete(class_name)
+
+    class_name_cstring := strings.clone_to_cstring(class_name)
+    defer delete(class_name_cstring)
+
+    pugl.SetWorldString(world, .CLASS_NAME, class_name_cstring)
 
     view := pugl.NewView(world)
 
@@ -89,20 +113,28 @@ create :: proc(
     pugl.SetViewHint(view, .SWAP_INTERVAL, i32(swap_interval))
     pugl.SetViewHint(view, .IGNORE_KEY_REPEAT, 0)
 
+    #partial switch child_kind {
+    case .Embedded:
+        pugl.SetPosition(view, 0, 0)
+        pugl.SetParentWindow(view, cast(uintptr)parent_handle)
+    case .Transient:
+        pugl.SetTransientParent(view, cast(uintptr)parent_handle)
+    }
+
     pugl.SetEventFunc(view, _on_event)
 
-    if pugl.Realize(view) != .SUCCESS {
+    status := pugl.Realize(view)
+
+    if status != .SUCCESS {
         pugl.FreeView(view)
         pugl.FreeWorld(world)
         free(window)
+        fmt.eprintln(pugl.Strerror(status))
         return nil, .Failed_To_Open
     }
 
-    window.view = view
     window.world = world
-    window.size = size
-    window.content_scale = f32(pugl.GetScaleFactor(view))
-
+    window.view = view
     pugl.SetHandle(view, window)
 
     return window, nil
@@ -117,6 +149,14 @@ destroy :: proc(window: ^Window) {
 
 update :: proc(window: ^Window) {
     pugl.Update(window.world, 0)
+}
+
+parent_handle :: proc(window: ^Window) -> Native_Handle {
+    return window.parent_handle
+}
+
+native_handle :: proc(window: ^Window) -> Native_Handle {
+    return cast(rawptr)pugl.GetNativeView(window.view)
 }
 
 activate_context :: proc(window: ^Window) {
@@ -137,32 +177,48 @@ close_requested :: proc(window: ^Window) -> bool {
 
 show :: proc(window: ^Window) {
     pugl.Show(window.view, .RAISE)
-    window.is_visible = true
 }
 
 hide :: proc(window: ^Window) {
     pugl.Hide(window.view)
-    window.is_visible = false
 }
 
 is_visible :: proc(window: ^Window) -> bool {
-    return window.is_visible
+    return pugl.GetVisible(window.view)
 }
 
 position :: proc(window: ^Window) -> Vec2 {
-    return window.position
+    frame := pugl.GetFrame(window.view)
+    return {f32(frame.x), f32(frame.y)}
+}
+
+set_position :: proc(window: ^Window, position: Vec2) {
+    pugl.SetPosition(window.view, c.int(position.x), c.int(position.y))
 }
 
 size :: proc(window: ^Window) -> Vec2 {
-    return window.size
+    frame := pugl.GetFrame(window.view)
+    return {f32(frame.width), f32(frame.height)}
+}
+
+set_size :: proc(window: ^Window, size: Vec2) {
+    pugl.SetSize(window.view, c.uint(size.x), c.uint(size.y))
 }
 
 content_scale :: proc(window: ^Window) -> f32 {
-    return window.content_scale
+    return f32(pugl.GetScaleFactor(window.view))
 }
 
-set_on_frame :: proc(window: ^Window, on_frame: proc(window: ^Window)) {
-    window.on_frame = on_frame
+child_kind :: proc(window: ^Window) -> Child_Kind {
+    return window.child_kind
+}
+
+set_on_draw :: proc(window: ^Window, on_draw: proc(window: ^Window)) {
+    window.on_draw = on_draw
+}
+
+set_on_update :: proc(window: ^Window, on_update: proc(window: ^Window)) {
+    window.on_update = on_update
 }
 
 set_on_move :: proc(window: ^Window, on_move: proc(window: ^Window, position: Vec2)) {
@@ -220,13 +276,16 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .EXPOSE:
         window := cast(^Window)pugl.GetHandle(view)
         context = window.odin_context
-
-        window.content_scale = f32(pugl.GetScaleFactor(view))
-        if window.on_frame != nil {
-            window->on_frame()
+        if window.on_draw != nil {
+            window->on_draw()
         }
 
     case .UPDATE:
+        window := cast(^Window)pugl.GetHandle(view)
+        context = window.odin_context
+        if window.on_update != nil {
+            window->on_update()
+        }
         pugl.PostRedisplay(view)
 
     case .CONFIGURE:
@@ -237,16 +296,16 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         position := Vec2{f32(event.x), f32(event.y)}
         size := Vec2{f32(event.width), f32(event.height)}
 
-        if window.on_move != nil && position != window.position {
+        if window.on_move != nil && position != window.last_position {
             window->on_move(position)
         }
 
-        if window.on_resize != nil && size != window.size {
+        if window.on_resize != nil && size != window.last_size {
             window->on_resize(size)
         }
 
-        window.position = position
-        window.size = size
+        window.last_position = position
+        window.last_size = size
 
     case .MOTION:
         window := cast(^Window)pugl.GetHandle(view)

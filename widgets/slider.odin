@@ -49,6 +49,7 @@ draw_slider :: proc(ctx: ^Context, slider: ^Slider) {
         gui.begin_path(ctx)
         gui.rounded_rect(ctx, handle_position, handle_size, 3)
         gui.fill_path(ctx, rgba(0, 0, 0, 8))
+
     } else if gui.is_hovered(ctx, handle.id) {
         gui.begin_path(ctx)
         gui.rounded_rect(ctx, handle_position, handle_size, 3)
@@ -77,7 +78,7 @@ update_slider :: proc(ctx: ^Context, slider: ^Slider) {
         slider.global_mouse_position_when_handle_grabbed = global_mouse_position
     }
 
-    sensitivity: f32 =  gui.key_down(ctx, .Left_Control) ? 0.15 : 1.0
+    sensitivity: f32 = gui.key_down(ctx, .Left_Control) ? 0.15 : 1.0
 
     if handle.is_down {
         grab_delta := global_mouse_position.x - slider.global_mouse_position_when_handle_grabbed.x
