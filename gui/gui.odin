@@ -12,9 +12,14 @@ import "window"
 
 @(thread_local) ctx: ^Context
 
-Font :: int
 Vec2 :: [2]f32
 Color :: [4]f32
+Paint :: nvg.Paint
+
+Font :: struct {
+    name: string,
+    data: []byte,
+}
 
 Cursor_Style :: window.Cursor_Style
 Mouse_Button :: window.Mouse_Button
@@ -27,6 +32,7 @@ Path_Winding :: enum {
 
 Window :: struct {
     using window: ^window.Window,
+
     is_hovered: bool,
     tick: time.Tick,
     previous_tick: time.Tick,
@@ -40,22 +46,37 @@ Window :: struct {
     key_releases: [dynamic]Keyboard_Key,
     key_down_states: [Keyboard_Key]bool,
     text_input: strings.Builder,
+
+    nvg_ctx: ^nvg.Context,
+    current_font: ^Font,
+    current_font_size: f32,
+
+    loaded_fonts: [dynamic]^Font,
 }
 
 Context :: struct {
     update_proc: proc(),
-
-    nvg_ctx: ^nvg.Context,
-    font: Font,
-    font_size: f32,
-
     dummy_window: ^window.Window,
     current_window: ^Window,
     windows: map[string]^Window,
     window_stack: [dynamic]^Window,
+    default_font: ^Font,
 }
 
-startup :: proc(on_update: proc()) {
+create_font :: proc(name: string, data: []byte) -> ^Font {
+    font := new(Font)
+    font.name = name
+    font.data = data
+    return font
+}
+
+destroy_font :: proc(font: ^Font) {
+    free(font)
+}
+
+startup :: proc(app_id: string, default_font: ^Font, on_update: proc()) {
+    window.startup(app_id)
+
     dummy_window, err := window.create()
     if err != nil {
         fmt.eprintln("Failed to create gui context.")
@@ -63,12 +84,12 @@ startup :: proc(on_update: proc()) {
     }
 
     ctx = new(Context)
+    ctx.default_font = default_font
     ctx.dummy_window = dummy_window
     dummy_window.user_data = ctx
 
     window.activate_context(dummy_window)
     gl.load_up_to(3, 3, window.gl_set_proc_address)
-    ctx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
     window.deactivate_context(dummy_window)
 
     ctx.update_proc = on_update
@@ -81,16 +102,13 @@ startup :: proc(on_update: proc()) {
 
 shutdown :: proc() {
     dummy_window := ctx.dummy_window
-    window.activate_context(dummy_window)
-    nvg_gl.Destroy(ctx.nvg_ctx)
-    window.deactivate_context(dummy_window)
     window.destroy(dummy_window)
 
     // Clean up windows.
     for key in ctx.windows {
         w := ctx.windows[key]
         if w.window != nil {
-            window.destroy(w)
+            _destroy_window(w)
         }
         delete(w.mouse_presses)
         delete(w.mouse_releases)
@@ -106,12 +124,17 @@ shutdown :: proc() {
     free(ctx)
 }
 
-update :: proc() {
-    window.update(ctx.dummy_window)
+update :: window.update
+
+_destroy_window :: proc(w: ^Window) {
+    window.activate_context(w)
+    nvg_gl.Destroy(w.nvg_ctx)
+    window.deactivate_context(w)
+    window.destroy(w)
+    delete(w.loaded_fonts)
 }
 
-@(private)
-setup_window_callbacks :: proc(w: ^Window) {
+_setup_window_callbacks :: proc(w: ^Window) {
     window.set_on_mouse_move(w, proc(_w: ^window.Window, position: [2]f32) {
         w := cast(^Window)_w.user_data
         w.mouse_position = position
@@ -159,14 +182,19 @@ begin_window :: proc(id: string, background_color := Color{0, 0, 0, 1}) -> bool 
     if !exists {
         _w, err := window.create(id)
         if err != nil {
-            fmt.eprintf("Failed to open window: %v", id)
+            fmt.eprintf("Failed to open window: %v\n", id)
             return false
         }
         w = new(Window)
         w.window = _w
         _w.user_data = w
         ctx.windows[id] = w
-        setup_window_callbacks(w)
+
+        window.activate_context(w)
+        w.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
+        window.deactivate_context(w)
+
+        _setup_window_callbacks(w)
         window.show(w)
     }
 
@@ -177,8 +205,7 @@ begin_window :: proc(id: string, background_color := Color{0, 0, 0, 1}) -> bool 
     append(&ctx.window_stack, w)
     ctx.current_window = w
 
-    window.update(w)
-    window.activate_context(ctx.dummy_window)
+    window.activate_context(w)
 
     size := window.size(w)
     content_scale := window.content_scale(w)
@@ -188,10 +215,10 @@ begin_window :: proc(id: string, background_color := Color{0, 0, 0, 1}) -> bool 
 
     gl.Viewport(0, 0, i32(size.x), i32(size.y))
 
-    nvg.BeginFrame(ctx.nvg_ctx, size.x, size.y, content_scale)
-    nvg.TextAlign(ctx.nvg_ctx, .LEFT, .TOP)
-    ctx.font = 0
-    ctx.font_size = 16.0
+    nvg.BeginFrame(w.nvg_ctx, size.x, size.y, content_scale)
+    nvg.TextAlign(w.nvg_ctx, .LEFT, .TOP)
+    w.current_font = ctx.default_font
+    w.current_font_size = 16.0
 
     return true
 }
@@ -209,21 +236,22 @@ end_window :: proc() {
     w.previous_mouse_position = w.mouse_position
     w.previous_tick = w.tick
 
-    window.deactivate_context(ctx.dummy_window)
-
-    if window.close_requested(w) {
-        window.destroy(w)
-        w.window = nil
-    }
-
     if len(ctx.window_stack) == 0 {
         ctx.current_window = nil
     } else {
         ctx.current_window = ctx.window_stack[len(ctx.window_stack) - 1]
     }
 
-    nvg.EndFrame(ctx.nvg_ctx)
+    nvg.EndFrame(w.nvg_ctx)
+    window.deactivate_context(w)
+
+    if window.close_requested(w) {
+        _destroy_window(w)
+        w.window = nil
+    }
 }
+
+
 
 window_will_close :: proc() -> bool {
     return window.close_requested(ctx.current_window)
@@ -311,7 +339,113 @@ text_input :: proc() -> string {
 
 
 
+solid_paint :: proc(color: Color) -> Paint {
+    paint: Paint
+    nvg.TransformIdentity(&paint.xform)
+    paint.radius = 0.0
+    paint.feather = 1.0
+    paint.innerColor = color
+    paint.outerColor = color
+    return paint
+}
 
+begin_path :: proc() {
+    nvg.BeginPath(ctx.current_window.nvg_ctx)
+}
+
+close_path :: proc() {
+    nvg.ClosePath(ctx.current_window.nvg_ctx)
+}
+
+move_to :: proc(position: Vec2) {
+    nvg.MoveTo(ctx.current_window.nvg_ctx, position.x, position.y)
+}
+
+line_to :: proc(position: Vec2) {
+    nvg.LineTo(ctx.current_window.nvg_ctx, position.x, position.y)
+}
+
+arc_to :: proc(p0, p1: Vec2, radius: f32) {
+    nvg.ArcTo(ctx.current_window.nvg_ctx, p0.x, p0.y, p1.x, p1.y, radius)
+}
+
+rect :: proc(position, size: Vec2, winding: Path_Winding = .Positive) {
+    w := ctx.current_window
+    nvg.Rect(w.nvg_ctx, position.x, position.y, size.x, size.y)
+    nvg.PathWinding(w.nvg_ctx, _path_winding_to_nvg_winding(winding))
+}
+
+rounded_rect_varying :: proc(position, size: Vec2, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius: f32, winding: Path_Winding = .Positive) {
+    w := ctx.current_window
+    nvg.RoundedRectVarying(w.nvg_ctx,
+        position.x, position.y, size.x, size.y,
+        top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius,
+    )
+    nvg.PathWinding(w.nvg_ctx, _path_winding_to_nvg_winding(winding))
+}
+
+rounded_rect :: proc(position, size: Vec2, radius: f32, winding: Path_Winding = .Positive) {
+    rounded_rect_varying(position, size, radius, radius, radius, radius, winding)
+}
+
+fill_path_paint :: proc(paint: Paint) {
+    w := ctx.current_window
+    nvg.FillPaint(w.nvg_ctx, paint)
+    nvg.Fill(w.nvg_ctx)
+}
+
+fill_path :: proc(color: Color) {
+    fill_path_paint(solid_paint(color))
+}
+
+fill_text_line :: proc(text: string, position: Vec2, color := Color{1, 1, 1, 1}, font := ctx.default_font, font_size: f32 = 13.0) {
+    if len(text) == 0 {
+        return
+    }
+    w := ctx.current_window
+    _set_font(w, font)
+    _set_font_size(w, font_size)
+    nvg.FillColor(w.nvg_ctx, color)
+    nvg.Text(w.nvg_ctx, position.x, position.y, text)
+}
+
+text_metrics :: proc(w: ^Window, font: ^Font, font_size: f32) -> (ascender, descender, line_height: f32) {
+    _set_font(w, font)
+    _set_font_size(w, font_size)
+    return nvg.TextMetrics(w.nvg_ctx)
+}
+
+_set_font :: proc(w: ^Window, font: ^Font) {
+    if !slice.contains(w.loaded_fonts[:], font) {
+        id := nvg.CreateFontMem(w.nvg_ctx, font.name, font.data, false)
+        if id == -1 {
+            fmt.eprintf("Failed to load font: %v\n", font.name)
+            return
+        }
+        append(&w.loaded_fonts, font)
+    }
+    if font == w.current_font {
+        return
+    }
+    nvg.FontFace(w.nvg_ctx, font.name)
+    w.current_font = font
+}
+
+_set_font_size :: proc(w: ^Window, font_size: f32) {
+    if font_size == w.current_font_size {
+        return
+    }
+    nvg.FontSize(w.nvg_ctx, font_size)
+    w.current_font_size = font_size
+}
+
+_path_winding_to_nvg_winding :: proc(winding: Path_Winding) -> nvg.Winding {
+    switch winding {
+    case .Negative: return .CW
+    case .Positive: return .CCW
+    }
+    return .CW
+}
 
 
 

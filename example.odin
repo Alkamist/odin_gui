@@ -5,41 +5,23 @@ import "core:fmt"
 import "core:thread"
 import "gui"
 
-import nvg "vendor:nanovg"
-
 should_quit := false
+consola: ^gui.Font
 
 main_loop :: proc() {
-	nvg_ctx := gui.ctx.nvg_ctx
 	if gui.begin_window("Window 1", background_color = {0.05, 0, 0, 1}) {
-		nvg.BeginPath(nvg_ctx)
-		nvg.Rect(nvg_ctx, 50, 50, 200, 200)
-		nvg.FillColor(nvg_ctx, {1, 0, 0, 1})
-		nvg.Fill(nvg_ctx)
-
-		if gui.mouse_pressed(.Left) {
-			fmt.println("Pressed")
-		}
+		gui.fill_text_line("Hello World 1", gui.mouse_position())
 
 		if gui.window_will_close() {
-			fmt.println("Closed")
 			should_quit = true
 		}
 
 		gui.end_window()
 	}
 	if gui.begin_window("Window 2", background_color = {0, 0.05, 0, 1}) {
-		nvg.BeginPath(nvg_ctx)
-		nvg.Rect(nvg_ctx, 50, 50, 200, 200)
-		nvg.FillColor(nvg_ctx, {1, 0, 0, 1})
-		nvg.Fill(nvg_ctx)
-
-		if gui.mouse_pressed(.Left) {
-			fmt.println("Pressed")
-		}
+		gui.fill_text_line("Hello World 2", gui.mouse_position())
 
 		if gui.window_will_close() {
-			fmt.println("Closed")
 			should_quit = true
 		}
 
@@ -70,7 +52,10 @@ main :: proc() {
 		}
 	}
 
-	gui.startup(main_loop)
+	consola = gui.create_font("Consola", #load("consola.ttf"))
+	defer gui.destroy_font(consola)
+
+	gui.startup("DemoApp", consola, main_loop)
 	defer gui.shutdown()
 
 	for !should_quit {

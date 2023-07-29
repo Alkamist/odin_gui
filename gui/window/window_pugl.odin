@@ -4,9 +4,11 @@ import "core:c"
 import "core:fmt"
 import "core:strings"
 import "core:runtime"
-import "core:intrinsics"
 import utf8 "core:unicode/utf8"
 import "pugl"
+
+@(thread_local)
+_world: ^pugl.World
 
 gl_set_proc_address :: pugl.gl_set_proc_address
 
@@ -43,9 +45,31 @@ Window :: struct {
     parent_handle: rawptr,
 
     view: ^pugl.View,
-    world: ^pugl.World,
 
     odin_context: runtime.Context,
+}
+
+startup :: proc(id: string) {
+    when ODIN_BUILD_MODE == .Dynamic {
+        world_type := pugl.WorldType.MODULE
+    } else {
+        world_type := pugl.WorldType.PROGRAM
+    }
+
+    _world = pugl.NewWorld(world_type, {})
+
+    id_cstring := strings.clone_to_cstring(id)
+    defer delete(id_cstring)
+
+    pugl.SetWorldString(_world, .CLASS_NAME, id_cstring)
+}
+
+shutdown :: proc() {
+    pugl.FreeWorld(_world)
+}
+
+update :: proc() {
+    pugl.Update(_world, 0)
 }
 
 create :: proc(
@@ -65,8 +89,6 @@ create :: proc(
     window := new(Window)
     window.odin_context = context
 
-    world_type := pugl.WorldType.PROGRAM
-
     if parent_handle != nil {
         if child_kind == .None {
             child_kind = .Embedded
@@ -75,21 +97,7 @@ create :: proc(
         window.parent_handle = parent_handle
     }
 
-    if child_kind == .Embedded {
-        world_type = .MODULE
-    }
-
-    world := pugl.NewWorld(world_type, {})
-
-    class_name := fmt.aprint("WindowClass#d", _get_window_class_id())
-    defer delete(class_name)
-
-    class_name_cstring := strings.clone_to_cstring(class_name)
-    defer delete(class_name_cstring)
-
-    pugl.SetWorldString(world, .CLASS_NAME, class_name_cstring)
-
-    view := pugl.NewView(world)
+    view := pugl.NewView(_world)
 
     title_cstring := strings.clone_to_cstring(title)
     defer delete(title_cstring)
@@ -127,13 +135,11 @@ create :: proc(
 
     if status != .SUCCESS {
         pugl.FreeView(view)
-        pugl.FreeWorld(world)
         free(window)
         fmt.eprintln(pugl.Strerror(status))
         return nil, .Failed_To_Open
     }
 
-    window.world = world
     window.view = view
     pugl.SetHandle(view, window)
 
@@ -143,12 +149,7 @@ create :: proc(
 destroy :: proc(window: ^Window) {
     pugl.Unrealize(window.view)
     pugl.FreeView(window.view)
-    pugl.FreeWorld(window.world)
     free(window)
-}
-
-update :: proc(window: ^Window) {
-    pugl.Update(window.world, 0)
 }
 
 parent_handle :: proc(window: ^Window) -> Native_Handle {
@@ -263,11 +264,6 @@ set_on_key_release :: proc(window: ^Window, on_key_release: proc(window: ^Window
 
 set_on_rune :: proc(window: ^Window, on_rune: proc(window: ^Window, r: rune)) {
     window.on_rune = on_rune
-}
-
-_get_window_class_id :: proc "contextless" () -> u64 {
-    @(static) last_id: u64
-    return 1 + intrinsics.atomic_add(&last_id, 1)
 }
 
 _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
