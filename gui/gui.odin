@@ -55,6 +55,7 @@ Window :: struct {
     current_font: ^Font,
     current_font_size: f32,
 
+    child_windows: map[string]^Window,
     loaded_fonts: [dynamic]^Font,
 }
 
@@ -62,7 +63,7 @@ Context :: struct {
     on_update: proc(),
     dummy_window: wnd.Window,
     current_window: ^Window,
-    windows: map[string]^Window,
+    top_level_windows: map[string]^Window,
     window_stack: [dynamic]^Window,
     default_font: ^Font,
 }
@@ -104,82 +105,30 @@ shutdown :: proc() {
     wnd.close(&ctx.dummy_window)
 
     // Clean up windows.
-    for key in ctx.windows {
-        w := ctx.windows[key]
+    for key in ctx.top_level_windows {
+        w := ctx.top_level_windows[key]
         _close_window(w)
-        delete(w.mouse_presses)
-        delete(w.mouse_releases)
-        delete(w.key_presses)
-        delete(w.key_releases)
-        strings.builder_destroy(&w.text_input)
-        delete(w.loaded_fonts)
-        free(w)
+        _destroy_window(w)
     }
 
     wnd.shutdown()
 
-    delete(ctx.windows)
+    delete(ctx.top_level_windows)
     delete(ctx.window_stack)
 }
 
 update :: wnd.update
 
-_close_window :: proc(w: ^Window) {
-    if !w.is_open {
-        return
-    }
-    wnd.activate_context(w)
-    nvg_gl.Destroy(w.nvg_ctx)
-    w.nvg_ctx = nil
-    wnd.close(w)
-    clear(&w.loaded_fonts)
-}
-
-_setup_window_callbacks :: proc(w: ^Window) {
-    wnd.set_on_mouse_move(w, proc(_w: ^wnd.Window, position: [2]f32) {
-        w := cast(^Window)_w.user_data
-        w.mouse_position = position
-    })
-    wnd.set_on_mouse_enter(w, proc(_w: ^wnd.Window) {
-        w := cast(^Window)_w.user_data
-        w.is_hovered = true
-    })
-    wnd.set_on_mouse_exit(w, proc(_w: ^wnd.Window) {
-        w := cast(^Window)_w.user_data
-        w.is_hovered = false
-    })
-    wnd.set_on_mouse_wheel(w, proc(_w: ^wnd.Window, amount: [2]f32) {
-        w := cast(^Window)_w.user_data
-        w.mouse_wheel_state = amount
-    })
-    wnd.set_on_mouse_press(w, proc(_w: ^wnd.Window, button: Mouse_Button) {
-        w := cast(^Window)_w.user_data
-        w.mouse_down_states[button] = true
-        append(&w.mouse_presses, button)
-    })
-    wnd.set_on_mouse_release(w, proc(_w: ^wnd.Window, button: Mouse_Button) {
-        w := cast(^Window)_w.user_data
-        w.mouse_down_states[button] = false
-        append(&w.mouse_releases, button)
-    })
-    wnd.set_on_key_press(w, proc(_w: ^wnd.Window, key: Keyboard_Key) {
-        w := cast(^Window)_w.user_data
-        w.key_down_states[key] = true
-        append(&w.key_presses, key)
-    })
-    wnd.set_on_key_release(w, proc(_w: ^wnd.Window, key: Keyboard_Key) {
-        w := cast(^Window)_w.user_data
-        w.key_down_states[key] = false
-        append(&w.key_releases, key)
-    })
-    wnd.set_on_rune(w, proc(_w: ^wnd.Window, r: rune) {
-        w := cast(^Window)_w.user_data
-        strings.write_rune(&w.text_input, r)
-    })
-}
-
 begin_window :: proc(id: string) -> bool {
-    w, exists := ctx.windows[id]
+    window_map: ^map[string]^Window
+
+    if ctx.current_window == nil {
+        window_map = &ctx.top_level_windows
+    } else {
+        window_map = &ctx.current_window.child_windows
+    }
+
+    w, exists := window_map[id]
 
     if !exists {
         w = new(Window)
@@ -204,7 +153,8 @@ begin_window :: proc(id: string) -> bool {
         w.tick = time.tick_now()
         w.previous_tick = w.tick
         w.window.user_data = w
-        ctx.windows[id] = w
+
+        window_map[id] = w
 
         wnd.activate_context(w)
         w.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
@@ -470,6 +420,8 @@ text_metrics :: proc(w: ^Window, font: ^Font, font_size: f32) -> (ascender, desc
     return nvg.TextMetrics(w.nvg_ctx)
 }
 
+
+
 _set_font :: proc(w: ^Window, font: ^Font) {
     if !slice.contains(w.loaded_fonts[:], font) {
         id := nvg.CreateFontMem(w.nvg_ctx, font.name, font.data, false)
@@ -502,458 +454,73 @@ _path_winding_to_nvg_winding :: proc(winding: Path_Winding) -> nvg.Winding {
     return .CW
 }
 
-
-
-
-
-
-
-// create :: proc(
-//     title := "",
-//     size := Vec2{400, 300},
-//     min_size: Maybe(Vec2) = nil,
-//     max_size: Maybe(Vec2) = nil,
-//     swap_interval := 1,
-//     dark_mode := true,
-//     resizable := true,
-//     double_buffer := true,
-// ) -> (^Context, Context_Error) {
-//     ctx := new(Context)
-//     w, err := wnd.create(
-//         title,
-//         size,
-//         min_size,
-//         max_size,
-//         swap_interval,
-//         dark_mode,
-//         resizable,
-//         double_buffer,
-//     )
-//     if err != nil {
-//         free(ctx)
-//         return nil, err
-//     }
-
-//     ctx.wnd = w
-//     w.user_data = ctx
-
-//     wnd.activate_context(w)
-//     gl.load_up_to(3, 3, wnd.gl_set_proc_address)
-//     ctx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
-//     wnd.deactivate_context(w)
-
-//     wnd.set_on_mouse_move(ctx.wnd, proc(w: ^wnd.Window, position: [2]f32) {
-//         ctx := cast(^Context)w.user_data
-//         ctx.global_mouse_position = position
-//     })
-//     wnd.set_on_mouse_enter(ctx.wnd, proc(w: ^wnd.Window) {
-//         ctx := cast(^Context)w.user_data
-//         ctx.window_is_hovered = true
-//     })
-//     wnd.set_on_mouse_exit(ctx.wnd, proc(w: ^wnd.Window) {
-//         ctx := cast(^Context)w.user_data
-//         ctx.window_is_hovered = false
-//     })
-//     wnd.set_on_mouse_wheel(ctx.wnd, proc(w: ^wnd.Window, amount: [2]f32) {
-//         ctx := cast(^Context)w.user_data
-//         ctx.mouse_wheel_state = amount
-//     })
-//     wnd.set_on_mouse_press(ctx.wnd, proc(w: ^wnd.Window, button: Mouse_Button) {
-//         ctx := cast(^Context)w.user_data
-//         ctx.mouse_down_states[button] = true
-//         append(&ctx.mouse_presses, button)
-//     })
-//     wnd.set_on_mouse_release(ctx.wnd, proc(w: ^wnd.Window, button: Mouse_Button) {
-//         ctx := cast(^Context)w.user_data
-//         ctx.mouse_down_states[button] = false
-//         append(&ctx.mouse_releases, button)
-//     })
-//     wnd.set_on_key_press(ctx.wnd, proc(w: ^wnd.Window, key: Keyboard_Key) {
-//         ctx := cast(^Context)w.user_data
-//         ctx.key_down_states[key] = true
-//         append(&ctx.key_presses, key)
-//     })
-//     wnd.set_on_key_release(ctx.wnd, proc(w: ^wnd.Window, key: Keyboard_Key) {
-//         ctx := cast(^Context)w.user_data
-//         ctx.key_down_states[key] = false
-//         append(&ctx.key_releases, key)
-//     })
-//     wnd.set_on_rune(ctx.wnd, proc(w: ^wnd.Window, r: rune) {
-//         ctx := cast(^Context)w.user_data
-//         strings.write_rune(&ctx.text_input, r)
-//     })
-
-//     return ctx, nil
-// }
-
-// destroy :: proc(ctx: ^Context) {
-//     wnd.activate_context(ctx.wnd)
-//     nvg_gl.Destroy(ctx.nvg_ctx)
-//     wnd.deactivate_context(ctx.wnd)
-
-//     wnd.destroy(ctx.wnd)
-
-//     delete(ctx.mouse_presses)
-//     delete(ctx.mouse_releases)
-//     delete(ctx.key_presses)
-//     delete(ctx.key_releases)
-//     strings.builder_destroy(&ctx.text_input)
-
-//     delete(ctx.offset_stack)
-//     delete(ctx.clip_region_stack)
-//     delete(ctx.interaction_tracker_stack)
-//     delete(ctx.layers)
-//     delete(ctx.layer_stack)
-
-//     free(ctx)
-// }
-
-// update :: proc(ctx: ^Context) {
-//     wnd.update(ctx.wnd)
-// }
-
-// activate_gl_context :: proc(ctx: ^Context) {
-//     wnd.activate_context(ctx.wnd)
-// }
-
-// deactivate_gl_context :: proc(ctx: ^Context) {
-//     wnd.deactivate_context(ctx.wnd)
-// }
-
-// close :: proc(ctx: ^Context) {
-//     wnd.close(ctx.wnd)
-// }
-
-// close_requested :: proc(ctx: ^Context) -> bool {
-//     return wnd.close_requested(ctx.wnd)
-// }
-
-// show :: proc(ctx: ^Context) {
-//     wnd.show(ctx.wnd)
-// }
-
-// hide :: proc(ctx: ^Context) {
-//     wnd.hide(ctx.wnd)
-// }
-
-// position :: proc(ctx: ^Context) -> Vec2 {
-//     return wnd.position(ctx.wnd)
-// }
-
-// size :: proc(ctx: ^Context) -> Vec2 {
-//     return wnd.size(ctx.wnd)
-// }
-
-// content_scale :: proc(ctx: ^Context) -> f32 {
-//     return wnd.content_scale(ctx.wnd)
-// }
-
-// set_background_color :: proc(ctx: ^Context, color: Color) {
-//     ctx.background_color = color
-// }
-
-// set_on_frame :: proc(ctx: ^Context, on_frame: proc(^Context)) {
-//     ctx.on_frame = on_frame
-//     wnd.set_on_frame(ctx.wnd, proc(wnd: ^wnd.Window) {
-//         ctx := cast(^Context)wnd.user_data
-//         ctx->on_frame()
-//     })
-// }
-
-// window_is_hovered :: proc(ctx: ^Context) -> bool {
-//     return ctx.window_is_hovered
-// }
-
-// global_mouse_position :: proc(ctx: ^Context) -> Vec2 {
-//     return ctx.global_mouse_position
-// }
-
-// mouse_position :: proc(ctx: ^Context) -> Vec2 {
-//     return ctx.global_mouse_position - current_offset(ctx)
-// }
-
-// mouse_delta :: proc(ctx: ^Context) -> Vec2 {
-//     return ctx.global_mouse_position - ctx.previous_global_mouse_position
-// }
-
-// delta_time :: proc(ctx: ^Context) -> time.Duration {
-//     return time.tick_diff(ctx.previous_tick, ctx.tick)
-// }
-
-// mouse_down :: proc(ctx: ^Context, button: Mouse_Button) -> bool {
-//     return ctx.mouse_down_states[button]
-// }
-
-// key_down :: proc(ctx: ^Context, key: Keyboard_Key) -> bool {
-//     return ctx.key_down_states[key]
-// }
-
-// mouse_wheel :: proc(ctx: ^Context) -> Vec2 {
-//     return ctx.mouse_wheel_state
-// }
-
-// mouse_moved :: proc(ctx: ^Context) -> bool {
-//     return mouse_delta(ctx) != {0, 0}
-// }
-
-// mouse_wheel_moved :: proc(ctx: ^Context) -> bool {
-//     return ctx.mouse_wheel_state != {0, 0}
-// }
-
-// mouse_pressed :: proc(ctx: ^Context, button: Mouse_Button) -> bool {
-//     return slice.contains(ctx.mouse_presses[:], button)
-// }
-
-// mouse_released :: proc(ctx: ^Context, button: Mouse_Button) -> bool {
-//     return slice.contains(ctx.mouse_releases[:], button)
-// }
-
-// any_mouse_pressed :: proc(ctx: ^Context) -> bool {
-//     return len(ctx.mouse_presses) > 0
-// }
-
-// any_mouse_released :: proc(ctx: ^Context) -> bool {
-//     return len(ctx.mouse_releases) > 0
-// }
-
-// key_pressed :: proc(ctx: ^Context, key: Keyboard_Key) -> bool {
-//     return slice.contains(ctx.key_presses[:], key)
-// }
-
-// key_released :: proc(ctx: ^Context, key: Keyboard_Key) -> bool {
-//     return slice.contains(ctx.key_releases[:], key)
-// }
-
-// any_key_pressed :: proc(ctx: ^Context) -> bool {
-//     return len(ctx.key_presses) > 0
-// }
-
-// any_key_released :: proc(ctx: ^Context) -> bool {
-//     return len(ctx.key_releases) > 0
-// }
-
-// key_presses :: proc(ctx: ^Context) -> []Keyboard_Key {
-//     return ctx.key_presses[:]
-// }
-
-// key_releases :: proc(ctx: ^Context) -> []Keyboard_Key {
-//     return ctx.key_releases[:]
-// }
-
-// text_input :: proc(ctx: ^Context) -> string {
-//     return strings.to_string(ctx.text_input)
-// }
-
-// current_offset :: proc(ctx: ^Context) -> Vec2 {
-//     return ctx.offset_stack[len(ctx.offset_stack) - 1]
-// }
-
-// begin_offset :: proc(ctx: ^Context, offset: Vec2, global := false) {
-//     if global {
-//         append(&ctx.offset_stack, offset)
-//     } else {
-//         append(&ctx.offset_stack, current_offset(ctx) + offset)
-//     }
-// }
-
-// end_offset :: proc(ctx: ^Context) -> Vec2 {
-//     return pop(&ctx.offset_stack)
-// }
-
-// current_clip_region :: proc(ctx: ^Context, global := false) -> Region {
-//     region := ctx.clip_region_stack[len(ctx.clip_region_stack) - 1]
-//     if !global {
-//         region.position -= current_offset(ctx)
-//     }
-//     return region
-// }
-
-// begin_clip_region :: proc(ctx: ^Context, region: Region, global := false, intersect := true) {
-//     region := region
-
-//     // Make it global
-//     if !global {
-//         region.position += current_offset(ctx)
-//     }
-
-//     // Intersect with global
-//     if intersect {
-//         region = intersect_region(region, current_clip_region(ctx, global = true))
-//     }
-
-//     append(&ctx.clip_region_stack, region)
-//     append(&current_layer(ctx).draw_commands, Clip_Command{
-//         region.position,
-//         region.size,
-//     })
-// }
-
-// end_clip_region :: proc(ctx: ^Context) -> Region {
-//     result := pop(&ctx.clip_region_stack)
-
-//     if len(ctx.clip_region_stack) == 0 {
-//         return result
-//     }
-
-//     region := current_clip_region(ctx)
-//     append(&current_layer(ctx).draw_commands, Clip_Command{
-//         region.position,
-//         region.size,
-//     })
-
-//     return result
-// }
-
-// current_z_index :: proc(ctx: ^Context) -> int {
-//     return current_layer(ctx).z_index
-// }
-
-// begin_z_index :: proc(ctx: ^Context, z_index: int, global := false) {
-//     if global {
-//         append(&ctx.layer_stack, Layer{z_index = z_index})
-//     } else {
-//         append(&ctx.layer_stack, Layer{z_index = current_z_index(ctx) + z_index})
-//     }
-// }
-
-// end_z_index :: proc(ctx: ^Context) -> int {
-//     layer := pop(&ctx.layer_stack)
-//     append(&ctx.layers, layer)
-//     return layer.z_index
-// }
-
-// begin_interaction_tracker :: proc(ctx: ^Context) {
-//     append(&ctx.interaction_tracker_stack, Interaction_Tracker{})
-// }
-
-// end_interaction_tracker :: proc(ctx: ^Context) -> Interaction_Tracker {
-//     tracker := pop(&ctx.interaction_tracker_stack)
-
-//     if tracker.detected_hover {
-//         ctx.interaction_tracker_stack[len(ctx.interaction_tracker_stack) - 1].detected_hover = true
-//     }
-
-//     if tracker.detected_mouse_over {
-//         ctx.interaction_tracker_stack[len(ctx.interaction_tracker_stack) - 1].detected_mouse_over = true
-//     }
-
-//     return tracker
-// }
-
-// is_hovered :: proc(ctx: ^Context, id: Id) -> bool {
-//     return ctx.hover == id
-// }
-
-// mouse_is_over :: proc(ctx: ^Context, id: Id) -> bool {
-//     return ctx.mouse_over == id
-// }
-
-// request_hover :: proc(ctx: ^Context, id: Id) {
-//     current_layer(ctx).final_hover_request = id
-
-//     if ctx.hover == id {
-//         ctx.interaction_tracker_stack[len(ctx.interaction_tracker_stack) - 1].detected_hover = true
-//     }
-
-//     if ctx.mouse_over == id {
-//         ctx.interaction_tracker_stack[len(ctx.interaction_tracker_stack) - 1].detected_mouse_over = true
-//     }
-// }
-
-// capture_hover :: proc(ctx: ^Context, id: Id) {
-//     if ctx.hover_capture == 0 {
-//         ctx.hover_capture = id
-//     }
-// }
-
-// release_hover :: proc(ctx: ^Context, id: Id) {
-//     if ctx.hover_capture == id {
-//         ctx.hover_capture = 0
-//     }
-// }
-
-// mouse_hit_test :: proc(ctx: ^Context, position, size: Vec2) -> bool {
-//     m := mouse_position(ctx)
-//     return window_is_hovered(ctx) &&
-//            m.x >= position.x && m.x <= position.x + size.x &&
-//            m.y >= position.y && m.y <= position.y + size.y &&
-//            region_contains_position(current_clip_region(ctx), m)
-// }
-
-// begin_frame :: proc(ctx: ^Context) {
-//     bg := ctx.background_color
-//     gl.ClearColor(bg.r, bg.g, bg.b, bg.a)
-//     gl.Clear(gl.COLOR_BUFFER_BIT)
-
-//     size := size(ctx)
-//     content_scale := content_scale(ctx)
-//     gl.Viewport(0, 0, i32(size.x), i32(size.y))
-//     nvg.BeginFrame(ctx.nvg_ctx, size.x, size.y, content_scale)
-//     nvg.TextAlign(ctx.nvg_ctx, .LEFT, .TOP)
-//     ctx.font = 0
-//     ctx.font_size = 16.0
-
-//     begin_z_index(ctx, 0, global = true)
-//     begin_offset(ctx, 0, global = true)
-//     begin_clip_region(ctx, {{0, 0}, size}, global = true, intersect = false)
-//     append(&ctx.interaction_tracker_stack, Interaction_Tracker{})
-
-//     ctx.tick = time.tick_now()
-// }
-
-// end_frame :: proc(ctx: ^Context) {
-//     pop(&ctx.interaction_tracker_stack)
-//     end_clip_region(ctx)
-//     end_offset(ctx)
-//     end_z_index(ctx)
-
-//     assert(len(ctx.offset_stack) == 0, "Mismatch in begin_offset and end_offset calls.")
-//     assert(len(ctx.clip_region_stack) == 0, "Mismatch in begin_clip_region and end_clip_region calls.")
-//     assert(len(ctx.interaction_tracker_stack) == 0, "Mismatch in begin_interaction_tracker and end_interaction_tracker calls.")
-//     assert(len(ctx.layer_stack) == 0, "Mismatch in begin_z_index and end_z_index calls.")
-
-//     // The layers are in reverse order because they were added in end_z_index.
-//     // Stable sort preserves the order of layers with the same z index, so they
-//     // must first be reversed and then sorted to keep that ordering in tact.
-//     slice.reverse(ctx.layers[:])
-//     slice.stable_sort_by(ctx.layers[:], proc(i, j: Layer) -> bool {
-//         return i.z_index < j.z_index
-//     })
-
-//     ctx.hover = 0
-//     ctx.mouse_over = 0
-//     highest_z_index := min(int)
-
-//     for layer in ctx.layers {
-//         if layer.z_index > highest_z_index {
-//             highest_z_index = layer.z_index
-//         }
-//         _render_draw_commands(ctx, layer.draw_commands[:])
-
-//         hover_request := layer.final_hover_request
-//         if hover_request != 0 {
-//             ctx.hover = hover_request
-//             ctx.mouse_over = hover_request
-//         }
-
-//         delete(layer.draw_commands)
-//     }
-
-//     if ctx.hover_capture != 0 {
-//         ctx.hover = ctx.hover_capture
-//     }
-
-//     ctx.highest_z_index = highest_z_index
-
-//     clear(&ctx.layers)
-//     clear(&ctx.mouse_presses)
-//     clear(&ctx.mouse_releases)
-//     clear(&ctx.key_presses)
-//     clear(&ctx.key_releases)
-//     strings.builder_reset(&ctx.text_input)
-//     ctx.mouse_wheel_state = {0, 0}
-//     ctx.previous_global_mouse_position = ctx.global_mouse_position
-//     ctx.previous_tick = ctx.tick
-
-//     nvg.EndFrame(ctx.nvg_ctx)
-// }
+_destroy_window :: proc(w: ^Window) {
+    for _, child in w.child_windows {
+        _destroy_window(child)
+    }
+    delete(w.mouse_presses)
+    delete(w.mouse_releases)
+    delete(w.key_presses)
+    delete(w.key_releases)
+    strings.builder_destroy(&w.text_input)
+    delete(w.child_windows)
+    delete(w.loaded_fonts)
+    free(w)
+}
+
+_close_window :: proc(w: ^Window) {
+    if !w.is_open {
+        return
+    }
+    wnd.activate_context(w)
+    nvg_gl.Destroy(w.nvg_ctx)
+    w.nvg_ctx = nil
+    wnd.close(w)
+    clear(&w.loaded_fonts)
+    for _, child in w.child_windows {
+        _close_window(child)
+    }
+}
+
+_setup_window_callbacks :: proc(w: ^Window) {
+    wnd.set_on_mouse_move(w, proc(_w: ^wnd.Window, position: [2]f32) {
+        w := cast(^Window)_w.user_data
+        w.mouse_position = position
+    })
+    wnd.set_on_mouse_enter(w, proc(_w: ^wnd.Window) {
+        w := cast(^Window)_w.user_data
+        w.is_hovered = true
+    })
+    wnd.set_on_mouse_exit(w, proc(_w: ^wnd.Window) {
+        w := cast(^Window)_w.user_data
+        w.is_hovered = false
+    })
+    wnd.set_on_mouse_wheel(w, proc(_w: ^wnd.Window, amount: [2]f32) {
+        w := cast(^Window)_w.user_data
+        w.mouse_wheel_state = amount
+    })
+    wnd.set_on_mouse_press(w, proc(_w: ^wnd.Window, button: Mouse_Button) {
+        w := cast(^Window)_w.user_data
+        w.mouse_down_states[button] = true
+        append(&w.mouse_presses, button)
+    })
+    wnd.set_on_mouse_release(w, proc(_w: ^wnd.Window, button: Mouse_Button) {
+        w := cast(^Window)_w.user_data
+        w.mouse_down_states[button] = false
+        append(&w.mouse_releases, button)
+    })
+    wnd.set_on_key_press(w, proc(_w: ^wnd.Window, key: Keyboard_Key) {
+        w := cast(^Window)_w.user_data
+        w.key_down_states[key] = true
+        append(&w.key_presses, key)
+    })
+    wnd.set_on_key_release(w, proc(_w: ^wnd.Window, key: Keyboard_Key) {
+        w := cast(^Window)_w.user_data
+        w.key_down_states[key] = false
+        append(&w.key_releases, key)
+    })
+    wnd.set_on_rune(w, proc(_w: ^wnd.Window, r: rune) {
+        w := cast(^Window)_w.user_data
+        strings.write_rune(&w.text_input, r)
+    })
+}
