@@ -8,9 +8,9 @@ import "core:intrinsics"
 import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
 import gl "vendor:OpenGL"
-import "window"
+import wnd "window"
 
-@(thread_local) ctx: ^Context
+@(thread_local) ctx: Context
 
 Vec2 :: [2]f32
 Color :: [4]f32
@@ -21,9 +21,11 @@ Font :: struct {
     data: []byte,
 }
 
-Cursor_Style :: window.Cursor_Style
-Mouse_Button :: window.Mouse_Button
-Keyboard_Key :: window.Keyboard_Key
+Native_Handle :: wnd.Native_Handle
+Child_Kind :: wnd.Child_Kind
+Cursor_Style :: wnd.Cursor_Style
+Mouse_Button :: wnd.Mouse_Button
+Keyboard_Key :: wnd.Keyboard_Key
 
 Path_Winding :: enum {
     Positive,
@@ -31,7 +33,9 @@ Path_Winding :: enum {
 }
 
 Window :: struct {
-    using window: ^window.Window,
+    using window: wnd.Window,
+
+    background_color: Color,
 
     is_hovered: bool,
     tick: time.Tick,
@@ -51,14 +55,12 @@ Window :: struct {
     current_font: ^Font,
     current_font_size: f32,
 
-    background_color: Color,
-
     loaded_fonts: [dynamic]^Font,
 }
 
 Context :: struct {
     on_update: proc(),
-    dummy_window: ^window.Window,
+    dummy_window: wnd.Window,
     current_window: ^Window,
     windows: map[string]^Window,
     window_stack: [dynamic]^Window,
@@ -77,98 +79,100 @@ destroy_font :: proc(font: ^Font) {
 }
 
 startup :: proc(app_id: string, default_font: ^Font, on_update: proc()) {
-    window.startup(app_id)
+    wnd.startup(app_id)
 
-    dummy_window, err := window.create()
+    ctx.dummy_window.size = {512, 512}
+    ctx.dummy_window.double_buffer = true
+
+    err := wnd.open(&ctx.dummy_window)
     if err != nil {
         fmt.eprintln("Failed to create gui context.")
         return
     }
 
-    ctx = new(Context)
-    ctx.dummy_window = dummy_window
     ctx.default_font = default_font
-    dummy_window.user_data = ctx
+    ctx.dummy_window.user_data = &ctx
 
-    window.activate_context(dummy_window)
-    gl.load_up_to(3, 3, window.gl_set_proc_address)
-    window.deactivate_context(dummy_window)
+    wnd.activate_context(&ctx.dummy_window)
+    gl.load_up_to(3, 3, wnd.gl_set_proc_address)
+    wnd.deactivate_context(&ctx.dummy_window)
 
-    window._update_proc = on_update
+    wnd._update_proc = on_update
 }
 
 shutdown :: proc() {
-    window.destroy(ctx.dummy_window)
-    window.shutdown()
+    wnd.close(&ctx.dummy_window)
 
     // Clean up windows.
     for key in ctx.windows {
         w := ctx.windows[key]
-        if w.window != nil {
-            _destroy_window(w)
-        }
+        _close_window(w)
         delete(w.mouse_presses)
         delete(w.mouse_releases)
         delete(w.key_presses)
         delete(w.key_releases)
         strings.builder_destroy(&w.text_input)
+        delete(w.loaded_fonts)
         free(w)
     }
 
+    wnd.shutdown()
+
     delete(ctx.windows)
     delete(ctx.window_stack)
-
-    free(ctx)
 }
 
-update :: window.update
+update :: wnd.update
 
-_destroy_window :: proc(w: ^Window) {
-    window.activate_context(w)
+_close_window :: proc(w: ^Window) {
+    if !w.is_open {
+        return
+    }
+    wnd.activate_context(w)
     nvg_gl.Destroy(w.nvg_ctx)
-    window.deactivate_context(w)
-    window.destroy(w)
-    delete(w.loaded_fonts)
+    w.nvg_ctx = nil
+    wnd.close(w)
+    clear(&w.loaded_fonts)
 }
 
 _setup_window_callbacks :: proc(w: ^Window) {
-    window.set_on_mouse_move(w, proc(_w: ^window.Window, position: [2]f32) {
+    wnd.set_on_mouse_move(w, proc(_w: ^wnd.Window, position: [2]f32) {
         w := cast(^Window)_w.user_data
         w.mouse_position = position
     })
-    window.set_on_mouse_enter(w, proc(_w: ^window.Window) {
+    wnd.set_on_mouse_enter(w, proc(_w: ^wnd.Window) {
         w := cast(^Window)_w.user_data
         w.is_hovered = true
     })
-    window.set_on_mouse_exit(w, proc(_w: ^window.Window) {
+    wnd.set_on_mouse_exit(w, proc(_w: ^wnd.Window) {
         w := cast(^Window)_w.user_data
         w.is_hovered = false
     })
-    window.set_on_mouse_wheel(w, proc(_w: ^window.Window, amount: [2]f32) {
+    wnd.set_on_mouse_wheel(w, proc(_w: ^wnd.Window, amount: [2]f32) {
         w := cast(^Window)_w.user_data
         w.mouse_wheel_state = amount
     })
-    window.set_on_mouse_press(w, proc(_w: ^window.Window, button: Mouse_Button) {
+    wnd.set_on_mouse_press(w, proc(_w: ^wnd.Window, button: Mouse_Button) {
         w := cast(^Window)_w.user_data
         w.mouse_down_states[button] = true
         append(&w.mouse_presses, button)
     })
-    window.set_on_mouse_release(w, proc(_w: ^window.Window, button: Mouse_Button) {
+    wnd.set_on_mouse_release(w, proc(_w: ^wnd.Window, button: Mouse_Button) {
         w := cast(^Window)_w.user_data
         w.mouse_down_states[button] = false
         append(&w.mouse_releases, button)
     })
-    window.set_on_key_press(w, proc(_w: ^window.Window, key: Keyboard_Key) {
+    wnd.set_on_key_press(w, proc(_w: ^wnd.Window, key: Keyboard_Key) {
         w := cast(^Window)_w.user_data
         w.key_down_states[key] = true
         append(&w.key_presses, key)
     })
-    window.set_on_key_release(w, proc(_w: ^window.Window, key: Keyboard_Key) {
+    wnd.set_on_key_release(w, proc(_w: ^wnd.Window, key: Keyboard_Key) {
         w := cast(^Window)_w.user_data
         w.key_down_states[key] = false
         append(&w.key_releases, key)
     })
-    window.set_on_rune(w, proc(_w: ^window.Window, r: rune) {
+    wnd.set_on_rune(w, proc(_w: ^wnd.Window, r: rune) {
         w := cast(^Window)_w.user_data
         strings.write_rune(&w.text_input, r)
     })
@@ -176,38 +180,50 @@ _setup_window_callbacks :: proc(w: ^Window) {
 
 begin_window :: proc(id: string) -> bool {
     w, exists := ctx.windows[id]
+
     if !exists {
-        _w, err := window.create(id)
+        w = new(Window)
+        w.title = id
+        w.size = {400, 300}
+        w.min_size = nil
+        w.max_size = nil
+        w.swap_interval = 0
+        w.dark_mode = true
+        w.resizable = true
+        w.double_buffer = true
+        w.child_kind = .None
+        w.parent_handle = nil
+
+        err := wnd.open(&w.window)
         if err != nil {
+            free(w)
             fmt.eprintf("Failed to open window: %v\n", id)
             return false
         }
-        w = new(Window)
+
         w.tick = time.tick_now()
         w.previous_tick = w.tick
-        w.window = _w
-        _w.user_data = w
+        w.window.user_data = w
         ctx.windows[id] = w
 
-        window.activate_context(w)
+        wnd.activate_context(w)
         w.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
-        window.deactivate_context(w)
 
         _setup_window_callbacks(w)
-        window.show(w)
+        wnd.show(w)
     }
 
-    if w.window == nil {
+    if !w.is_open {
         return false
     }
 
-    window.activate_context(w)
+    wnd.activate_context(w)
 
     append(&ctx.window_stack, w)
     ctx.current_window = w
 
-    size := window.size(w)
-    content_scale := window.content_scale(w)
+    size := wnd.size(w)
+    content_scale := wnd.content_scale(w)
 
     bg := w.background_color
     gl.ClearColor(bg.r, bg.g, bg.b, bg.a)
@@ -229,6 +245,9 @@ end_window :: proc() {
     assert(len(ctx.window_stack) > 0, "Mismatch in begin_window and end_window calls.")
     w := pop(&ctx.window_stack)
 
+    wnd.activate_context(w)
+    nvg.EndFrame(w.nvg_ctx)
+
     clear(&w.mouse_presses)
     clear(&w.mouse_releases)
     clear(&w.key_presses)
@@ -238,20 +257,50 @@ end_window :: proc() {
     w.previous_mouse_position = w.mouse_position
     w.previous_tick = w.tick
 
+    if wnd.close_requested(w) {
+        _close_window(w)
+    }
+
     if len(ctx.window_stack) == 0 {
         ctx.current_window = nil
     } else {
         ctx.current_window = ctx.window_stack[len(ctx.window_stack) - 1]
-    }
-
-    nvg.EndFrame(w.nvg_ctx)
-    window.deactivate_context(w)
-
-    if window.close_requested(w) {
-        _destroy_window(w)
-        w.window = nil
+        wnd.activate_context(ctx.current_window)
     }
 }
+
+// @(deferred_out=scoped_end_window)
+// window :: proc(
+//     id: string,
+//     size := Vec2{400, 300},
+//     min_size: Maybe(Vec2) = nil,
+//     max_size: Maybe(Vec2) = nil,
+//     swap_interval := 0,
+//     dark_mode := true,
+//     resizable := true,
+//     double_buffer := true,
+//     child_kind: Child_Kind = .None,
+//     parent_handle: Native_Handle = nil,
+// ) -> bool {
+//     return begin_window(
+//         id,
+//         size,
+//         min_size,
+//         max_size,
+//         swap_interval,
+//         dark_mode,
+//         resizable,
+//         double_buffer,
+//         child_kind,
+//         parent_handle,
+//     )
+// }
+
+// scoped_end_window :: proc(is_open: bool) {
+//     if is_open {
+//         end_window()
+//     }
+// }
 
 
 
@@ -260,7 +309,7 @@ set_window_background_color :: proc(color: Color) {
 }
 
 window_will_close :: proc() -> bool {
-    return window.close_requested(ctx.current_window)
+    return wnd.close_requested(ctx.current_window)
 }
 
 window_is_hovered :: proc() -> bool {
@@ -470,7 +519,7 @@ _path_winding_to_nvg_winding :: proc(winding: Path_Winding) -> nvg.Winding {
 //     double_buffer := true,
 // ) -> (^Context, Context_Error) {
 //     ctx := new(Context)
-//     w, err := window.create(
+//     w, err := wnd.create(
 //         title,
 //         size,
 //         min_size,
@@ -485,51 +534,51 @@ _path_winding_to_nvg_winding :: proc(winding: Path_Winding) -> nvg.Winding {
 //         return nil, err
 //     }
 
-//     ctx.window = w
+//     ctx.wnd = w
 //     w.user_data = ctx
 
-//     window.activate_context(w)
-//     gl.load_up_to(3, 3, window.gl_set_proc_address)
+//     wnd.activate_context(w)
+//     gl.load_up_to(3, 3, wnd.gl_set_proc_address)
 //     ctx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
-//     window.deactivate_context(w)
+//     wnd.deactivate_context(w)
 
-//     window.set_on_mouse_move(ctx.window, proc(w: ^window.Window, position: [2]f32) {
+//     wnd.set_on_mouse_move(ctx.wnd, proc(w: ^wnd.Window, position: [2]f32) {
 //         ctx := cast(^Context)w.user_data
 //         ctx.global_mouse_position = position
 //     })
-//     window.set_on_mouse_enter(ctx.window, proc(w: ^window.Window) {
+//     wnd.set_on_mouse_enter(ctx.wnd, proc(w: ^wnd.Window) {
 //         ctx := cast(^Context)w.user_data
 //         ctx.window_is_hovered = true
 //     })
-//     window.set_on_mouse_exit(ctx.window, proc(w: ^window.Window) {
+//     wnd.set_on_mouse_exit(ctx.wnd, proc(w: ^wnd.Window) {
 //         ctx := cast(^Context)w.user_data
 //         ctx.window_is_hovered = false
 //     })
-//     window.set_on_mouse_wheel(ctx.window, proc(w: ^window.Window, amount: [2]f32) {
+//     wnd.set_on_mouse_wheel(ctx.wnd, proc(w: ^wnd.Window, amount: [2]f32) {
 //         ctx := cast(^Context)w.user_data
 //         ctx.mouse_wheel_state = amount
 //     })
-//     window.set_on_mouse_press(ctx.window, proc(w: ^window.Window, button: Mouse_Button) {
+//     wnd.set_on_mouse_press(ctx.wnd, proc(w: ^wnd.Window, button: Mouse_Button) {
 //         ctx := cast(^Context)w.user_data
 //         ctx.mouse_down_states[button] = true
 //         append(&ctx.mouse_presses, button)
 //     })
-//     window.set_on_mouse_release(ctx.window, proc(w: ^window.Window, button: Mouse_Button) {
+//     wnd.set_on_mouse_release(ctx.wnd, proc(w: ^wnd.Window, button: Mouse_Button) {
 //         ctx := cast(^Context)w.user_data
 //         ctx.mouse_down_states[button] = false
 //         append(&ctx.mouse_releases, button)
 //     })
-//     window.set_on_key_press(ctx.window, proc(w: ^window.Window, key: Keyboard_Key) {
+//     wnd.set_on_key_press(ctx.wnd, proc(w: ^wnd.Window, key: Keyboard_Key) {
 //         ctx := cast(^Context)w.user_data
 //         ctx.key_down_states[key] = true
 //         append(&ctx.key_presses, key)
 //     })
-//     window.set_on_key_release(ctx.window, proc(w: ^window.Window, key: Keyboard_Key) {
+//     wnd.set_on_key_release(ctx.wnd, proc(w: ^wnd.Window, key: Keyboard_Key) {
 //         ctx := cast(^Context)w.user_data
 //         ctx.key_down_states[key] = false
 //         append(&ctx.key_releases, key)
 //     })
-//     window.set_on_rune(ctx.window, proc(w: ^window.Window, r: rune) {
+//     wnd.set_on_rune(ctx.wnd, proc(w: ^wnd.Window, r: rune) {
 //         ctx := cast(^Context)w.user_data
 //         strings.write_rune(&ctx.text_input, r)
 //     })
@@ -538,11 +587,11 @@ _path_winding_to_nvg_winding :: proc(winding: Path_Winding) -> nvg.Winding {
 // }
 
 // destroy :: proc(ctx: ^Context) {
-//     window.activate_context(ctx.window)
+//     wnd.activate_context(ctx.wnd)
 //     nvg_gl.Destroy(ctx.nvg_ctx)
-//     window.deactivate_context(ctx.window)
+//     wnd.deactivate_context(ctx.wnd)
 
-//     window.destroy(ctx.window)
+//     wnd.destroy(ctx.wnd)
 
 //     delete(ctx.mouse_presses)
 //     delete(ctx.mouse_releases)
@@ -560,43 +609,43 @@ _path_winding_to_nvg_winding :: proc(winding: Path_Winding) -> nvg.Winding {
 // }
 
 // update :: proc(ctx: ^Context) {
-//     window.update(ctx.window)
+//     wnd.update(ctx.wnd)
 // }
 
 // activate_gl_context :: proc(ctx: ^Context) {
-//     window.activate_context(ctx.window)
+//     wnd.activate_context(ctx.wnd)
 // }
 
 // deactivate_gl_context :: proc(ctx: ^Context) {
-//     window.deactivate_context(ctx.window)
+//     wnd.deactivate_context(ctx.wnd)
 // }
 
 // close :: proc(ctx: ^Context) {
-//     window.close(ctx.window)
+//     wnd.close(ctx.wnd)
 // }
 
 // close_requested :: proc(ctx: ^Context) -> bool {
-//     return window.close_requested(ctx.window)
+//     return wnd.close_requested(ctx.wnd)
 // }
 
 // show :: proc(ctx: ^Context) {
-//     window.show(ctx.window)
+//     wnd.show(ctx.wnd)
 // }
 
 // hide :: proc(ctx: ^Context) {
-//     window.hide(ctx.window)
+//     wnd.hide(ctx.wnd)
 // }
 
 // position :: proc(ctx: ^Context) -> Vec2 {
-//     return window.position(ctx.window)
+//     return wnd.position(ctx.wnd)
 // }
 
 // size :: proc(ctx: ^Context) -> Vec2 {
-//     return window.size(ctx.window)
+//     return wnd.size(ctx.wnd)
 // }
 
 // content_scale :: proc(ctx: ^Context) -> f32 {
-//     return window.content_scale(ctx.window)
+//     return wnd.content_scale(ctx.wnd)
 // }
 
 // set_background_color :: proc(ctx: ^Context, color: Color) {
@@ -605,8 +654,8 @@ _path_winding_to_nvg_winding :: proc(winding: Path_Winding) -> nvg.Winding {
 
 // set_on_frame :: proc(ctx: ^Context, on_frame: proc(^Context)) {
 //     ctx.on_frame = on_frame
-//     window.set_on_frame(ctx.window, proc(window: ^window.Window) {
-//         ctx := cast(^Context)window.user_data
+//     wnd.set_on_frame(ctx.wnd, proc(wnd: ^wnd.Window) {
+//         ctx := cast(^Context)wnd.user_data
 //         ctx->on_frame()
 //     })
 // }

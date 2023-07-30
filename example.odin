@@ -24,10 +24,12 @@ main_loop :: proc() {
 		t += dt
 		pos1.x = 100.0 + 100.0 * math.sin(t * 10.0)
 
-		gui.fill_text_line("Hello World 1", pos1)
+		gui.fill_text_line("Window 1", pos1)
 
-		if gui.window_will_close() {
-			should_quit = true
+		if gui.begin_window("Child Window") {
+			gui.set_window_background_color({0, 0, 0.3, 1})
+			gui.fill_text_line("Child Window", pos1)
+			gui.end_window()
 		}
 
 		gui.end_window()
@@ -39,7 +41,11 @@ main_loop :: proc() {
 		t2 += dt
 		pos2.x = 100.0 + 100.0 * math.sin(t2 * 10.0)
 
-		gui.fill_text_line("Hello World 2", pos2)
+		gui.fill_text_line("Window 2", pos2)
+
+		if gui.window_will_close() {
+			should_quit = true
+		}
 
 		gui.end_window()
 	}
