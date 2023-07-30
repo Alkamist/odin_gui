@@ -51,11 +51,13 @@ Window :: struct {
     current_font: ^Font,
     current_font_size: f32,
 
+    background_color: Color,
+
     loaded_fonts: [dynamic]^Font,
 }
 
 Context :: struct {
-    update_proc: proc(),
+    on_update: proc(),
     dummy_window: ^window.Window,
     current_window: ^Window,
     windows: map[string]^Window,
@@ -84,25 +86,20 @@ startup :: proc(app_id: string, default_font: ^Font, on_update: proc()) {
     }
 
     ctx = new(Context)
-    ctx.default_font = default_font
     ctx.dummy_window = dummy_window
+    ctx.default_font = default_font
     dummy_window.user_data = ctx
 
     window.activate_context(dummy_window)
     gl.load_up_to(3, 3, window.gl_set_proc_address)
     window.deactivate_context(dummy_window)
 
-    ctx.update_proc = on_update
-
-    window.set_on_update(dummy_window, proc(dummy_window: ^window.Window) {
-        ctx := cast(^Context)dummy_window.user_data
-        ctx.update_proc()
-    })
+    window._update_proc = on_update
 }
 
 shutdown :: proc() {
-    dummy_window := ctx.dummy_window
-    window.destroy(dummy_window)
+    window.destroy(ctx.dummy_window)
+    window.shutdown()
 
     // Clean up windows.
     for key in ctx.windows {
@@ -177,7 +174,7 @@ _setup_window_callbacks :: proc(w: ^Window) {
     })
 }
 
-begin_window :: proc(id: string, background_color := Color{0, 0, 0, 1}) -> bool {
+begin_window :: proc(id: string) -> bool {
     w, exists := ctx.windows[id]
     if !exists {
         _w, err := window.create(id)
@@ -186,6 +183,8 @@ begin_window :: proc(id: string, background_color := Color{0, 0, 0, 1}) -> bool 
             return false
         }
         w = new(Window)
+        w.tick = time.tick_now()
+        w.previous_tick = w.tick
         w.window = _w
         _w.user_data = w
         ctx.windows[id] = w
@@ -202,15 +201,16 @@ begin_window :: proc(id: string, background_color := Color{0, 0, 0, 1}) -> bool 
         return false
     }
 
+    window.activate_context(w)
+
     append(&ctx.window_stack, w)
     ctx.current_window = w
-
-    window.activate_context(w)
 
     size := window.size(w)
     content_scale := window.content_scale(w)
 
-    gl.ClearColor(background_color.r, background_color.g, background_color.b, background_color.a)
+    bg := w.background_color
+    gl.ClearColor(bg.r, bg.g, bg.b, bg.a)
     gl.Clear(gl.COLOR_BUFFER_BIT)
 
     gl.Viewport(0, 0, i32(size.x), i32(size.y))
@@ -219,6 +219,8 @@ begin_window :: proc(id: string, background_color := Color{0, 0, 0, 1}) -> bool 
     nvg.TextAlign(w.nvg_ctx, .LEFT, .TOP)
     w.current_font = ctx.default_font
     w.current_font_size = 16.0
+
+    w.tick = time.tick_now()
 
     return true
 }
@@ -252,6 +254,10 @@ end_window :: proc() {
 }
 
 
+
+set_window_background_color :: proc(color: Color) {
+    ctx.current_window.background_color = color
+}
 
 window_will_close :: proc() -> bool {
     return window.close_requested(ctx.current_window)

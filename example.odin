@@ -2,15 +2,29 @@ package main
 
 import "core:mem"
 import "core:fmt"
+import "core:math"
+import "core:time"
 import "core:thread"
 import "gui"
 
 should_quit := false
 consola: ^gui.Font
 
+pos1: gui.Vec2
+pos2: gui.Vec2
+
+t := f32(0)
+t2 := f32(0)
+
 main_loop :: proc() {
-	if gui.begin_window("Window 1", background_color = {0.05, 0, 0, 1}) {
-		gui.fill_text_line("Hello World 1", gui.mouse_position())
+	if gui.begin_window("Window 1") {
+		gui.set_window_background_color({0.05, 0, 0, 1})
+
+		dt := f32(time.duration_seconds(gui.delta_time()))
+		t += dt
+		pos1.x = 100.0 + 100.0 * math.sin(t * 10.0)
+
+		gui.fill_text_line("Hello World 1", pos1)
 
 		if gui.window_will_close() {
 			should_quit = true
@@ -18,12 +32,14 @@ main_loop :: proc() {
 
 		gui.end_window()
 	}
-	if gui.begin_window("Window 2", background_color = {0, 0.05, 0, 1}) {
-		gui.fill_text_line("Hello World 2", gui.mouse_position())
+	if gui.begin_window("Window 2") {
+		gui.set_window_background_color({0, 0.05, 0, 1})
 
-		if gui.window_will_close() {
-			should_quit = true
-		}
+		dt := f32(time.duration_seconds(gui.delta_time()))
+		t2 += dt
+		pos2.x = 100.0 + 100.0 * math.sin(t2 * 10.0)
+
+		gui.fill_text_line("Hello World 2", pos2)
 
 		gui.end_window()
 	}
