@@ -38,8 +38,6 @@ Window :: struct {
     background_color: Color,
 
     is_hovered: bool,
-    tick: time.Tick,
-    previous_tick: time.Tick,
     mouse_position: Vec2,
     previous_mouse_position: Vec2,
     mouse_wheel_state: Vec2,
@@ -66,6 +64,9 @@ Context :: struct {
     top_level_windows: map[string]^Window,
     window_stack: [dynamic]^Window,
     default_font: ^Font,
+    tick: time.Tick,
+    previous_tick: time.Tick,
+    host_handle: Native_Handle,
 }
 
 create_font :: proc(name: string, data: []byte) -> ^Font {
@@ -94,11 +95,20 @@ startup :: proc(app_id: string, default_font: ^Font, on_update: proc()) {
     ctx.default_font = default_font
     ctx.dummy_window.user_data = &ctx
 
+    ctx.tick = time.tick_now()
+    ctx.previous_tick = ctx.tick
+
     wnd.activate_context(&ctx.dummy_window)
     gl.load_up_to(3, 3, wnd.gl_set_proc_address)
     wnd.deactivate_context(&ctx.dummy_window)
 
-    wnd._update_proc = on_update
+    ctx.on_update = on_update
+
+    wnd._update_proc = proc() {
+        ctx.previous_tick = ctx.tick
+        ctx.tick = time.tick_now()
+        ctx.on_update()
+    }
 }
 
 shutdown :: proc() {
@@ -119,13 +129,16 @@ shutdown :: proc() {
 
 update :: wnd.update
 
-begin_window :: proc(id: string) -> bool {
+begin_window :: proc(id: string, child_kind := Child_Kind.None) -> bool {
     window_map: ^map[string]^Window
+
+    is_in_scope_of_other_window := false
 
     if ctx.current_window == nil {
         window_map = &ctx.top_level_windows
     } else {
         window_map = &ctx.current_window.child_windows
+        is_in_scope_of_other_window = true
     }
 
     w, exists := window_map[id]
@@ -140,8 +153,15 @@ begin_window :: proc(id: string) -> bool {
         w.dark_mode = true
         w.resizable = true
         w.double_buffer = true
-        w.child_kind = .None
-        w.parent_handle = nil
+        w.child_kind = child_kind
+
+        if child_kind != .None {
+            if is_in_scope_of_other_window {
+                w.parent_handle = wnd.native_handle(ctx.current_window)
+            } else {
+                w.parent_handle  = ctx.host_handle
+            }
+        }
 
         err := wnd.open(&w.window)
         if err != nil {
@@ -150,8 +170,6 @@ begin_window :: proc(id: string) -> bool {
             return false
         }
 
-        w.tick = time.tick_now()
-        w.previous_tick = w.tick
         w.window.user_data = w
 
         window_map[id] = w
@@ -186,8 +204,6 @@ begin_window :: proc(id: string) -> bool {
     w.current_font = ctx.default_font
     w.current_font_size = 16.0
 
-    w.tick = time.tick_now()
-
     return true
 }
 
@@ -205,7 +221,6 @@ end_window :: proc() {
     strings.builder_reset(&w.text_input)
     w.mouse_wheel_state = {0, 0}
     w.previous_mouse_position = w.mouse_position
-    w.previous_tick = w.tick
 
     if wnd.close_requested(w) {
         _close_window(w)
@@ -275,7 +290,7 @@ mouse_delta :: proc() -> Vec2 {
 }
 
 delta_time :: proc() -> time.Duration {
-    return time.tick_diff(ctx.current_window.previous_tick, ctx.current_window.tick)
+    return time.tick_diff(ctx.previous_tick, ctx.tick)
 }
 
 mouse_down :: proc(button: Mouse_Button) -> bool {
@@ -472,14 +487,14 @@ _close_window :: proc(w: ^Window) {
     if !w.is_open {
         return
     }
+    for _, child in w.child_windows {
+        _close_window(child)
+    }
     wnd.activate_context(w)
     nvg_gl.Destroy(w.nvg_ctx)
     w.nvg_ctx = nil
     wnd.close(w)
     clear(&w.loaded_fonts)
-    for _, child in w.child_windows {
-        _close_window(child)
-    }
 }
 
 _setup_window_callbacks :: proc(w: ^Window) {

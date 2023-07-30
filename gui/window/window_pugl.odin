@@ -90,10 +90,8 @@ open :: proc(window: ^Window) -> Window_Error {
 
     window.odin_context = context
 
-    if window.parent_handle != nil {
-        if window.child_kind == .None {
-            window.child_kind = .Embedded
-        }
+    if window.parent_handle != nil && window.child_kind == .None {
+        window.child_kind = .Embedded
     }
 
     view := pugl.NewView(_world)

@@ -26,7 +26,7 @@ main_loop :: proc() {
 
 		gui.fill_text_line("Window 1", pos1)
 
-		if gui.begin_window("Child Window") {
+		if gui.begin_window("Child Window", .Transient) {
 			gui.set_window_background_color({0, 0, 0.3, 1})
 			gui.fill_text_line("Child Window", pos1)
 			gui.end_window()
