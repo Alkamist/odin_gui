@@ -16,8 +16,12 @@ pos2: gui.Vec2
 t := f32(0)
 t2 := f32(0)
 
+w1: ^gui.Window
+
 main_loop :: proc() {
 	if gui.window("Window 1") {
+		w1 = gui.current_window()
+
 		gui.set_window_background_color({0.05, 0, 0, 1})
 
 		dt := f32(time.duration_seconds(gui.delta_time()))
@@ -44,7 +48,11 @@ main_loop :: proc() {
 
 		gui.fill_text_line("Window 2", pos2)
 
-		if gui.window_close_requested() {
+		if gui.mouse_pressed(.Left) {
+			gui.open_window(w1)
+		}
+
+		if gui.window_will_close() {
 			should_quit = true
 		}
 	}

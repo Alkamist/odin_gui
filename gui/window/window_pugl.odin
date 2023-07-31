@@ -23,6 +23,7 @@ Child_Kind :: enum {
 Window :: struct {
     user_data: rawptr,
 
+    on_update: proc(window: ^Window),
     on_move: proc(window: ^Window, position: Vec2),
     on_resize: proc(window: ^Window, size: Vec2),
     on_mouse_move: proc(window: ^Window, position, global_position: Vec2),
@@ -40,17 +41,6 @@ Window :: struct {
     last_position: Vec2,
     last_size: Vec2,
     timer_id: uintptr,
-
-    title: string,
-    size: Vec2,
-    min_size: Maybe(Vec2),
-    max_size: Maybe(Vec2),
-    swap_interval: int,
-    dark_mode: bool,
-    resizable: bool,
-    double_buffer: bool,
-    child_kind: Child_Kind,
-    parent_handle: rawptr,
 
     view: ^pugl.View,
 
@@ -83,47 +73,61 @@ update :: proc() {
     pugl.Update(_world, 0)
 }
 
-open :: proc(window: ^Window) -> Window_Error {
+open :: proc(
+    window: ^Window,
+    title: string,
+    size: Vec2,
+    min_size: Maybe(Vec2),
+    max_size: Maybe(Vec2),
+    swap_interval: int,
+    dark_mode: bool,
+    resizable: bool,
+    double_buffer: bool,
+    child_kind: Child_Kind,
+    parent_handle: Native_Handle,
+) -> Window_Error {
     if window.is_open {
         return nil
     }
 
     window.odin_context = context
 
-    if window.parent_handle != nil && window.child_kind == .None {
-        window.child_kind = .Embedded
+    child_kind := child_kind
+
+    if parent_handle != nil && child_kind == .None {
+        child_kind = .Embedded
     }
 
     view := pugl.NewView(_world)
 
-    title_cstring := strings.clone_to_cstring(window.title)
+    title_cstring := strings.clone_to_cstring(title)
     defer delete(title_cstring)
 
     pugl.SetViewString(view, .WINDOW_TITLE, title_cstring)
-    pugl.SetSizeHint(view, .DEFAULT_SIZE, u16(window.size.x), u16(window.size.y))
+    pugl.SetSizeHint(view, .DEFAULT_SIZE, u16(size.x), u16(size.y))
 
-    if min_size, ok := window.min_size.?; ok {
+    if min_size, ok := min_size.?; ok {
         pugl.SetSizeHint(view, .MIN_SIZE, u16(min_size.x), u16(min_size.y))
     }
-    if max_size, ok := window.max_size.?; ok {
+    if max_size, ok := max_size.?; ok {
         pugl.SetSizeHint(view, .MAX_SIZE, u16(max_size.x), u16(max_size.y))
     }
 
     pugl.SetBackend(view, pugl.GlBackend())
 
-    pugl.SetViewHint(view, .DARK_FRAME, window.dark_mode ? 1 : 0)
-    pugl.SetViewHint(view, .RESIZABLE, window.resizable ? 1 : 0)
+    pugl.SetViewHint(view, .DARK_FRAME, dark_mode ? 1 : 0)
+    pugl.SetViewHint(view, .RESIZABLE, resizable ? 1 : 0)
     pugl.SetViewHint(view, .SAMPLES, 1)
-    pugl.SetViewHint(view, .DOUBLE_BUFFER, window.double_buffer ? 1 : 0)
-    pugl.SetViewHint(view, .SWAP_INTERVAL, i32(window.swap_interval))
+    pugl.SetViewHint(view, .DOUBLE_BUFFER, double_buffer ? 1 : 0)
+    pugl.SetViewHint(view, .SWAP_INTERVAL, i32(swap_interval))
     pugl.SetViewHint(view, .IGNORE_KEY_REPEAT, 0)
 
-    #partial switch window.child_kind {
+    #partial switch child_kind {
     case .Embedded:
         pugl.SetPosition(view, 0, 0)
-        pugl.SetParentWindow(view, cast(uintptr)window.parent_handle)
+        pugl.SetParentWindow(view, cast(uintptr)parent_handle)
     case .Transient:
-        pugl.SetTransientParent(view, cast(uintptr)window.parent_handle)
+        pugl.SetTransientParent(view, cast(uintptr)parent_handle)
     }
 
     pugl.SetEventFunc(view, _on_event)
@@ -151,10 +155,15 @@ close :: proc(window: ^Window) {
     pugl.Unrealize(window.view)
     pugl.FreeView(window.view)
     window.is_open = false
+    window.close_requested = true
 }
 
-parent_handle :: proc(window: ^Window) -> Native_Handle {
-    return window.parent_handle
+is_open :: proc(window: ^Window) -> bool {
+    return window.is_open
+}
+
+close_requested :: proc(window: ^Window) -> bool {
+    return window.close_requested
 }
 
 native_handle :: proc(window: ^Window) -> Native_Handle {
@@ -167,14 +176,6 @@ activate_context :: proc(window: ^Window) {
 
 deactivate_context :: proc(window: ^Window) {
     pugl.EnterContext(window.view)
-}
-
-request_close :: proc(window: ^Window) {
-    window.close_requested = true
-}
-
-close_requested :: proc(window: ^Window) -> bool {
-    return window.close_requested
 }
 
 show :: proc(window: ^Window) {
@@ -211,8 +212,8 @@ content_scale :: proc(window: ^Window) -> f32 {
     return f32(pugl.GetScaleFactor(window.view))
 }
 
-child_kind :: proc(window: ^Window) -> Child_Kind {
-    return window.child_kind
+set_on_update :: proc(window: ^Window, on_update: proc(window: ^Window)) {
+    window.on_update = on_update
 }
 
 set_on_move :: proc(window: ^Window, on_move: proc(window: ^Window, position: Vec2)) {
@@ -269,6 +270,9 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .UPDATE:
         window := cast(^Window)pugl.GetHandle(view)
         context = window.odin_context
+        if window.on_update != nil {
+            window->on_update()
+        }
         pugl.PostRedisplay(view)
 
     case .LOOP_ENTER:
