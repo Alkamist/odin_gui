@@ -61,7 +61,8 @@ Window :: struct {
 
     is_hovered: bool,
     mouse_position: Vec2,
-    previous_mouse_position: Vec2,
+    global_mouse_position: Vec2,
+    previous_global_mouse_position: Vec2,
     mouse_wheel_state: Vec2,
     mouse_presses: [dynamic]Mouse_Button,
     mouse_releases: [dynamic]Mouse_Button,
@@ -246,7 +247,7 @@ end_window :: proc() {
     clear(&w.key_releases)
     strings.builder_reset(&w.text_input)
     w.mouse_wheel_state = {0, 0}
-    w.previous_mouse_position = w.mouse_position
+    w.previous_global_mouse_position = w.global_mouse_position
 
     if wnd.close_requested(w) {
         _close_window(w)
@@ -319,8 +320,13 @@ mouse_position :: proc(w := ctx.current_window) -> Vec2 {
     return w.mouse_position
 }
 
+global_mouse_position :: proc(w := ctx.current_window) -> Vec2 {
+    return w.global_mouse_position
+}
+
 mouse_delta :: proc() -> Vec2 {
-    return ctx.current_window.mouse_position - ctx.current_window.previous_mouse_position
+    w := ctx.current_window
+    return w.global_mouse_position - w.previous_global_mouse_position
 }
 
 delta_time :: proc() -> time.Duration {
@@ -532,9 +538,10 @@ _close_window :: proc(w: ^Window) {
 }
 
 _setup_window_callbacks :: proc(w: ^Window) {
-    wnd.set_on_mouse_move(w, proc(_w: ^wnd.Window, position: [2]f32) {
+    wnd.set_on_mouse_move(w, proc(_w: ^wnd.Window, position, global_position: [2]f32) {
         w := cast(^Window)_w.user_data
         w.mouse_position = position
+        w.global_mouse_position = global_position
     })
     wnd.set_on_mouse_enter(w, proc(_w: ^wnd.Window) {
         w := cast(^Window)_w.user_data

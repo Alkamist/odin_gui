@@ -26,13 +26,13 @@ main_loop :: proc() {
 
 		gui.fill_text_line("Window 1", pos1)
 
-		asdf := gui.mouse_position()
-
 		if gui.embedded_window("Child Window") {
 			gui.set_window_background_color({0, 0, 0.3, 1})
 			gui.fill_text_line("Child Window", pos1)
 
-			// gui.set_window_position(asdf)
+			if gui.mouse_down(.Left) && gui.mouse_moved() {
+				gui.set_window_position(gui.window_position() + gui.mouse_delta())
+			}
 		}
 	}
 	if gui.window("Window 2") {

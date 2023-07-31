@@ -25,7 +25,7 @@ Window :: struct {
 
     on_move: proc(window: ^Window, position: Vec2),
     on_resize: proc(window: ^Window, size: Vec2),
-    on_mouse_move: proc(window: ^Window, position: Vec2),
+    on_mouse_move: proc(window: ^Window, position, global_position: Vec2),
     on_mouse_enter: proc(window: ^Window),
     on_mouse_exit: proc(window: ^Window),
     on_mouse_wheel: proc(window: ^Window, amount: Vec2),
@@ -223,7 +223,7 @@ set_on_resize :: proc(window: ^Window, on_resize: proc(window: ^Window, size: Ve
     window.on_resize = on_resize
 }
 
-set_on_mouse_move :: proc(window: ^Window, on_mouse_move: proc(window: ^Window, position: Vec2)) {
+set_on_mouse_move :: proc(window: ^Window, on_mouse_move: proc(window: ^Window, position, global_position: Vec2)) {
     window.on_mouse_move = on_mouse_move
 }
 
@@ -313,10 +313,13 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         context = window.odin_context
         event := event.motion
         if window.on_mouse_move != nil {
-            window->on_mouse_move({f32(event.x), f32(event.y)})
+            window->on_mouse_move(
+                {f32(event.x), f32(event.y)},
+                {f32(event.xRoot), f32(event.yRoot)},
+            )
         }
 
-        update()
+        // update()
 
     case .POINTER_IN:
         window := cast(^Window)pugl.GetHandle(view)
@@ -325,7 +328,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_mouse_enter()
         }
 
-        update()
+        // update()
 
     case .POINTER_OUT:
         window := cast(^Window)pugl.GetHandle(view)
@@ -334,7 +337,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_mouse_exit()
         }
 
-        update()
+        // update()
 
     case .SCROLL:
         window := cast(^Window)pugl.GetHandle(view)
@@ -344,7 +347,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_mouse_wheel({f32(event.dx), f32(event.dy)})
         }
 
-        update()
+        // update()
 
     case .BUTTON_PRESS:
         window := cast(^Window)pugl.GetHandle(view)
@@ -354,7 +357,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_mouse_press(_pugl_button_to_mouse_button(event.button))
         }
 
-        update()
+        // update()
 
     case .BUTTON_RELEASE:
         window := cast(^Window)pugl.GetHandle(view)
@@ -364,7 +367,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_mouse_release(_pugl_button_to_mouse_button(event.button))
         }
 
-        update()
+        // update()
 
     case .KEY_PRESS:
         window := cast(^Window)pugl.GetHandle(view)
@@ -374,7 +377,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_key_press(_pugl_key_event_to_keyboard_key(event))
         }
 
-        update()
+        // update()
 
     case .KEY_RELEASE:
         window := cast(^Window)pugl.GetHandle(view)
@@ -384,7 +387,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_key_release(_pugl_key_event_to_keyboard_key(event))
         }
 
-        update()
+        // update()
 
     case .TEXT:
         window := cast(^Window)pugl.GetHandle(view)
@@ -395,7 +398,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_rune(r)
         }
 
-        update()
+        // update()
 
     case .CLOSE:
         window := cast(^Window)pugl.GetHandle(view)
