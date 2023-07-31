@@ -12,7 +12,7 @@ Button :: struct {
     clicked: bool,
 }
 
-init_button :: proc(ctx: ^Context, button: ^Button, position := Vec2{0, 0}, size := Vec2{96, 32}) {
+init_button :: proc(button: ^Button, position := Vec2{0, 0}, size := Vec2{96, 32}) {
     button.id = gui.generate_id(ctx)
     button.position = position
     button.size = size

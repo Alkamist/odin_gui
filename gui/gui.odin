@@ -129,7 +129,21 @@ shutdown :: proc() {
 
 update :: wnd.update
 
-begin_window :: proc(id: string, child_kind := Child_Kind.None) -> bool {
+current_window :: proc() -> ^Window {
+    return ctx.current_window
+}
+
+begin_window :: proc(id: string,
+    size: Vec2 = {400, 300},
+    min_size: Maybe(Vec2) = nil,
+    max_size: Maybe(Vec2) = nil,
+    background_color: Color = {0, 0, 0, 1},
+    swap_interval := 0,
+    dark_mode := true,
+    resizable := true,
+    double_buffer := true,
+    child_kind: Child_Kind = .None,
+) -> bool {
     window_map: ^map[string]^Window
 
     is_in_scope_of_other_window := false
@@ -146,13 +160,13 @@ begin_window :: proc(id: string, child_kind := Child_Kind.None) -> bool {
     if !exists {
         w = new(Window)
         w.title = id
-        w.size = {400, 300}
-        w.min_size = nil
-        w.max_size = nil
-        w.swap_interval = 0
-        w.dark_mode = true
-        w.resizable = true
-        w.double_buffer = true
+        w.size = size
+        w.min_size = min_size
+        w.max_size = max_size
+        w.swap_interval = swap_interval
+        w.dark_mode = dark_mode
+        w.resizable = resizable
+        w.double_buffer = double_buffer
         w.child_kind = child_kind
 
         if child_kind != .None {
@@ -269,20 +283,40 @@ end_window :: proc() {
 
 
 
-set_window_background_color :: proc(color: Color) {
-    ctx.current_window.background_color = color
+set_window_background_color :: proc(color: Color, w := ctx.current_window) {
+    w.background_color = color
 }
 
-window_will_close :: proc() -> bool {
-    return wnd.close_requested(ctx.current_window)
+window_position :: proc(w := ctx.current_window) -> Vec2 {
+    return wnd.position(w)
 }
 
-window_is_hovered :: proc() -> bool {
-    return ctx.current_window.is_hovered
+set_window_position :: proc(position: Vec2, w := ctx.current_window) {
+    wnd.set_position(w, position)
 }
 
-mouse_position :: proc() -> Vec2 {
-    return ctx.current_window.mouse_position
+window_size :: proc(w := ctx.current_window) -> Vec2 {
+    return wnd.size(w)
+}
+
+set_window_size :: proc(size: Vec2, w := ctx.current_window) {
+    wnd.set_size(w, size)
+}
+
+close_window :: proc(w := ctx.current_window) {
+    wnd.close(w)
+}
+
+window_close_requested :: proc(w := ctx.current_window) -> bool {
+    return wnd.close_requested(w)
+}
+
+window_is_hovered :: proc(w := ctx.current_window) -> bool {
+    return w.is_hovered
+}
+
+mouse_position :: proc(w := ctx.current_window) -> Vec2 {
+    return w.mouse_position
 }
 
 mouse_delta :: proc() -> Vec2 {
