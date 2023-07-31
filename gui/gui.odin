@@ -32,6 +32,28 @@ Path_Winding :: enum {
     Negative,
 }
 
+Window_Parameters :: struct {
+    size: Vec2,
+    min_size: Maybe(Vec2),
+    max_size: Maybe(Vec2),
+    background_color: Color,
+    swap_interval: int,
+    dark_mode: bool,
+    resizable: bool,
+    double_buffer: bool,
+}
+
+default_window_parameters := Window_Parameters{
+    size = {400, 300},
+    min_size = nil,
+    max_size = nil,
+    background_color = {0, 0, 0, 1},
+    swap_interval = 0,
+    dark_mode = true,
+    resizable = true,
+    double_buffer = true,
+}
+
 Window :: struct {
     using window: wnd.Window,
 
@@ -133,17 +155,7 @@ current_window :: proc() -> ^Window {
     return ctx.current_window
 }
 
-begin_window :: proc(id: string,
-    size: Vec2 = {400, 300},
-    min_size: Maybe(Vec2) = nil,
-    max_size: Maybe(Vec2) = nil,
-    background_color: Color = {0, 0, 0, 1},
-    swap_interval := 0,
-    dark_mode := true,
-    resizable := true,
-    double_buffer := true,
-    child_kind: Child_Kind = .None,
-) -> bool {
+begin_window :: proc(id: string, parameters := default_window_parameters, child_kind := Child_Kind.None) -> bool {
     window_map: ^map[string]^Window
 
     is_in_scope_of_other_window := false
@@ -160,13 +172,13 @@ begin_window :: proc(id: string,
     if !exists {
         w = new(Window)
         w.title = id
-        w.size = size
-        w.min_size = min_size
-        w.max_size = max_size
-        w.swap_interval = swap_interval
-        w.dark_mode = dark_mode
-        w.resizable = resizable
-        w.double_buffer = double_buffer
+        w.size = parameters.size
+        w.min_size = parameters.min_size
+        w.max_size = parameters.max_size
+        w.swap_interval = parameters.swap_interval
+        w.dark_mode = parameters.dark_mode
+        w.resizable = parameters.resizable
+        w.double_buffer = parameters.double_buffer
         w.child_kind = child_kind
 
         if child_kind != .None {
@@ -248,38 +260,26 @@ end_window :: proc() {
     }
 }
 
-// @(deferred_out=scoped_end_window)
-// window :: proc(
-//     id: string,
-//     size := Vec2{400, 300},
-//     min_size: Maybe(Vec2) = nil,
-//     max_size: Maybe(Vec2) = nil,
-//     swap_interval := 0,
-//     dark_mode := true,
-//     resizable := true,
-//     double_buffer := true,
-//     child_kind: Child_Kind = .None,
-//     parent_handle: Native_Handle = nil,
-// ) -> bool {
-//     return begin_window(
-//         id,
-//         size,
-//         min_size,
-//         max_size,
-//         swap_interval,
-//         dark_mode,
-//         resizable,
-//         double_buffer,
-//         child_kind,
-//         parent_handle,
-//     )
-// }
+scoped_end_window :: proc(is_open: bool) {
+    if is_open {
+        end_window()
+    }
+}
 
-// scoped_end_window :: proc(is_open: bool) {
-//     if is_open {
-//         end_window()
-//     }
-// }
+@(deferred_out=scoped_end_window)
+window :: proc(id: string, parameters := default_window_parameters) -> bool {
+    return begin_window(id, parameters, .None)
+}
+
+@(deferred_out=scoped_end_window)
+child_window :: proc(id: string, parameters := default_window_parameters) -> bool {
+    return begin_window(id, parameters, .Transient)
+}
+
+@(deferred_out=scoped_end_window)
+embedded_window :: proc(id: string, parameters := default_window_parameters) -> bool {
+    return begin_window(id, parameters, .Embedded)
+}
 
 
 

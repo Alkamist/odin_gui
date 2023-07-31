@@ -17,7 +17,7 @@ t := f32(0)
 t2 := f32(0)
 
 main_loop :: proc() {
-	if gui.begin_window("Window 1", background_color = {0.05, 0, 0, 1}) {
+	if gui.window("Window 1") {
 		gui.set_window_background_color({0.05, 0, 0, 1})
 
 		dt := f32(time.duration_seconds(gui.delta_time()))
@@ -28,18 +28,14 @@ main_loop :: proc() {
 
 		asdf := gui.mouse_position()
 
-		if gui.begin_window("Child Window", child_kind = .Embedded) {
+		if gui.embedded_window("Child Window") {
 			gui.set_window_background_color({0, 0, 0.3, 1})
 			gui.fill_text_line("Child Window", pos1)
 
-			gui.set_window_position(asdf)
-
-			gui.end_window()
+			// gui.set_window_position(asdf)
 		}
-
-		gui.end_window()
 	}
-	if gui.begin_window("Window 2") {
+	if gui.window("Window 2") {
 		gui.set_window_background_color({0, 0.05, 0, 1})
 
 		dt := f32(time.duration_seconds(gui.delta_time()))
@@ -51,8 +47,6 @@ main_loop :: proc() {
 		if gui.window_close_requested() {
 			should_quit = true
 		}
-
-		gui.end_window()
 	}
 }
 
