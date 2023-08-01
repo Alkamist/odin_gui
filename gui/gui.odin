@@ -59,6 +59,7 @@ default_window_parameters := Window_Parameters{
 Window :: struct {
     id: string,
 
+    initial_size: Vec2,
     mouse_position: Vec2,
     global_mouse_position: Vec2,
     previous_global_mouse_position: Vec2,
@@ -74,8 +75,8 @@ Window :: struct {
     background_color: Color,
 
     is_hovered: bool,
-    open_requested: bool,
-    reopen_pending: bool,
+    open_pending: bool,
+    reload_pending: bool,
 
     pending_position: Maybe(Vec2),
     pending_size: Maybe(Vec2),
@@ -190,21 +191,14 @@ begin_window :: proc(id: string, initial_parameters: Window_Parameters, initial_
     if !exists {
         w = new(Window)
         w.id = id
+        w.initial_size = initial_size
         w.parameters = initial_parameters
         w.previous_parameters = initial_parameters
+        w.open_pending = true
         window_map[id] = w
     }
 
-    if w.open_requested || !exists {
-        if !_open_window(w, initial_size) {
-            fmt.eprintf("Failed to open window: %v\n", id)
-            return false
-        }
-        backend.show(&w.backend_window)
-        w.open_requested = false
-    }
-
-    if !backend.is_open(&w.backend_window) {
+    if !_sync_backend_window(w) {
         return false
     }
 
@@ -212,8 +206,6 @@ begin_window :: proc(id: string, initial_parameters: Window_Parameters, initial_
 
     append(&ctx.window_stack, w)
     ctx.current_window = w
-
-    _sync_backend_window(w)
 
     bg := w.background_color
 
@@ -236,15 +228,6 @@ end_window :: proc() {
     assert(len(ctx.window_stack) > 0, "Mismatch in begin_window and end_window calls.")
     w := pop(&ctx.window_stack)
 
-    backend.activate_context(&w.backend_window)
-    nvg.EndFrame(w.nvg_ctx)
-
-    _sync_backend_window(w)
-
-    if w.backend_window.close_requested {
-        _close_window(w)
-    }
-
     clear(&w.mouse_presses)
     clear(&w.mouse_releases)
     clear(&w.key_presses)
@@ -252,6 +235,15 @@ end_window :: proc() {
     strings.builder_reset(&w.text_input)
     w.mouse_wheel_state = {0, 0}
     w.previous_global_mouse_position = w.global_mouse_position
+
+    backend.activate_context(&w.backend_window)
+    nvg.EndFrame(w.nvg_ctx)
+
+    if w.backend_window.close_requested {
+        _close_window(w)
+    } else {
+        _sync_backend_window(w)
+    }
 
     if len(ctx.window_stack) == 0 {
         ctx.current_window = nil
@@ -321,7 +313,16 @@ set_window_size :: proc(size: Vec2, w := ctx.current_window) {
 
 open_window :: proc(w := ctx.current_window) {
     if w == nil { return }
-    w.open_requested = true
+    w.open_pending = true
+}
+
+reload_window :: proc(w := ctx.current_window) {
+    if w == nil { return }
+    backend_window := &w.backend_window
+    w.reload_pending = true
+    w.initial_size = backend.size(backend_window)
+    w.pending_position = backend.position(backend_window)
+    w.pending_visibility = backend.is_visible(backend_window)
 }
 
 close_window :: proc(w := ctx.current_window) {
@@ -344,8 +345,8 @@ window_is_visible :: proc(w := ctx.current_window) -> bool {
     return backend.is_visible(&w.backend_window)
 }
 
-window_will_close :: proc(w := ctx.current_window) -> bool {
-    if w == nil { return false }
+window_closed :: proc(w := ctx.current_window) -> bool {
+    if w == nil { return true }
     return w.backend_window.close_requested
 }
 
@@ -577,6 +578,8 @@ _open_window :: proc(w: ^Window, initial_size: Vec2) -> bool {
         }
     }
 
+    w.previous_parameters.parent_handle = parameters.parent_handle
+
     err := backend.open(backend_window,
         title = w.id,
         size = initial_size,
@@ -633,35 +636,52 @@ _destroy_window :: proc(w: ^Window) {
     free(w)
 }
 
-_sync_backend_window :: proc(w: ^Window) {
-    backend_window := &w.backend_window
-    if !backend.is_open(backend_window) {
-        return
+_sync_backend_window :: proc(w: ^Window) -> bool {
+    if w.parameters != w.previous_parameters {
+        reload_window(w)
+    }
+    w.previous_parameters = w.parameters
+
+    if w.reload_pending {
+        _close_window(w)
+    }
+
+    if w.open_pending || w.reload_pending {
+        if !_open_window(w, w.initial_size) {
+            fmt.eprintf("Failed to open window: %v\n", w.id)
+            return false
+        }
+        if !w.reload_pending {
+            backend.show(&w.backend_window)
+        }
+        w.open_pending = false
+        w.reload_pending = false
+    }
+
+    if !backend.is_open(&w.backend_window) {
+        return false
     }
 
     if position, ok := w.pending_position.?; ok {
-        backend.set_position(backend_window, position)
+        backend.set_position(&w.backend_window, position)
         w.pending_position = nil
     }
+
     if size, ok := w.pending_size.?; ok {
-        backend.set_position(backend_window, size)
+        backend.set_position(&w.backend_window, size)
         w.pending_size = nil
     }
+
     if is_visible, ok := w.pending_visibility.?; ok {
         if is_visible {
-            backend.show(backend_window)
+            backend.show(&w.backend_window)
         } else {
-            backend.hide(backend_window)
+            backend.hide(&w.backend_window)
         }
         w.pending_visibility = nil
     }
 
-    // Changing parameters requires a window reload.
-    if w.parameters != w.previous_parameters {
-        w.reopen_pending = true
-    }
-
-    w.previous_parameters = w.parameters
+    return true
 }
 
 _setup_window_callbacks :: proc(w: ^Window) {

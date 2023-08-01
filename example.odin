@@ -30,16 +30,20 @@ main_loop :: proc() {
 
 		gui.fill_text_line("Window 1", pos1)
 
-		if gui.embedded_window("Child Window") {
+		if gui.child_window("Child Window") {
 			gui.set_window_background_color({0, 0, 0.3, 1})
 			gui.fill_text_line("Child Window", pos1)
 
-			if gui.mouse_down(.Left) && gui.mouse_moved() {
-				gui.set_window_position(gui.window_position() + gui.mouse_delta())
-			}
+			// if gui.mouse_down(.Left) && gui.mouse_moved() {
+			// 	gui.set_window_position(gui.window_position() + gui.mouse_delta())
+			// }
 		}
 	}
 	if gui.window("Window 2") {
+		if gui.window_closed() {
+			should_quit = true
+		}
+
 		gui.set_window_background_color({0, 0.05, 0, 1})
 
 		dt := f32(time.duration_seconds(gui.delta_time()))
@@ -50,10 +54,6 @@ main_loop :: proc() {
 
 		if gui.mouse_pressed(.Left) {
 			gui.open_window(w1)
-		}
-
-		if gui.window_will_close() {
-			should_quit = true
 		}
 	}
 }
