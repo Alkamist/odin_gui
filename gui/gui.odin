@@ -260,23 +260,14 @@ scoped_end_window :: proc(is_open: bool) {
 }
 
 @(deferred_out=scoped_end_window)
+window_ex :: proc(id: string, parameters := default_window_parameters, initial_size: Vec2 = {400, 300}) -> bool {
+    return begin_window(id, parameters, initial_size)
+}
+
+@(deferred_out=scoped_end_window)
 window :: proc(id: string, child_kind: Child_Kind = .None, initial_size: Vec2 = {400, 300}) -> bool {
     parameters := default_window_parameters
     parameters.child_kind = child_kind
-    return begin_window(id, parameters, initial_size)
-}
-
-@(deferred_out=scoped_end_window)
-child_window :: proc(id: string, initial_size: Vec2 = {400, 300}) -> bool {
-    parameters := default_window_parameters
-    parameters.child_kind = .Transient
-    return begin_window(id, parameters, initial_size)
-}
-
-@(deferred_out=scoped_end_window)
-embedded_window :: proc(id: string, initial_size: Vec2 = {400, 300}) -> bool {
-    parameters := default_window_parameters
-    parameters.child_kind = .Embedded
     return begin_window(id, parameters, initial_size)
 }
 
