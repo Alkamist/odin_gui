@@ -27,6 +27,9 @@ text_metrics :: proc(w: ^Window, font: ^Font, font_size: f32) -> (ascender, desc
     return nvg.TextMetrics(w.nvg_ctx)
 }
 
+
+
+@(private)
 _set_font :: proc(w: ^Window, font: ^Font) {
     if !slice.contains(w.loaded_fonts[:], font) {
         id := nvg.CreateFontMem(w.nvg_ctx, font.name, font.data, false)
@@ -43,6 +46,7 @@ _set_font :: proc(w: ^Window, font: ^Font) {
     w.current_font = font
 }
 
+@(private)
 _set_font_size :: proc(w: ^Window, font_size: f32) {
     if font_size == w.current_font_size {
         return

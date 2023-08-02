@@ -1,14 +1,15 @@
 package gui
 
 import "core:fmt"
+import "core:slice"
 import "core:strings"
 import gl "vendor:OpenGL"
 import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
 import backend "window"
 
-Child_Kind :: backend.Child_Kind
-Native_Handle :: backend.Native_Handle
+Window_Child_Kind :: backend.Child_Kind
+Native_Window_Handle :: backend.Native_Handle
 
 Window_Parameters :: struct {
     min_size: Maybe(Vec2),
@@ -18,8 +19,8 @@ Window_Parameters :: struct {
     resizable: bool,
     double_buffer: bool,
     background_color: Color,
-    child_kind: Child_Kind,
-    parent_handle: Native_Handle,
+    child_kind: Window_Child_Kind,
+    parent_handle: Native_Window_Handle,
 }
 
 default_window_parameters := Window_Parameters{
@@ -67,6 +68,17 @@ Window :: struct {
     current_font: ^Font,
     current_font_size: f32,
 
+    current_layer: ^Layer,
+    current_offset: Vec2,
+
+    offset_stack: [dynamic]Vec2,
+    clip_region_stack: [dynamic]Region,
+    interaction_tracker_stack: [dynamic]Interaction_Tracker,
+    layer_stack: [dynamic]Layer,
+
+    highest_z_index: int,
+    layers: [dynamic]Layer,
+
     child_windows: map[string]^Window,
     loaded_fonts: [dynamic]^Font,
 
@@ -78,37 +90,42 @@ current_window :: proc() -> ^Window {
 }
 
 set_window_background_color :: proc(color: Color, w := ctx.current_window) {
-    if w == nil { return }
+    assert(w != nil, "No window currently exists.")
     w.background_color = color
 }
 
 window_position :: proc(w := ctx.current_window) -> Vec2 {
-    if w == nil { return {0, 0} }
+    assert(w != nil, "No window currently exists.")
     return backend.position(&w.backend_window)
 }
 
 set_window_position :: proc(position: Vec2, w := ctx.current_window) {
-    if w == nil { return }
+    assert(w != nil, "No window currently exists.")
     w.pending_position = position
 }
 
 window_size :: proc(w := ctx.current_window) -> Vec2 {
-    if w == nil { return {0, 0} }
+    assert(w != nil, "No window currently exists.")
     return backend.size(&w.backend_window)
 }
 
 set_window_size :: proc(size: Vec2, w := ctx.current_window) {
-    if w == nil { return }
+    assert(w != nil, "No window currently exists.")
     w.pending_size = size
 }
 
+window_content_scale :: proc(w := ctx.current_window) -> f32 {
+    assert(w != nil, "No window currently exists.")
+    return backend.content_scale(&w.backend_window)
+}
+
 open_window :: proc(w := ctx.current_window) {
-    if w == nil { return }
+    assert(w != nil, "No window currently exists.")
     w.open_pending = true
 }
 
 reload_window :: proc(w := ctx.current_window) {
-    if w == nil { return }
+    assert(w != nil, "No window currently exists.")
     backend_window := &w.backend_window
     w.reload_pending = true
     w.initial_size = backend.size(backend_window)
@@ -117,36 +134,36 @@ reload_window :: proc(w := ctx.current_window) {
 }
 
 close_window :: proc(w := ctx.current_window) {
-    if w == nil { return }
+    assert(w != nil, "No window currently exists.")
     w.backend_window.close_requested = true
 }
 
 show_window :: proc(w := ctx.current_window) {
-    if w == nil { return }
+    assert(w != nil, "No window currently exists.")
     w.pending_visibility = true
 }
 
 hide_window :: proc(w := ctx.current_window) {
-    if w == nil { return }
+    assert(w != nil, "No window currently exists.")
     w.pending_visibility = false
 }
 
 window_is_visible :: proc(w := ctx.current_window) -> bool {
-    if w == nil { return false }
+    assert(w != nil, "No window currently exists.")
     return backend.is_visible(&w.backend_window)
 }
 
 window_closed :: proc(w := ctx.current_window) -> bool {
-    if w == nil { return true }
+    assert(w != nil, "No window currently exists.")
     return w.backend_window.close_requested
 }
 
 window_is_hovered :: proc(w := ctx.current_window) -> bool {
-    if w == nil { return false }
+    assert(w != nil, "No window currently exists.")
     return w.is_hovered
 }
 
-begin_window :: proc(id: string, initial_parameters: Window_Parameters, initial_size: Vec2) -> bool {
+begin_window :: proc(id: string, parameters: Window_Parameters, size: Vec2) -> bool {
     window_map: ^map[string]^Window
     if ctx.current_window == nil {
         window_map = &ctx.top_level_windows
@@ -158,9 +175,9 @@ begin_window :: proc(id: string, initial_parameters: Window_Parameters, initial_
     if !exists {
         w = new(Window)
         w.id = id
-        w.initial_size = initial_size
-        w.parameters = initial_parameters
-        w.previous_parameters = initial_parameters
+        w.initial_size = size
+        w.parameters = parameters
+        w.previous_parameters = parameters
         w.open_pending = true
         window_map[id] = w
     }
@@ -188,12 +205,54 @@ begin_window :: proc(id: string, initial_parameters: Window_Parameters, initial_
     w.current_font = ctx.default_font
     w.current_font_size = 16.0
 
+    begin_z_index(0, global = true)
+
     return true
 }
 
 end_window :: proc() {
+    end_z_index()
+
     assert(len(ctx.window_stack) > 0, "Mismatch in begin_window and end_window calls.")
     w := pop(&ctx.window_stack)
+
+    assert(len(w.offset_stack) == 0, "Mismatch in begin_offset and end_offset calls.")
+    assert(len(w.clip_region_stack) == 0, "Mismatch in begin_clip_region and end_clip_region calls.")
+    assert(len(w.interaction_tracker_stack) == 0, "Mismatch in begin_interaction_tracker and end_interaction_tracker calls.")
+    assert(len(w.layer_stack) == 0, "Mismatch in begin_z_index and end_z_index calls.")
+
+    // The layers are in reverse order because they were added in end_z_index.
+    // Stable sort preserves the order of layers with the same z index, so they
+    // must first be reversed and then sorted to keep that ordering in tact.
+    slice.reverse(w.layers[:])
+    slice.stable_sort_by(w.layers[:], proc(i, j: Layer) -> bool {
+        return i.z_index < j.z_index
+    })
+
+    ctx.hover = 0
+    ctx.mouse_over = 0
+    highest_z_index := min(int)
+
+    for layer in w.layers {
+        if layer.z_index > highest_z_index {
+            highest_z_index = layer.z_index
+        }
+        _render_draw_commands(w, layer.draw_commands[:])
+
+        hover_request := layer.final_hover_request
+        if hover_request != 0 {
+            ctx.hover = hover_request
+            ctx.mouse_over = hover_request
+        }
+
+        delete(layer.draw_commands)
+    }
+
+    if ctx.hover_capture != 0 {
+        ctx.hover = ctx.hover_capture
+    }
+
+    w.highest_z_index = highest_z_index
 
     clear(&w.mouse_presses)
     clear(&w.mouse_releases)
@@ -202,6 +261,8 @@ end_window :: proc() {
     strings.builder_reset(&w.text_input)
     w.mouse_wheel_state = {0, 0}
     w.previous_global_mouse_position = w.global_mouse_position
+
+    clear(&w.layers)
 
     backend.activate_context(&w.backend_window)
     nvg.EndFrame(w.nvg_ctx)
@@ -232,11 +293,13 @@ window_ex :: proc(id: string, parameters := default_window_parameters, initial_s
 }
 
 @(deferred_out=scoped_end_window)
-window :: proc(id: string, child_kind: Child_Kind = .None, initial_size: Vec2 = {400, 300}) -> bool {
+window :: proc(id: string, child_kind: Window_Child_Kind = .None, initial_size: Vec2 = {400, 300}) -> bool {
     parameters := default_window_parameters
     parameters.child_kind = child_kind
     return begin_window(id, parameters, initial_size)
 }
+
+
 
 @(private)
 _open_window :: proc(w: ^Window, initial_size: Vec2) -> bool {
@@ -305,6 +368,7 @@ _destroy_window :: proc(w: ^Window) {
     for _, child in w.child_windows {
         _destroy_window(child)
     }
+
     delete(w.mouse_presses)
     delete(w.mouse_releases)
     delete(w.key_presses)
@@ -312,6 +376,13 @@ _destroy_window :: proc(w: ^Window) {
     strings.builder_destroy(&w.text_input)
     delete(w.child_windows)
     delete(w.loaded_fonts)
+
+    delete(w.offset_stack)
+    delete(w.clip_region_stack)
+    delete(w.interaction_tracker_stack)
+    delete(w.layer_stack)
+    delete(w.layers)
+
     free(w)
 }
 

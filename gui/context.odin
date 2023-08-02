@@ -2,11 +2,6 @@ package gui
 
 import "core:fmt"
 import "core:time"
-import "core:slice"
-import "core:strings"
-import "core:intrinsics"
-import nvg "vendor:nanovg"
-import nvg_gl "vendor:nanovg/gl"
 import gl "vendor:OpenGL"
 import backend "window"
 
@@ -14,14 +9,22 @@ import backend "window"
 
 Context :: struct {
     on_update: proc(),
-    dummy_window: backend.Window,
+
+    hover: Id,
+    mouse_over: Id,
+    hover_capture: Id,
+
     current_window: ^Window,
+    dummy_window: backend.Window,
     top_level_windows: map[string]^Window,
     window_stack: [dynamic]^Window,
+
     default_font: ^Font,
+
     tick: time.Tick,
     previous_tick: time.Tick,
-    host_handle: Native_Handle,
+
+    host_handle: Native_Window_Handle,
 }
 
 delta_time :: proc() -> time.Duration {
