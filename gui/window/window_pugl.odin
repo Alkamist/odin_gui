@@ -323,8 +323,6 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             )
         }
 
-        // update()
-
     case .POINTER_IN:
         window := cast(^Window)pugl.GetHandle(view)
         context = window.odin_context
@@ -332,16 +330,12 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_mouse_enter()
         }
 
-        // update()
-
     case .POINTER_OUT:
         window := cast(^Window)pugl.GetHandle(view)
         context = window.odin_context
         if window.on_mouse_exit != nil {
             window->on_mouse_exit()
         }
-
-        // update()
 
     case .SCROLL:
         window := cast(^Window)pugl.GetHandle(view)
@@ -351,8 +345,6 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_mouse_wheel({f32(event.dx), f32(event.dy)})
         }
 
-        // update()
-
     case .BUTTON_PRESS:
         window := cast(^Window)pugl.GetHandle(view)
         context = window.odin_context
@@ -360,8 +352,6 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         if window.on_mouse_press != nil {
             window->on_mouse_press(_pugl_button_to_mouse_button(event.button))
         }
-
-        // update()
 
     case .BUTTON_RELEASE:
         window := cast(^Window)pugl.GetHandle(view)
@@ -371,8 +361,6 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_mouse_release(_pugl_button_to_mouse_button(event.button))
         }
 
-        // update()
-
     case .KEY_PRESS:
         window := cast(^Window)pugl.GetHandle(view)
         context = window.odin_context
@@ -380,8 +368,6 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         if window.on_key_press != nil {
             window->on_key_press(_pugl_key_event_to_keyboard_key(event))
         }
-
-        // update()
 
     case .KEY_RELEASE:
         window := cast(^Window)pugl.GetHandle(view)
@@ -391,8 +377,6 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             window->on_key_release(_pugl_key_event_to_keyboard_key(event))
         }
 
-        // update()
-
     case .TEXT:
         window := cast(^Window)pugl.GetHandle(view)
         context = window.odin_context
@@ -401,8 +385,6 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
             r, len := utf8.decode_rune(event.string[:4])
             window->on_rune(r)
         }
-
-        // update()
 
     case .CLOSE:
         window := cast(^Window)pugl.GetHandle(view)

@@ -26,7 +26,7 @@ Window_Parameters :: struct {
 default_window_parameters := Window_Parameters{
     min_size = nil,
     max_size = nil,
-    swap_interval = 0,
+    swap_interval = 1,
     dark_mode = true,
     resizable = true,
     double_buffer = true,
@@ -68,12 +68,16 @@ Window :: struct {
     current_font: ^Font,
     current_font_size: f32,
 
+    hover: Id,
+    mouse_over: Id,
+    hover_capture: Id,
+
     current_layer: ^Layer,
     current_offset: Vec2,
 
     offset_stack: [dynamic]Vec2,
     clip_region_stack: [dynamic]Region,
-    interaction_tracker_stack: [dynamic]Interaction_Tracker,
+    // interaction_tracker_stack: [dynamic]Interaction_Tracker,
     layer_stack: [dynamic]Layer,
 
     highest_z_index: int,
@@ -86,7 +90,9 @@ Window :: struct {
 }
 
 current_window :: proc() -> ^Window {
-    return ctx.current_window
+    w := ctx.current_window
+    assert(w != nil, "No window currently exists.")
+    return w
 }
 
 set_window_background_color :: proc(color: Color, w := ctx.current_window) {
@@ -206,19 +212,21 @@ begin_window :: proc(id: string, parameters: Window_Parameters, size: Vec2) -> b
     w.current_font_size = 16.0
 
     begin_z_index(0, global = true)
+    begin_clip({0, 0}, size, global = true, intersect = false)
 
     return true
 }
 
 end_window :: proc() {
+    end_clip()
     end_z_index()
 
     assert(len(ctx.window_stack) > 0, "Mismatch in begin_window and end_window calls.")
     w := pop(&ctx.window_stack)
 
     assert(len(w.offset_stack) == 0, "Mismatch in begin_offset and end_offset calls.")
-    assert(len(w.clip_region_stack) == 0, "Mismatch in begin_clip_region and end_clip_region calls.")
-    assert(len(w.interaction_tracker_stack) == 0, "Mismatch in begin_interaction_tracker and end_interaction_tracker calls.")
+    assert(len(w.clip_region_stack) == 0, "Mismatch in begin_clip and end_clip calls.")
+    // assert(len(w.interaction_tracker_stack) == 0, "Mismatch in begin_interaction_tracker and end_interaction_tracker calls.")
     assert(len(w.layer_stack) == 0, "Mismatch in begin_z_index and end_z_index calls.")
 
     // The layers are in reverse order because they were added in end_z_index.
@@ -229,8 +237,8 @@ end_window :: proc() {
         return i.z_index < j.z_index
     })
 
-    ctx.hover = 0
-    ctx.mouse_over = 0
+    w.hover = 0
+    w.mouse_over = 0
     highest_z_index := min(int)
 
     for layer in w.layers {
@@ -241,15 +249,15 @@ end_window :: proc() {
 
         hover_request := layer.final_hover_request
         if hover_request != 0 {
-            ctx.hover = hover_request
-            ctx.mouse_over = hover_request
+            w.hover = hover_request
+            w.mouse_over = hover_request
         }
 
         delete(layer.draw_commands)
     }
 
-    if ctx.hover_capture != 0 {
-        ctx.hover = ctx.hover_capture
+    if w.hover_capture != 0 {
+        w.hover = w.hover_capture
     }
 
     w.highest_z_index = highest_z_index
@@ -379,7 +387,7 @@ _destroy_window :: proc(w: ^Window) {
 
     delete(w.offset_stack)
     delete(w.clip_region_stack)
-    delete(w.interaction_tracker_stack)
+    // delete(w.interaction_tracker_stack)
     delete(w.layer_stack)
     delete(w.layers)
 

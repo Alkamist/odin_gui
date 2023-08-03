@@ -3,7 +3,6 @@ package gui
 import "core:fmt"
 import "core:slice"
 import nvg "vendor:nanovg"
-import nvg_gl "vendor:nanovg/gl"
 
 Font :: struct {
     name: string,

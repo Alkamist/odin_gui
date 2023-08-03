@@ -10,10 +10,6 @@ import backend "window"
 Context :: struct {
     on_update: proc(),
 
-    hover: Id,
-    mouse_over: Id,
-    hover_capture: Id,
-
     current_window: ^Window,
     dummy_window: backend.Window,
     top_level_windows: map[string]^Window,
@@ -21,10 +17,17 @@ Context :: struct {
 
     default_font: ^Font,
 
+    last_id: Id,
+
     tick: time.Tick,
     previous_tick: time.Tick,
 
     host_handle: Native_Window_Handle,
+}
+
+generate_id :: proc() -> Id {
+    ctx.last_id += 1
+    return ctx.last_id
 }
 
 delta_time :: proc() -> time.Duration {
