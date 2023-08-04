@@ -2,7 +2,7 @@ package widgets
 
 import "core:fmt"
 import "core:time"
-import "../gui"
+import "../../gui"
 
 Performance :: struct {
     frame_time: f32,

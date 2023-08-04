@@ -1,6 +1,6 @@
 package widgets
 
-import "../gui"
+import "../../gui"
 
 Slider :: struct {
     position: Vec2,

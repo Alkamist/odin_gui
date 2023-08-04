@@ -4,68 +4,64 @@ import "core:mem"
 import "core:fmt"
 import "core:time"
 import "core:math"
+import "core:thread"
 import "gui"
-import "widgets"
+import "gui/widgets"
 
-should_quit := false
+App :: struct {
+    should_quit: bool,
+    button: ^widgets.Button,
+}
 
-performance := widgets.create_performance()
+create_app :: proc() -> ^App {
+    app := new(App)
+    app.button = widgets.create_button(position = {75, 75})
+    return app
+}
 
-button1 := widgets.create_button({50, 50}, {96, 32})
-button2 := widgets.create_button({100, 100}, {32, 96})
+destroy_app :: proc(app: ^App) {
+    widgets.destroy_button(app.button)
+    free(app)
+}
 
-position := gui.Vec2{0, 50}
-t := f32(0)
+app_main :: proc() {
+    app := gui.get_user_data(App)
 
-main_loop :: proc() {
-    widgets.update_performance(performance)
+    if gui.window("Window") {
+        gui.begin_path()
+        gui.rounded_rect({50, 50}, {100, 100}, 5)
+        gui.fill_path({1, 0, 0, 1})
 
-    if gui.window("Window 1") {
-        widgets.update_button(button1)
-        widgets.draw_button(button1)
+        widgets.update_button(app.button)
+        widgets.draw_button(app.button)
 
-        if button1.clicked {
-            fmt.println("Button 1 Clicked")
+        if app.button.clicked {
+            fmt.println("Clicked")
         }
 
         if gui.window_closed() {
-            should_quit = true
+            app.should_quit = true
         }
-
-        widgets.draw_performance(performance)
     }
-    if gui.window("Window 2") {
-        widgets.update_button(button2)
-        widgets.draw_button(button2)
+}
 
-        if button2.clicked {
-            fmt.println("Button 2 Clicked")
-        }
+window_proc :: proc(t: ^thread.Thread) {
+    app := create_app()
+    defer destroy_app(app)
 
-        if gui.window_closed() {
-            should_quit = true
-        }
+    gui.set_user_data(app)
 
-        widgets.draw_performance(performance)
-    }
-    if gui.window("Window 3") {
-        if gui.window_closed() {
-            should_quit = true
-        }
+    consola := gui.create_font("Consola", #load("consola.ttf"))
+    defer gui.destroy_font(consola)
 
-        gui.set_window_background_color({0, 0.05, 0, 1})
+    app_name := fmt.aprint("DemoApp", t.user_index)
+    defer delete(app_name)
 
-        dt := f32(time.duration_seconds(gui.delta_time()))
-        t += dt
-        position.x = 100.0 + 100.0 * math.sin(t * 10.0)
+    gui.startup(app_name, consola, app_main)
+    defer gui.shutdown()
 
-        if gui.window_closed() {
-            should_quit = true
-        }
-
-        gui.fill_text_line("Hello World", position)
-
-        widgets.draw_performance(performance)
+    for !app.should_quit {
+        gui.update()
     }
 }
 
@@ -92,13 +88,18 @@ main :: proc() {
         }
     }
 
-    consola := gui.create_font("Consola", #load("consola.ttf"))
-    defer gui.destroy_font(consola)
+    t0 := thread.create(window_proc)
+    t0.init_context = context
+    t0.user_index = 0
+    thread.start(t0)
+    defer thread.destroy(t0)
 
-    gui.startup("DemoApp", consola, main_loop)
-    defer gui.shutdown()
+    t1 := thread.create(window_proc)
+    t1.init_context = context
+    t1.user_index = 1
+    thread.start(t1)
+    defer thread.destroy(t1)
 
-    for !should_quit {
-        gui.update()
+    for !(thread.is_done(t0) && thread.is_done(t1)) {
     }
 }

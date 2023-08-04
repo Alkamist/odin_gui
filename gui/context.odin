@@ -8,6 +8,8 @@ import backend "window"
 @(thread_local) ctx: Context
 
 Context :: struct {
+    user_data: rawptr,
+
     on_update: proc(),
 
     current_window: ^Window,
@@ -32,6 +34,14 @@ generate_id :: proc() -> Id {
 
 delta_time :: proc() -> time.Duration {
     return time.tick_diff(ctx.previous_tick, ctx.tick)
+}
+
+get_user_data :: proc($T: typeid) -> ^T {
+    return cast(^T)ctx.user_data
+}
+
+set_user_data :: proc(data: rawptr) {
+    ctx.user_data = data
 }
 
 update :: backend.update

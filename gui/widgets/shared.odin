@@ -1,6 +1,6 @@
 package widgets
 
-import "../gui"
+import "../../gui"
 
 Id :: gui.Id
 Context :: gui.Context
