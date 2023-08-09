@@ -1,47 +1,34 @@
 package gui
 
-import "core:fmt"
+import "core:time"
 import "core:slice"
 import "core:strings"
 import gl "vendor:OpenGL"
 import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
 import backend "window"
+import "rect"
 
-Window_Child_Kind :: backend.Child_Kind
+@(thread_local) _current_window: ^Window
+
+Rect :: rect.Rect
+Vec2 :: [2]f32
+
 Native_Window_Handle :: backend.Native_Handle
-
-Window_Parameters :: struct {
-    min_size: Maybe(Vec2),
-    max_size: Maybe(Vec2),
-    swap_interval: int,
-    dark_mode: bool,
-    resizable: bool,
-    double_buffer: bool,
-    background_color: Color,
-    child_kind: Window_Child_Kind,
-    parent_handle: Native_Window_Handle,
-}
-
-default_window_parameters := Window_Parameters{
-    min_size = nil,
-    max_size = nil,
-    swap_interval = 1,
-    dark_mode = true,
-    resizable = true,
-    double_buffer = true,
-    background_color = {0, 0, 0, 1},
-    child_kind = .None,
-    parent_handle = nil,
-}
+Window_Child_Kind :: backend.Child_Kind
 
 Window :: struct {
-    id: string,
+    user_data: rawptr,
 
-    initial_size: Vec2,
-    mouse_position: Vec2,
+    on_frame: proc(window: ^Window),
+    background_color: Color,
+
+    tick: time.Tick,
+    previous_tick: time.Tick,
+    client_area_hovered: bool,
     global_mouse_position: Vec2,
-    previous_global_mouse_position: Vec2,
+    root_mouse_position: Vec2,
+    previous_root_mouse_position: Vec2,
     mouse_wheel_state: Vec2,
     mouse_presses: [dynamic]Mouse_Button,
     mouse_releases: [dynamic]Mouse_Button,
@@ -51,439 +38,288 @@ Window :: struct {
     key_down_states: [Keyboard_Key]bool,
     text_input: strings.Builder,
 
-    background_color: Color,
-
-    is_hovered: bool,
-    open_pending: bool,
-    reload_pending: bool,
-
-    pending_position: Maybe(Vec2),
-    pending_size: Maybe(Vec2),
-    pending_visibility: Maybe(bool),
-
-    parameters: Window_Parameters,
-    previous_parameters: Window_Parameters,
-
-    nvg_ctx: ^nvg.Context,
-    current_font: ^Font,
-    current_font_size: f32,
-
-    hover: Id,
-    mouse_over: Id,
-    hover_capture: Id,
-
-    current_layer: ^Layer,
-    current_offset: Vec2,
-
-    offset_stack: [dynamic]Vec2,
-    clip_region_stack: [dynamic]Region,
-    // interaction_tracker_stack: [dynamic]Interaction_Tracker,
-    layer_stack: [dynamic]Layer,
+    hover: ^Widget,
+    mouse_over: ^Widget,
+    hover_capture: ^Widget,
 
     highest_z_index: int,
+
+    offset_stack: [dynamic]Vec2,
+    clip_stack: [dynamic]Rect,
+    layer_stack: [dynamic]Layer,
+    interaction_tracker_stack: [dynamic]Interaction_Tracker,
     layers: [dynamic]Layer,
 
-    child_windows: map[string]^Window,
+    default_font: ^Font,
+
+    current_font: ^Font,
+    current_font_size: f32,
+    nvg_ctx: ^nvg.Context,
+
+    cached_content_scale: f32,
+
     loaded_fonts: [dynamic]^Font,
 
-    backend_window: backend.Window,
+    backend_window: ^backend.Window,
 }
 
-current_window :: proc() -> ^Window {
-    w := ctx.current_window
-    assert(w != nil, "No window currently exists.")
-    return w
+update :: backend.update
+
+activate_window_context :: proc(window: ^Window) {
+    backend.activate_context(window.backend_window)
 }
 
-set_window_background_color :: proc(color: Color, w := ctx.current_window) {
-    assert(w != nil, "No window currently exists.")
-    w.background_color = color
+deactivate_window_context :: proc(window: ^Window) {
+    backend.deactivate_context(window.backend_window)
 }
 
-window_position :: proc(w := ctx.current_window) -> Vec2 {
-    assert(w != nil, "No window currently exists.")
-    return backend.position(&w.backend_window)
+native_window_handle :: proc(window: ^Window) -> Native_Window_Handle {
+    return backend.native_handle(window.backend_window)
 }
 
-set_window_position :: proc(position: Vec2, w := ctx.current_window) {
-    assert(w != nil, "No window currently exists.")
-    w.pending_position = position
+close_window :: proc(window := _current_window) {
+    backend.close(window.backend_window)
 }
 
-window_size :: proc(w := ctx.current_window) -> Vec2 {
-    assert(w != nil, "No window currently exists.")
-    return backend.size(&w.backend_window)
+window_is_open :: proc(window := _current_window) -> bool {
+    return backend.is_open(window.backend_window)
 }
 
-set_window_size :: proc(size: Vec2, w := ctx.current_window) {
-    assert(w != nil, "No window currently exists.")
-    w.pending_size = size
+window_is_visible :: proc(window := _current_window) -> bool {
+    return backend.is_visible(window.backend_window)
 }
 
-window_content_scale :: proc(w := ctx.current_window) -> f32 {
-    assert(w != nil, "No window currently exists.")
-    return backend.content_scale(&w.backend_window)
+set_window_visibility :: proc(visibility: bool, window := _current_window) {
+    backend.set_visibility(window.backend_window, visibility)
 }
 
-open_window :: proc(w := ctx.current_window) {
-    assert(w != nil, "No window currently exists.")
-    w.open_pending = true
+window_position :: proc(window := _current_window) -> Vec2 {
+    return backend.position(window.backend_window)
 }
 
-reload_window :: proc(w := ctx.current_window) {
-    assert(w != nil, "No window currently exists.")
-    backend_window := &w.backend_window
-    w.reload_pending = true
-    w.initial_size = backend.size(backend_window)
-    w.pending_position = backend.position(backend_window)
-    w.pending_visibility = backend.is_visible(backend_window)
+set_window_position :: proc(position: Vec2, window := _current_window) {
+    backend.set_position(window.backend_window, position)
 }
 
-close_window :: proc(w := ctx.current_window) {
-    assert(w != nil, "No window currently exists.")
-    w.backend_window.close_requested = true
+window_size :: proc(window := _current_window) -> Vec2 {
+    return backend.size(window.backend_window)
 }
 
-show_window :: proc(w := ctx.current_window) {
-    assert(w != nil, "No window currently exists.")
-    w.pending_visibility = true
+set_window_size :: proc(size: Vec2, window := _current_window) {
+    backend.set_size(window.backend_window, size)
 }
 
-hide_window :: proc(w := ctx.current_window) {
-    assert(w != nil, "No window currently exists.")
-    w.pending_visibility = false
+window_content_scale :: proc(window := _current_window) -> f32 {
+    return backend.content_scale(window.backend_window)
 }
 
-window_is_visible :: proc(w := ctx.current_window) -> bool {
-    assert(w != nil, "No window currently exists.")
-    return backend.is_visible(&w.backend_window)
+create_window :: proc(
+    title := "",
+    position := Vec2{0, 0},
+    size := Vec2{400, 300},
+    min_size: Maybe(Vec2) = nil,
+    max_size: Maybe(Vec2) = nil,
+    background_color := Color{0, 0, 0, 1},
+    default_font: ^Font = nil,
+    swap_interval := 1,
+    dark_mode := true,
+    is_visible := true,
+    is_resizable := true,
+    double_buffer := true,
+    child_kind := Window_Child_Kind.None,
+    parent_handle: Native_Window_Handle = nil,
+    user_data: rawptr = nil,
+) -> ^Window {
+    window := new(Window)
+    window.backend_window = backend.create(
+        title = title,
+        position = position,
+        size = size,
+        min_size = min_size,
+        max_size = max_size,
+        swap_interval = swap_interval,
+        dark_mode = dark_mode,
+        is_visible = is_visible,
+        is_resizable = is_resizable,
+        double_buffer = double_buffer,
+        child_kind = child_kind,
+        parent_handle = parent_handle,
+    )
+    window.background_color = background_color
+    window.default_font = default_font
+    window.user_data = user_data
+    return window
 }
 
-window_closed :: proc(w := ctx.current_window) -> bool {
-    assert(w != nil, "No window currently exists.")
-    return w.backend_window.close_requested
+destroy_window :: proc(window: ^Window) {
+    delete(window.mouse_presses)
+    delete(window.mouse_releases)
+    delete(window.key_presses)
+    delete(window.key_releases)
+    delete(window.offset_stack)
+    delete(window.clip_stack)
+    delete(window.layer_stack)
+    delete(window.interaction_tracker_stack)
+    delete(window.layers)
+    delete(window.loaded_fonts)
+    backend.destroy(window.backend_window)
+    free(window)
 }
 
-window_is_hovered :: proc(w := ctx.current_window) -> bool {
-    assert(w != nil, "No window currently exists.")
-    return w.is_hovered
-}
-
-begin_window :: proc(id: string, parameters: Window_Parameters, size: Vec2) -> bool {
-    window_map: ^map[string]^Window
-    if ctx.current_window == nil {
-        window_map = &ctx.top_level_windows
-    } else {
-        window_map = &ctx.current_window.child_windows
-    }
-
-    w, exists := window_map[id]
-    if !exists {
-        w = new(Window)
-        w.id = id
-        w.initial_size = size
-        w.parameters = parameters
-        w.previous_parameters = parameters
-        w.open_pending = true
-        window_map[id] = w
-    }
-
-    if !_sync_backend_window(w) {
+open_window :: proc(window: ^Window) -> bool {
+    if !backend.open(window.backend_window) {
         return false
     }
 
-    backend.activate_context(&w.backend_window)
+    clear(&window.loaded_fonts)
 
-    append(&ctx.window_stack, w)
-    ctx.current_window = w
+    backend_window := window.backend_window
+    backend_window.user_data = window
 
-    bg := w.background_color
+    activate_window_context(window)
+    gl.load_up_to(3, 3, backend.gl_set_proc_address)
+    window.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
 
-    gl.ClearColor(bg.r, bg.g, bg.b, bg.a)
-    gl.Clear(gl.COLOR_BUFFER_BIT)
-
-    content_scale := backend.content_scale(&w.backend_window)
-    size := backend.size(&w.backend_window)
-
-    gl.Viewport(0, 0, i32(size.x), i32(size.y))
-    nvg.BeginFrame(w.nvg_ctx, size.x, size.y, content_scale)
-    nvg.TextAlign(w.nvg_ctx, .LEFT, .TOP)
-    w.current_font = ctx.default_font
-    w.current_font_size = 16.0
-
-    begin_z_index(0, global = true)
-    begin_clip({0, 0}, size, global = true, intersect = false)
+    backend_window.backend_callbacks.on_close = proc(window: ^backend.Window) {
+        window := cast(^Window)(window.user_data)
+        nvg_gl.Destroy(window.nvg_ctx)
+    }
+    backend_window.backend_callbacks.on_mouse_move = proc(window: ^backend.Window, position, root_position: Vec2) {
+        window := cast(^Window)(window.user_data)
+        window.global_mouse_position = position
+        window.root_mouse_position = root_position
+    }
+    backend_window.backend_callbacks.on_mouse_enter = proc(window: ^backend.Window) {
+        window := cast(^Window)(window.user_data)
+        window.client_area_hovered = true
+    }
+    backend_window.backend_callbacks.on_mouse_exit = proc(window: ^backend.Window) {
+        window := cast(^Window)(window.user_data)
+        window.client_area_hovered = false
+    }
+    backend_window.backend_callbacks.on_mouse_wheel = proc(window: ^backend.Window, amount: Vec2) {
+        window := cast(^Window)(window.user_data)
+        window.mouse_wheel_state = amount
+    }
+    backend_window.backend_callbacks.on_mouse_press = proc(window: ^backend.Window, button: Mouse_Button) {
+        window := cast(^Window)(window.user_data)
+        window.mouse_down_states[button] = true
+        append(&window.mouse_presses, button)
+    }
+    backend_window.backend_callbacks.on_mouse_release = proc(window: ^backend.Window, button: Mouse_Button) {
+        window := cast(^Window)(window.user_data)
+        window.mouse_down_states[button] = false
+        append(&window.mouse_releases, button)
+    }
+    backend_window.backend_callbacks.on_key_press = proc(window: ^backend.Window, key: Keyboard_Key) {
+        window := cast(^Window)(window.user_data)
+        window.key_down_states[key] = true
+        append(&window.key_presses, key)
+    }
+    backend_window.backend_callbacks.on_key_release = proc(window: ^backend.Window, key: Keyboard_Key) {
+        window := cast(^Window)(window.user_data)
+        window.key_down_states[key] = false
+        append(&window.key_releases, key)
+    }
+    backend_window.backend_callbacks.on_rune = proc(window: ^backend.Window, r: rune) {
+        window := cast(^Window)(window.user_data)
+        strings.write_rune(&window.text_input, r)
+    }
+    backend_window.backend_callbacks.on_draw = proc(window: ^backend.Window) {
+        window := cast(^Window)(window.user_data)
+        _begin_frame(window)
+        if window.on_frame != nil {
+            window->on_frame()
+        }
+        _end_frame(window)
+    }
 
     return true
 }
 
-end_window :: proc() {
+
+
+@(private)
+_begin_frame :: proc(window: ^Window) {
+    _current_window = window
+
+    bg := window.background_color
+    gl.ClearColor(bg.r, bg.g, bg.b, bg.a)
+    gl.Clear(gl.COLOR_BUFFER_BIT)
+
+    size := window_size(window)
+    gl.Viewport(0, 0, i32(size.x), i32(size.y))
+
+    content_scale := window_content_scale(window)
+    window.cached_content_scale = content_scale
+
+    nvg.BeginFrame(window.nvg_ctx, size.x, size.y, content_scale)
+    nvg.TextAlign(window.nvg_ctx, .LEFT, .TOP)
+    window.current_font = window.default_font
+    window.current_font_size = 16.0
+
+    window.tick = time.tick_now()
+
+    begin_z_index(0, global = true)
+    begin_offset({0, 0}, global = true)
+    begin_clip({0, 0}, size, global = true, intersect = false)
+    append(&window.interaction_tracker_stack, Interaction_Tracker{})
+}
+
+@(private)
+_end_frame :: proc(window: ^Window) {
+    pop(&window.interaction_tracker_stack)
     end_clip()
+    end_offset()
     end_z_index()
 
-    assert(len(ctx.window_stack) > 0, "Mismatch in begin_window and end_window calls.")
-    w := pop(&ctx.window_stack)
+    nvg.EndFrame(window.nvg_ctx)
 
-    assert(len(w.offset_stack) == 0, "Mismatch in begin_offset and end_offset calls.")
-    assert(len(w.clip_region_stack) == 0, "Mismatch in begin_clip and end_clip calls.")
-    // assert(len(w.interaction_tracker_stack) == 0, "Mismatch in begin_interaction_tracker and end_interaction_tracker calls.")
-    assert(len(w.layer_stack) == 0, "Mismatch in begin_z_index and end_z_index calls.")
+    assert(len(window.offset_stack) == 0, "Mismatch in begin_offset and end_offset calls.")
+    assert(len(window.layer_stack) == 0, "Mismatch in begin_z_index and end_z_index calls.")
+    assert(len(window.clip_stack) == 0, "Mismatch in begin_clip and end_clip calls.")
+    assert(len(window.interaction_tracker_stack) == 0, "Mismatch in begin_interaction_tracker and end_interaction_tracker calls.")
 
     // The layers are in reverse order because they were added in end_z_index.
     // Stable sort preserves the order of layers with the same z index, so they
     // must first be reversed and then sorted to keep that ordering in tact.
-    slice.reverse(w.layers[:])
-    slice.stable_sort_by(w.layers[:], proc(i, j: Layer) -> bool {
+    slice.reverse(window.layers[:])
+    slice.stable_sort_by(window.layers[:], proc(i, j: Layer) -> bool {
         return i.z_index < j.z_index
     })
 
-    w.hover = 0
-    w.mouse_over = 0
+    window.hover = nil
+    window.mouse_over = nil
     highest_z_index := min(int)
 
-    for layer in w.layers {
+    for layer in window.layers {
         if layer.z_index > highest_z_index {
             highest_z_index = layer.z_index
         }
-        _render_draw_commands(w, layer.draw_commands[:])
+        _render_draw_commands(window, layer.draw_commands[:])
 
         hover_request := layer.final_hover_request
-        if hover_request != 0 {
-            w.hover = hover_request
-            w.mouse_over = hover_request
+        if hover_request != nil {
+            window.hover = hover_request
+            window.mouse_over = hover_request
         }
 
         delete(layer.draw_commands)
     }
 
-    if w.hover_capture != 0 {
-        w.hover = w.hover_capture
+    if window.hover_capture != nil {
+        window.hover = window.hover_capture
     }
 
-    w.highest_z_index = highest_z_index
+    window.highest_z_index = highest_z_index
 
-    clear(&w.mouse_presses)
-    clear(&w.mouse_releases)
-    clear(&w.key_presses)
-    clear(&w.key_releases)
-    strings.builder_reset(&w.text_input)
-    w.mouse_wheel_state = {0, 0}
-    w.previous_global_mouse_position = w.global_mouse_position
-
-    clear(&w.layers)
-
-    backend.activate_context(&w.backend_window)
-    nvg.EndFrame(w.nvg_ctx)
-
-    if w.backend_window.close_requested {
-        _close_window(w)
-    } else {
-        _sync_backend_window(w)
-    }
-
-    if len(ctx.window_stack) == 0 {
-        ctx.current_window = nil
-    } else {
-        ctx.current_window = ctx.window_stack[len(ctx.window_stack) - 1]
-        backend.activate_context(&ctx.current_window.backend_window)
-    }
-}
-
-scoped_end_window :: proc(is_open: bool) {
-    if is_open {
-        end_window()
-    }
-}
-
-@(deferred_out=scoped_end_window)
-window_ex :: proc(id: string, parameters := default_window_parameters, initial_size: Vec2 = {400, 300}) -> bool {
-    return begin_window(id, parameters, initial_size)
-}
-
-@(deferred_out=scoped_end_window)
-window :: proc(id: string, child_kind: Window_Child_Kind = .None, initial_size: Vec2 = {400, 300}) -> bool {
-    parameters := default_window_parameters
-    parameters.child_kind = child_kind
-    return begin_window(id, parameters, initial_size)
-}
-
-
-
-@(private)
-_open_window :: proc(w: ^Window, initial_size: Vec2) -> bool {
-    backend_window := &w.backend_window
-    if backend.is_open(backend_window) {
-        return true
-    }
-
-    parameters := &w.parameters
-
-    if parameters.child_kind != .None {
-        if ctx.current_window != nil {
-            parameters.parent_handle = backend.native_handle(&ctx.current_window.backend_window)
-        } else {
-            parameters.parent_handle  = ctx.host_handle
-        }
-    }
-
-    w.previous_parameters.parent_handle = parameters.parent_handle
-
-    err := backend.open(backend_window,
-        title = w.id,
-        size = initial_size,
-        min_size = parameters.min_size,
-        max_size = parameters.max_size,
-        swap_interval = parameters.swap_interval,
-        dark_mode = parameters.dark_mode,
-        resizable = parameters.resizable,
-        double_buffer = parameters.double_buffer,
-        child_kind = parameters.child_kind,
-        parent_handle = parameters.parent_handle,
-    )
-
-    if err != nil {
-        return false
-    }
-
-    backend_window.user_data = w
-
-    backend.activate_context(backend_window)
-    w.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
-
-    _setup_window_callbacks(w)
-
-    return true
-}
-
-@(private)
-_close_window :: proc(w: ^Window) {
-    backend_window := &w.backend_window
-    if !backend.is_open(backend_window) {
-        return
-    }
-    for _, child in w.child_windows {
-        _close_window(child)
-    }
-    backend.activate_context(backend_window)
-    nvg_gl.Destroy(w.nvg_ctx)
-    w.nvg_ctx = nil
-    backend.close(backend_window)
-    clear(&w.loaded_fonts)
-}
-
-@(private)
-_destroy_window :: proc(w: ^Window) {
-    for _, child in w.child_windows {
-        _destroy_window(child)
-    }
-
-    delete(w.mouse_presses)
-    delete(w.mouse_releases)
-    delete(w.key_presses)
-    delete(w.key_releases)
-    strings.builder_destroy(&w.text_input)
-    delete(w.child_windows)
-    delete(w.loaded_fonts)
-
-    delete(w.offset_stack)
-    delete(w.clip_region_stack)
-    // delete(w.interaction_tracker_stack)
-    delete(w.layer_stack)
-    delete(w.layers)
-
-    free(w)
-}
-
-@(private)
-_sync_backend_window :: proc(w: ^Window) -> bool {
-    if w.parameters != w.previous_parameters {
-        reload_window(w)
-    }
-    w.previous_parameters = w.parameters
-
-    if w.reload_pending {
-        _close_window(w)
-    }
-
-    if w.open_pending || w.reload_pending {
-        if !_open_window(w, w.initial_size) {
-            fmt.eprintf("Failed to open window: %v\n", w.id)
-            return false
-        }
-        if !w.reload_pending {
-            backend.show(&w.backend_window)
-        }
-        w.open_pending = false
-        w.reload_pending = false
-    }
-
-    if !backend.is_open(&w.backend_window) {
-        return false
-    }
-
-    if position, ok := w.pending_position.?; ok {
-        backend.set_position(&w.backend_window, position)
-        w.pending_position = nil
-    }
-
-    if size, ok := w.pending_size.?; ok {
-        backend.set_position(&w.backend_window, size)
-        w.pending_size = nil
-    }
-
-    if is_visible, ok := w.pending_visibility.?; ok {
-        if is_visible {
-            backend.show(&w.backend_window)
-        } else {
-            backend.hide(&w.backend_window)
-        }
-        w.pending_visibility = nil
-    }
-
-    return true
-}
-
-@(private)
-_setup_window_callbacks :: proc(w: ^Window) {
-    backend.set_on_mouse_move(&w.backend_window, proc(backend_window: ^backend.Window, position, global_position: [2]f32) {
-        w := cast(^Window)backend_window.user_data
-        w.mouse_position = position
-        w.global_mouse_position = global_position
-    })
-    backend.set_on_mouse_enter(&w.backend_window, proc(backend_window: ^backend.Window) {
-        w := cast(^Window)backend_window.user_data
-        w.is_hovered = true
-    })
-    backend.set_on_mouse_exit(&w.backend_window, proc(backend_window: ^backend.Window) {
-        w := cast(^Window)backend_window.user_data
-        w.is_hovered = false
-    })
-    backend.set_on_mouse_wheel(&w.backend_window, proc(backend_window: ^backend.Window, amount: [2]f32) {
-        w := cast(^Window)backend_window.user_data
-        w.mouse_wheel_state = amount
-    })
-    backend.set_on_mouse_press(&w.backend_window, proc(backend_window: ^backend.Window, button: Mouse_Button) {
-        w := cast(^Window)backend_window.user_data
-        w.mouse_down_states[button] = true
-        append(&w.mouse_presses, button)
-    })
-    backend.set_on_mouse_release(&w.backend_window, proc(backend_window: ^backend.Window, button: Mouse_Button) {
-        w := cast(^Window)backend_window.user_data
-        w.mouse_down_states[button] = false
-        append(&w.mouse_releases, button)
-    })
-    backend.set_on_key_press(&w.backend_window, proc(backend_window: ^backend.Window, key: Keyboard_Key) {
-        w := cast(^Window)backend_window.user_data
-        w.key_down_states[key] = true
-        append(&w.key_presses, key)
-    })
-    backend.set_on_key_release(&w.backend_window, proc(backend_window: ^backend.Window, key: Keyboard_Key) {
-        w := cast(^Window)backend_window.user_data
-        w.key_down_states[key] = false
-        append(&w.key_releases, key)
-    })
-    backend.set_on_rune(&w.backend_window, proc(backend_window: ^backend.Window, r: rune) {
-        w := cast(^Window)backend_window.user_data
-        strings.write_rune(&w.text_input, r)
-    })
+    clear(&window.layers)
+    clear(&window.mouse_presses)
+    clear(&window.mouse_releases)
+    clear(&window.key_presses)
+    clear(&window.key_releases)
+    strings.builder_reset(&window.text_input)
+    window.mouse_wheel_state = {0, 0}
+    window.previous_root_mouse_position = window.root_mouse_position
+    window.previous_tick = window.tick
 }

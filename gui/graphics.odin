@@ -2,9 +2,9 @@ package gui
 
 import "core:math"
 import nvg "vendor:nanovg"
+import "color"
 
-Vec2 :: [2]f32
-Color :: [4]f32
+Color :: color.Color
 Paint :: nvg.Paint
 
 Path_Winding :: enum {
@@ -27,8 +27,8 @@ pixel_align :: proc{
     pixel_align_vec2,
 }
 
-pixel_align_f32 :: proc(value: f32) -> f32 {
-    scale := window_content_scale(ctx.current_window)
+pixel_align_f32 :: proc(value: f32, window := _current_window) -> f32 {
+    scale := window.cached_content_scale
     return math.round(value * scale) / scale
 }
 
@@ -37,38 +37,28 @@ pixel_align_vec2 :: proc(position: Vec2) -> Vec2 {
 }
 
 begin_path :: proc() {
-    w := current_window()
-    layer := w.current_layer
-    append(&layer.draw_commands, Begin_Path_Command{})
+    append(&current_layer().draw_commands, Begin_Path_Command{})
 }
 
 close_path :: proc() {
-    w := current_window()
-    layer := w.current_layer
-    append(&layer.draw_commands, Close_Path_Command{})
+    append(&current_layer().draw_commands, Close_Path_Command{})
 }
 
 move_to :: proc(position: Vec2) {
-    w := current_window()
-    layer := w.current_layer
-    append(&layer.draw_commands, Move_To_Command{
-        position + w.current_offset,
+    append(&current_layer().draw_commands, Move_To_Command{
+        position + current_offset(),
     })
 }
 
 line_to :: proc(position: Vec2) {
-    w := current_window()
-    layer := w.current_layer
-    append(&layer.draw_commands, Line_To_Command{
-        position + w.current_offset,
+    append(&current_layer().draw_commands, Line_To_Command{
+        position + current_offset(),
     })
 }
 
 arc_to :: proc(p0, p1: Vec2, radius: f32) {
-    w := current_window()
-    layer := w.current_layer
-    offset := w.current_offset
-    append(&layer.draw_commands, Arc_To_Command{
+    offset := current_offset()
+    append(&current_layer().draw_commands, Arc_To_Command{
         p0 + offset,
         p1 + offset,
         radius,
@@ -76,20 +66,18 @@ arc_to :: proc(p0, p1: Vec2, radius: f32) {
 }
 
 rect :: proc(position, size: Vec2, winding: Path_Winding = .Positive) {
-    w := current_window()
-    layer := w.current_layer
+    layer := current_layer()
     append(&layer.draw_commands, Rect_Command{
-        position + w.current_offset,
+        position + current_offset(),
         size,
     })
     append(&layer.draw_commands, Winding_Command{winding})
 }
 
 rounded_rect_varying :: proc(position, size: Vec2, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius: f32, winding: Path_Winding = .Positive) {
-    w := current_window()
-    layer := w.current_layer
+    layer := current_layer()
     append(&layer.draw_commands, Rounded_Rect_Command{
-        position + w.current_offset,
+        position + current_offset(),
         size,
         top_left_radius, top_right_radius,
         bottom_right_radius, bottom_left_radius,
@@ -102,22 +90,24 @@ rounded_rect :: proc(position, size: Vec2, radius: f32, winding: Path_Winding = 
 }
 
 fill_path_paint :: proc(paint: Paint) {
-    w := current_window()
-    layer := w.current_layer
-    append(&layer.draw_commands, Fill_Path_Command{paint})
+    append(&current_layer().draw_commands, Fill_Path_Command{paint})
 }
 
 fill_path :: proc(color: Color) {
     fill_path_paint(solid_paint(color))
 }
 
-fill_text_line :: proc(text: string, position: Vec2, color := Color{1, 1, 1, 1}, font := ctx.default_font, font_size := f32(13)) {
-    w := current_window()
-    layer := w.current_layer
-    append(&layer.draw_commands, Fill_Text_Command{
+fill_text_line :: proc(
+    text: string,
+    position: Vec2,
+    color := Color{1, 1, 1, 1},
+    font := _current_window.default_font,
+    font_size := f32(13),
+) {
+    append(&current_layer().draw_commands, Fill_Text_Command{
       font = font,
       font_size = font_size,
-      position = pixel_align(w.current_offset + position),
+      position = pixel_align(current_offset() + position),
       text = text,
       color = color,
     })

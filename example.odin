@@ -2,67 +2,28 @@ package main
 
 import "core:mem"
 import "core:fmt"
-import "core:time"
-import "core:math"
-import "core:thread"
 import "gui"
 import "gui/widgets"
 
 App :: struct {
-    should_quit: bool,
     button: ^widgets.Button,
 }
 
-create_app :: proc() -> ^App {
-    app := new(App)
-    app.button = widgets.create_button(position = {75, 75})
-    return app
-}
+on_frame :: proc(window: ^gui.Window) {
+    app := cast(^App)window.user_data
 
-destroy_app :: proc(app: ^App) {
-    widgets.destroy_button(app.button)
-    free(app)
-}
+    gui.begin_path()
+    gui.rounded_rect({50, 50}, {100, 100}, 5)
+    gui.fill_path({1, 0, 0, 1})
 
-app_main :: proc() {
-    app := gui.get_user_data(App)
+    widgets.update_button(app.button)
+    widgets.draw_button(app.button)
 
-    if gui.window("Window") {
-        gui.begin_path()
-        gui.rounded_rect({50, 50}, {100, 100}, 5)
-        gui.fill_path({1, 0, 0, 1})
-
-        widgets.update_button(app.button)
-        widgets.draw_button(app.button)
-
-        if app.button.clicked {
-            fmt.println("Clicked")
-        }
-
-        if gui.window_closed() {
-            app.should_quit = true
-        }
+    if app.button.clicked {
+        fmt.println("Button clicked.")
     }
-}
 
-window_proc :: proc(t: ^thread.Thread) {
-    app := create_app()
-    defer destroy_app(app)
-
-    gui.set_user_data(app)
-
-    consola := gui.create_font("Consola", #load("consola.ttf"))
-    defer gui.destroy_font(consola)
-
-    app_name := fmt.aprint("DemoApp", t.user_index)
-    defer delete(app_name)
-
-    gui.startup(app_name, consola, app_main)
-    defer gui.shutdown()
-
-    for !app.should_quit {
-        gui.update()
-    }
+    gui.fill_text_line("Some text.", {0, 0})
 }
 
 main :: proc() {
@@ -88,18 +49,29 @@ main :: proc() {
         }
     }
 
-    t0 := thread.create(window_proc)
-    t0.init_context = context
-    t0.user_index = 0
-    thread.start(t0)
-    defer thread.destroy(t0)
+    consola := gui.create_font("Consola", #load("consola.ttf"))
+    defer gui.destroy_font(consola)
 
-    t1 := thread.create(window_proc)
-    t1.init_context = context
-    t1.user_index = 1
-    thread.start(t1)
-    defer thread.destroy(t1)
+    app := new(App)
+    defer free(app)
 
-    for !(thread.is_done(t0) && thread.is_done(t1)) {
+    app.button = widgets.create_button(position = {100, 100})
+    defer widgets.destroy_button(app.button)
+
+    window := gui.create_window(
+        title = "Hello",
+        position = {200, 200},
+        background_color = {0.05, 0.05, 0.05, 1},
+        default_font = consola,
+        user_data = app,
+    )
+    defer gui.destroy_window(window)
+
+    window.on_frame = on_frame
+
+    gui.open_window(window)
+
+    for gui.window_is_open(window) {
+        gui.update()
     }
 }

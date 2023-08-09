@@ -1,7 +1,6 @@
 *.exe
 *.dll
 *.exp
-*.lib
 *.ttf
 *.json
 *.pdb

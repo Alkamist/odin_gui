@@ -2,6 +2,14 @@ package window
 
 Vec2 :: [2]f32
 
+Native_Handle :: rawptr
+
+Child_Kind :: enum {
+    None,
+    Embedded,
+    Transient,
+}
+
 Cursor_Style :: enum {
     Arrow,
     I_Beam,
@@ -44,7 +52,21 @@ Keyboard_Key :: enum {
     Pad_Decimal, Print_Screen,
 }
 
-Window_Error :: enum {
-    None,
-    Failed_To_Open,
+Backend_Callbacks :: struct {
+    on_close: proc(window: ^Window),
+    on_draw: proc(window: ^Window),
+    on_update: proc(window: ^Window),
+    on_show: proc(window: ^Window),
+    on_hide: proc(window: ^Window),
+    on_move: proc(window: ^Window, position: Vec2),
+    on_resize: proc(window: ^Window, size: Vec2),
+    on_mouse_move: proc(window: ^Window, position, global_position: Vec2),
+    on_mouse_enter: proc(window: ^Window),
+    on_mouse_exit: proc(window: ^Window),
+    on_mouse_wheel: proc(window: ^Window, amount: Vec2),
+    on_mouse_press: proc(window: ^Window, button: Mouse_Button),
+    on_mouse_release: proc(window: ^Window, button: Mouse_Button),
+    on_key_press: proc(window: ^Window, key: Keyboard_Key),
+    on_key_release: proc(window: ^Window, key: Keyboard_Key),
+    on_rune: proc(window: ^Window, r: rune),
 }
