@@ -20,7 +20,7 @@ Window_Child_Kind :: backend.Child_Kind
 Window :: struct {
     user_data: rawptr,
 
-    on_frame: proc(window: ^Window),
+    on_frame: proc(),
     background_color: Color,
 
     tick: time.Tick,
@@ -229,7 +229,7 @@ open_window :: proc(window: ^Window) -> bool {
         window := cast(^Window)(window.user_data)
         _begin_frame(window)
         if window.on_frame != nil {
-            window->on_frame()
+            window.on_frame()
         }
         _end_frame(window)
     }

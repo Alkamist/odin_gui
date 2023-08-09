@@ -15,7 +15,7 @@ delta_time :: proc() -> time.Duration {
 }
 
 mouse_position :: proc() -> Vec2 {
-    return _current_window.global_mouse_position - current_offset()
+    return _current_window.global_mouse_position - get_offset()
 }
 
 global_mouse_position :: proc() -> Vec2 {

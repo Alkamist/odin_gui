@@ -9,8 +9,19 @@ App :: struct {
     button: ^widgets.Button,
 }
 
-on_frame :: proc(window: ^gui.Window) {
-    app := cast(^App)window.user_data
+create_app :: proc() -> ^App {
+    app := new(App)
+    app.button = widgets.create_button(position = {100, 100})
+    return app
+}
+
+destroy_app :: proc(app: ^App) {
+    widgets.destroy_button(app.button)
+    free(app)
+}
+
+on_frame :: proc() {
+    app := gui.get_user_data(App)
 
     gui.begin_path()
     gui.rounded_rect({50, 50}, {100, 100}, 5)
@@ -52,11 +63,8 @@ main :: proc() {
     consola := gui.create_font("Consola", #load("consola.ttf"))
     defer gui.destroy_font(consola)
 
-    app := new(App)
-    defer free(app)
-
-    app.button = widgets.create_button(position = {100, 100})
-    defer widgets.destroy_button(app.button)
+    app := create_app()
+    defer destroy_app(app)
 
     window := gui.create_window(
         title = "Hello",

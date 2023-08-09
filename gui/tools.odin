@@ -15,19 +15,27 @@ Interaction_Tracker :: struct {
     detected_mouse_over: bool,
 }
 
-current_layer :: proc() -> ^Layer {
+get_window :: proc() -> ^Window {
+    return _current_window
+}
+
+get_user_data :: proc($T: typeid) -> ^T {
+    return cast(^T)_current_window.user_data
+}
+
+get_layer :: proc() -> ^Layer {
     return &_current_window.layer_stack[len(_current_window.layer_stack) - 1]
 }
 
-current_z_index :: proc() -> int {
-    return current_layer().z_index
+get_z_index :: proc() -> int {
+    return get_layer().z_index
 }
 
-current_offset :: proc() -> Vec2 {
+get_offset :: proc() -> Vec2 {
     return _current_window.offset_stack[len(_current_window.offset_stack) - 1]
 }
 
-current_clip :: proc() -> Rect {
+get_clip :: proc() -> Rect {
     return _current_window.clip_stack[len(_current_window.clip_stack) - 1]
 }
 
@@ -40,7 +48,7 @@ mouse_is_over :: proc(widget: ^Widget) -> bool {
 }
 
 request_hover :: proc(widget: ^Widget) {
-    current_layer().final_hover_request = widget
+    get_layer().final_hover_request = widget
     if _current_window.hover == widget {
         _current_window.interaction_tracker_stack[len(_current_window.interaction_tracker_stack) - 1].detected_hover = true
     }
@@ -80,7 +88,7 @@ begin_offset :: proc(offset: Vec2, global := false) {
     if global {
         append(&_current_window.offset_stack, offset)
     } else {
-        append(&_current_window.offset_stack, current_offset() + offset)
+        append(&_current_window.offset_stack, get_offset() + offset)
     }
 }
 
@@ -92,7 +100,7 @@ begin_clip :: proc(position, size: Vec2, global := false, intersect := true) {
     r := Rect{position = position, size = size}
 
     if !global {
-        r.position += current_offset()
+        r.position += get_offset()
     }
 
     if intersect {
@@ -100,7 +108,7 @@ begin_clip :: proc(position, size: Vec2, global := false, intersect := true) {
     }
 
     append(&_current_window.clip_stack, r)
-    append(&current_layer().draw_commands, Clip_Command{
+    append(&get_layer().draw_commands, Clip_Command{
         position = r.position,
         size = r.size,
     })
@@ -114,7 +122,7 @@ end_clip :: proc() -> Rect {
     }
 
     clip_rect := _current_window.clip_stack[len(_current_window.clip_stack) - 1]
-    append(&current_layer().draw_commands, Clip_Command{
+    append(&get_layer().draw_commands, Clip_Command{
         position = clip_rect.position,
         size = clip_rect.size,
     })
@@ -126,7 +134,7 @@ begin_z_index :: proc(z_index: int, global := false) {
     if global {
         append(&_current_window.layer_stack, Layer{z_index = z_index})
     } else {
-        append(&_current_window.layer_stack, Layer{z_index = current_z_index() + z_index})
+        append(&_current_window.layer_stack, Layer{z_index = get_z_index() + z_index})
     }
 }
 
@@ -140,5 +148,5 @@ mouse_hit_test :: proc(position, size: Vec2) -> bool {
     m := mouse_position()
     return m.x >= position.x && m.x <= position.x + size.x &&
            m.y >= position.y && m.y <= position.y + size.y &&
-           rect.contains(current_clip(), m)
+           rect.contains(get_clip(), m)
 }
