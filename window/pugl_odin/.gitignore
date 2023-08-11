@@ -1,0 +1,10 @@
+*.exe
+*.dll
+*.exp
+*.ttf
+*.txt
+*.ini
+*.clap
+*.json
+zig-cache/
+zig-out/
