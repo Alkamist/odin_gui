@@ -2,7 +2,7 @@ package main
 
 import "core:mem"
 import "core:fmt"
-import "gui"
+import "../../gui"
 
 consola := gui.Font{"Consola", #load("consola.ttf")}
 

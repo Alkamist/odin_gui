@@ -80,6 +80,10 @@ native_window_handle :: proc(window: ^Window) -> Native_Window_Handle {
     return backend.native_handle(&window.backend_window)
 }
 
+set_window_parent :: proc(window: ^Window, parent: Native_Window_Handle) {
+    window.backend_window.parent_handle = parent
+}
+
 close_window :: proc(window := _current_window) {
     backend.close(&window.backend_window)
     window.open_multiple_frames = false
