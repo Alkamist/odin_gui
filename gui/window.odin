@@ -21,6 +21,8 @@ Window :: struct {
     user_data: rawptr,
 
     on_frame: proc(),
+    on_close: proc(),
+
     background_color: Color,
 
     tick: time.Tick,
@@ -56,64 +58,66 @@ Window :: struct {
     current_font_size: f32,
     nvg_ctx: ^nvg.Context,
 
+    open_multiple_frames: bool,
     cached_content_scale: f32,
 
     loaded_fonts: [dynamic]^Font,
 
-    backend_window: ^backend.Window,
+    backend_window: backend.Window,
 }
 
 update :: backend.update
 
 activate_window_context :: proc(window: ^Window) {
-    backend.activate_context(window.backend_window)
+    backend.activate_context(&window.backend_window)
 }
 
 deactivate_window_context :: proc(window: ^Window) {
-    backend.deactivate_context(window.backend_window)
+    backend.deactivate_context(&window.backend_window)
 }
 
 native_window_handle :: proc(window: ^Window) -> Native_Window_Handle {
-    return backend.native_handle(window.backend_window)
+    return backend.native_handle(&window.backend_window)
 }
 
 close_window :: proc(window := _current_window) {
-    backend.close(window.backend_window)
+    backend.close(&window.backend_window)
+    window.open_multiple_frames = false
 }
 
 window_is_open :: proc(window := _current_window) -> bool {
-    return backend.is_open(window.backend_window)
+    return backend.is_open(&window.backend_window)
 }
 
 window_is_visible :: proc(window := _current_window) -> bool {
-    return backend.is_visible(window.backend_window)
+    return backend.is_visible(&window.backend_window)
 }
 
 set_window_visibility :: proc(visibility: bool, window := _current_window) {
-    backend.set_visibility(window.backend_window, visibility)
+    backend.set_visibility(&window.backend_window, visibility)
 }
 
 window_position :: proc(window := _current_window) -> Vec2 {
-    return backend.position(window.backend_window)
+    return backend.position(&window.backend_window)
 }
 
 set_window_position :: proc(position: Vec2, window := _current_window) {
-    backend.set_position(window.backend_window, position)
+    backend.set_position(&window.backend_window, position)
 }
 
 window_size :: proc(window := _current_window) -> Vec2 {
-    return backend.size(window.backend_window)
+    return backend.size(&window.backend_window)
 }
 
 set_window_size :: proc(size: Vec2, window := _current_window) {
-    backend.set_size(window.backend_window, size)
+    backend.set_size(&window.backend_window, size)
 }
 
 window_content_scale :: proc(window := _current_window) -> f32 {
-    return backend.content_scale(window.backend_window)
+    return backend.content_scale(&window.backend_window)
 }
 
-create_window :: proc(
+make_window :: proc(
     title := "",
     position := Vec2{0, 0},
     size := Vec2{400, 300},
@@ -129,26 +133,28 @@ create_window :: proc(
     child_kind := Window_Child_Kind.None,
     parent_handle: Native_Window_Handle = nil,
     user_data: rawptr = nil,
-) -> ^Window {
-    window := new(Window)
-    window.backend_window = backend.create(
-        title = title,
-        position = position,
-        size = size,
-        min_size = min_size,
-        max_size = max_size,
-        swap_interval = swap_interval,
-        dark_mode = dark_mode,
-        is_visible = is_visible,
-        is_resizable = is_resizable,
-        double_buffer = double_buffer,
-        child_kind = child_kind,
-        parent_handle = parent_handle,
-    )
-    window.background_color = background_color
-    window.default_font = default_font
-    window.user_data = user_data
-    return window
+    on_frame: proc() = nil,
+) -> Window {
+    return {
+        backend_window = backend.make(
+            title = title,
+            position = position,
+            size = size,
+            min_size = min_size,
+            max_size = max_size,
+            swap_interval = swap_interval,
+            dark_mode = dark_mode,
+            is_visible = is_visible,
+            is_resizable = is_resizable,
+            double_buffer = double_buffer,
+            child_kind = child_kind,
+            parent_handle = parent_handle,
+        ),
+        background_color = background_color,
+        default_font = default_font,
+        user_data = user_data,
+        on_frame = on_frame,
+    }
 }
 
 destroy_window :: proc(window: ^Window) {
@@ -162,26 +168,27 @@ destroy_window :: proc(window: ^Window) {
     delete(window.interaction_tracker_stack)
     delete(window.layers)
     delete(window.loaded_fonts)
-    backend.destroy(window.backend_window)
-    free(window)
+    backend.destroy(&window.backend_window)
 }
 
 open_window :: proc(window: ^Window) -> bool {
-    if !backend.open(window.backend_window) {
+    if !backend.open(&window.backend_window) {
         return false
     }
 
     clear(&window.loaded_fonts)
 
-    backend_window := window.backend_window
+    backend_window := &window.backend_window
     backend_window.user_data = window
 
     activate_window_context(window)
-    gl.load_up_to(3, 3, backend.gl_set_proc_address)
     window.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
 
     backend_window.backend_callbacks.on_close = proc(window: ^backend.Window) {
         window := cast(^Window)(window.user_data)
+        if window.on_close != nil {
+            window.on_close()
+        }
         nvg_gl.Destroy(window.nvg_ctx)
     }
     backend_window.backend_callbacks.on_mouse_move = proc(window: ^backend.Window, position, root_position: Vec2) {
@@ -259,6 +266,9 @@ _begin_frame :: proc(window: ^Window) {
     window.current_font_size = 16.0
 
     window.tick = time.tick_now()
+    if !window.open_multiple_frames {
+        window.previous_tick = window.tick
+    }
 
     begin_z_index(0, global = true)
     begin_offset({0, 0}, global = true)
@@ -322,4 +332,6 @@ _end_frame :: proc(window: ^Window) {
     window.mouse_wheel_state = {0, 0}
     window.previous_root_mouse_position = window.root_mouse_position
     window.previous_tick = window.tick
+
+    window.open_multiple_frames = true
 }

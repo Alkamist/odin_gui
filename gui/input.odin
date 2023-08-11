@@ -9,9 +9,14 @@ Cursor_Style :: backend.Cursor_Style
 Mouse_Button :: backend.Mouse_Button
 Keyboard_Key :: backend.Keyboard_Key
 
-delta_time :: proc() -> time.Duration {
+delta_time_duration :: proc() -> time.Duration {
     window := _current_window
     return time.tick_diff(window.previous_tick, window.tick)
+}
+
+delta_time :: proc() -> f32 {
+    window := _current_window
+    return f32(time.duration_seconds(time.tick_diff(window.previous_tick, window.tick)))
 }
 
 mouse_position :: proc() -> Vec2 {

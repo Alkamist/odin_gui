@@ -3,38 +3,63 @@ package main
 import "core:mem"
 import "core:fmt"
 import "gui"
-import "gui/widgets"
 
-App :: struct {
-    button: ^widgets.Button,
+consola := gui.Font{"Consola", #load("consola.ttf")}
+
+State :: struct {
+    text_speed: f32,
+    text_x: f32,
 }
 
-create_app :: proc() -> ^App {
-    app := new(App)
-    app.button = widgets.create_button(position = {100, 100})
-    return app
+window1 := gui.make_window(
+    title = "Window 1",
+    position = {200, 200},
+    background_color = {0.05, 0.05, 0.05, 1},
+    default_font = &consola,
+    on_frame = on_frame,
+    user_data = &state1,
+)
+
+state1 := State{
+    text_speed = 1200.0,
+    text_x = 0.0,
 }
 
-destroy_app :: proc(app: ^App) {
-    widgets.destroy_button(app.button)
-    free(app)
+window2 := gui.make_window(
+    title = "Window 2",
+    position = {600, 200},
+    background_color = {0.05, 0.05, 0.05, 1},
+    default_font = &consola,
+    on_frame = on_frame,
+    user_data = &state2,
+)
+
+state2 := State{
+    text_speed = 1200.0,
+    text_x = 0.0,
 }
 
 on_frame :: proc() {
-    app := gui.get_user_data(App)
+    state := gui.get_user_data(State)
+
+    dt := gui.delta_time()
 
     gui.begin_path()
     gui.rounded_rect({50, 50}, {100, 100}, 5)
     gui.fill_path({1, 0, 0, 1})
 
-    widgets.update_button(app.button)
-    widgets.draw_button(app.button)
+    state.text_x += state.text_speed * dt
 
-    if app.button.clicked {
-        fmt.println("Button clicked.")
+    size := gui.window_size()
+
+    if state.text_x > size.x {
+        state.text_speed = -1200.0
+    }
+    if state.text_x < 0 {
+        state.text_speed = 1200.0
     }
 
-    gui.fill_text_line("Some text.", {0, 0})
+    gui.fill_text_line("Some text.", {state.text_x, 0})
 }
 
 main :: proc() {
@@ -60,26 +85,17 @@ main :: proc() {
         }
     }
 
-    consola := gui.create_font("Consola", #load("consola.ttf"))
-    defer gui.destroy_font(consola)
+    gui.open_window(&window1)
 
-    app := create_app()
-    defer destroy_app(app)
+    window2.backend_window.parent_handle = gui.native_window_handle(&window1)
+    window2.backend_window.child_kind = .Transient
 
-    window := gui.create_window(
-        title = "Hello",
-        position = {200, 200},
-        background_color = {0.05, 0.05, 0.05, 1},
-        default_font = consola,
-        user_data = app,
-    )
-    defer gui.destroy_window(window)
+    gui.open_window(&window2)
 
-    window.on_frame = on_frame
-
-    gui.open_window(window)
-
-    for gui.window_is_open(window) {
+    for gui.window_is_open(&window1) && gui.window_is_open(&window2) {
         gui.update()
     }
+
+    gui.destroy_window(&window1)
+    gui.destroy_window(&window2)
 }

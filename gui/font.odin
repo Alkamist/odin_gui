@@ -9,17 +9,6 @@ Font :: struct {
     data: []byte,
 }
 
-create_font :: proc(name: string, data: []byte) -> ^Font {
-    font := new(Font)
-    font.name = name
-    font.data = data
-    return font
-}
-
-destroy_font :: proc(font: ^Font) {
-    free(font)
-}
-
 text_metrics :: proc(w: ^Window, font: ^Font, font_size: f32) -> (ascender, descender, line_height: f32) {
     _set_font(w, font)
     _set_font_size(w, font_size)
