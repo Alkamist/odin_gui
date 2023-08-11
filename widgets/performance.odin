@@ -12,16 +12,15 @@ Performance :: struct {
     previous_average_window: int,
 }
 
-create_performance :: proc(average_window := 100) -> ^Performance {
-    perf := new(Performance)
-    perf.average_window = average_window
-    perf.delta_times = make([dynamic]time.Duration, average_window, average_window)
-    return perf
+make_performance :: proc(average_window := 100) -> Performance {
+    return {
+        average_window = average_window,
+        delta_times = make([dynamic]time.Duration, average_window, average_window),
+    }
 }
 
 destroy_performance :: proc(perf: ^Performance) {
     delete(perf.delta_times)
-    free(perf)
 }
 
 frame_time :: proc(perf: ^Performance) -> f32 {
@@ -41,7 +40,7 @@ update_performance :: proc(perf: ^Performance) {
     }
 
     if perf.index < len(perf.delta_times) {
-        perf.delta_times[perf.index] = gui.delta_time()
+        perf.delta_times[perf.index] = gui.delta_time_duration()
     }
 
     perf.index += 1

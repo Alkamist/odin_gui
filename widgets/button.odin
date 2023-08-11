@@ -13,15 +13,11 @@ Button :: struct {
     clicked: bool,
 }
 
-create_button :: proc(position := Vec2{0, 0}, size := Vec2{96, 32}) -> ^Button {
-    button := new(Button)
-    button.position = position
-    button.size = size
-    return button
-}
-
-destroy_button :: proc(button: ^Button) {
-    free(button)
+make_button :: proc(position := Vec2{0, 0}, size := Vec2{96, 32}) -> Button {
+    return {
+        position = position,
+        size = size,
+    }
 }
 
 draw_button :: proc(button: ^Button) {

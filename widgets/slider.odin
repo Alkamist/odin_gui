@@ -10,33 +10,32 @@ Slider :: struct {
     min_value: f32,
     max_value: f32,
     handle_length: f32,
-    handle: ^Button,
+    handle: Button,
     value_when_handle_grabbed: f32,
     global_mouse_position_when_handle_grabbed: Vec2,
 }
 
-create_slider :: proc(
+make_slider :: proc(
     position := Vec2{0, 0},
     size := Vec2{300, 24},
     value: f32 = 0,
     min_value: f32 = 0,
     max_value: f32 = 1,
     handle_length: f32 = 16,
-) -> ^Slider {
-    slider := new(Slider)
+) -> Slider {
     value := clamp(value, min_value, max_value)
-    slider.handle = create_button()
-    slider.position = position
-    slider.size = size
-    slider.value = value
-    slider.min_value = min_value
-    slider.max_value = max_value
-    slider.handle_length = handle_length
-    return slider
+    return {
+        handle = make_button(),
+        position = position,
+        size = size,
+        value = value,
+        min_value = min_value,
+        max_value = max_value,
+        handle_length = handle_length,
+    }
 }
 
 destroy_slider :: proc(slider: ^Slider) {
-    destroy_button(slider.handle)
     free(slider)
 }
 
@@ -45,7 +44,7 @@ draw_slider :: proc(slider: ^Slider) {
     gui.rounded_rect(slider.position, slider.size, 3)
     gui.fill_path(color.rgb(31, 32, 34))
 
-    handle := slider.handle
+    handle := &slider.handle
     handle_position := gui.pixel_align(handle.position)
     handle_size := gui.pixel_align(handle.size)
 
@@ -74,7 +73,7 @@ update_slider :: proc(slider: ^Slider) {
     value := clamp(slider.value, min_value, max_value)
     global_mouse_position := gui.global_mouse_position()
 
-    handle := slider.handle
+    handle := &slider.handle
     handle.position.x = position.x + (size.x - handle_length) * (value - min_value) / (max_value - min_value)
     handle.position.y = position.y
     handle.size = {handle_length, size.y}
