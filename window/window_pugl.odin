@@ -6,7 +6,7 @@ import "core:strings"
 import "core:runtime"
 import utf8 "core:unicode/utf8"
 import gl "vendor:OpenGL"
-import "pugl"
+import pugl "pugl-odin"
 
 _open_gl_loaded: bool
 @(thread_local) _world: ^pugl.World
