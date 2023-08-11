@@ -4,9 +4,10 @@ import "core:c"
 import "core:fmt"
 import "core:strings"
 import "core:runtime"
+import "core:intrinsics"
 import utf8 "core:unicode/utf8"
 import gl "vendor:OpenGL"
-import pugl "pugl-odin"
+import pugl "pugl_odin"
 
 _open_gl_loaded: bool
 @(thread_local) _world: ^pugl.World
@@ -96,7 +97,14 @@ open :: proc(window: ^Window) -> bool {
             world_type := pugl.WorldType.PROGRAM
         }
         _world = pugl.NewWorld(world_type, {})
-        pugl.SetWorldString(_world, .CLASS_NAME, "WindowThread")
+
+        world_id := fmt.aprint("WindowThread", _generate_id())
+        defer delete(world_id)
+
+        world_id_cstring := strings.clone_to_cstring(world_id)
+        defer delete(world_id_cstring)
+
+        pugl.SetWorldString(_world, .CLASS_NAME, world_id_cstring)
     }
 
     if window.parent_handle != nil && window.child_kind == .None {
@@ -277,6 +285,12 @@ content_scale :: proc(window: ^Window) -> f32 {
 }
 
 
+
+@(private)
+_generate_id :: proc "contextless" () -> u64 {
+    @(static) id: u64
+    return 1 + intrinsics.atomic_add(&id, 1)
+}
 
 @(private)
 _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
