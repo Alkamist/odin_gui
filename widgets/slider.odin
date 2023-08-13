@@ -15,24 +15,23 @@ Slider :: struct {
     global_mouse_position_when_handle_grabbed: Vec2,
 }
 
-make_slider :: proc(
+init_slider :: proc(
+    slider: ^Slider,
     position := Vec2{0, 0},
     size := Vec2{300, 24},
     value: f32 = 0,
     min_value: f32 = 0,
     max_value: f32 = 1,
     handle_length: f32 = 16,
-) -> Slider {
+) {
     value := clamp(value, min_value, max_value)
-    return {
-        handle = make_button(),
-        position = position,
-        size = size,
-        value = value,
-        min_value = min_value,
-        max_value = max_value,
-        handle_length = handle_length,
-    }
+    init_button(&slider.handle)
+    slider.position = position
+    slider.size = size
+    slider.value = value
+    slider.min_value = min_value
+    slider.max_value = max_value
+    slider.handle_length = handle_length
 }
 
 draw_slider :: proc(slider: ^Slider) {

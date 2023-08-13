@@ -12,11 +12,9 @@ Performance :: struct {
     previous_average_window: int,
 }
 
-make_performance :: proc(average_window := 100) -> Performance {
-    return {
-        average_window = average_window,
-        delta_times = make([dynamic]time.Duration, average_window, average_window),
-    }
+init_performance :: proc(perf: ^Performance, average_window := 100) {
+    perf.average_window = average_window
+    perf.delta_times = make([dynamic]time.Duration, average_window, average_window)
 }
 
 destroy_performance :: proc(perf: ^Performance) {

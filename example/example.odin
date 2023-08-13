@@ -11,33 +11,11 @@ State :: struct {
     text_x: f32,
 }
 
-window1 := gui.make_window(
-    title = "Window 1",
-    position = {200, 200},
-    background_color = {0.05, 0.05, 0.05, 1},
-    default_font = &consola,
-    on_frame = on_frame,
-    user_data = &state1,
-)
+window1: gui.Window
+window2: gui.Window
 
-state1 := State{
-    text_speed = 1200.0,
-    text_x = 0.0,
-}
-
-window2 := gui.make_window(
-    title = "Window 2",
-    position = {600, 200},
-    background_color = {0.05, 0.05, 0.05, 1},
-    default_font = &consola,
-    on_frame = on_frame,
-    user_data = &state2,
-)
-
-state2 := State{
-    text_speed = 1200.0,
-    text_x = 0.0,
-}
+state1: State
+state2: State
 
 on_frame :: proc() {
     state := gui.get_user_data(State)
@@ -85,10 +63,39 @@ main :: proc() {
         }
     }
 
+    gui.init_window(
+        &window1,
+        title = "Window 1",
+        position = {200, 200},
+        background_color = {0.05, 0.05, 0.05, 1},
+        default_font = &consola,
+        on_frame = on_frame,
+        user_data = &state1,
+    )
+
+    state1 = {
+        text_speed = 1200.0,
+        text_x = 0.0,
+    }
+
     gui.open_window(&window1)
 
-    window2.backend_window.parent_handle = gui.native_window_handle(&window1)
-    window2.backend_window.child_kind = .Transient
+    gui.init_window(
+        &window2,
+        title = "Window 2",
+        position = {600, 200},
+        background_color = {0.05, 0.05, 0.05, 1},
+        default_font = &consola,
+        on_frame = on_frame,
+        user_data = &state2,
+        parent_handle = gui.native_window_handle(&window1),
+        child_kind = .Transient,
+    )
+
+    state2 = {
+        text_speed = 1200.0,
+        text_x = 0.0,
+    }
 
     gui.open_window(&window2)
 

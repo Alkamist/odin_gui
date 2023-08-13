@@ -84,6 +84,10 @@ set_window_parent :: proc(window: ^Window, parent: Native_Window_Handle) {
     window.backend_window.parent_handle = parent
 }
 
+set_window_child_kind :: proc(window: ^Window, child_kind: Window_Child_Kind) {
+    window.backend_window.child_kind = child_kind
+}
+
 close_window :: proc(window := _current_window) {
     backend.close(&window.backend_window)
     window.open_multiple_frames = false
@@ -121,7 +125,8 @@ window_content_scale :: proc(window := _current_window) -> f32 {
     return backend.content_scale(&window.backend_window)
 }
 
-make_window :: proc(
+init_window :: proc(
+    window: ^Window,
     title := "",
     position := Vec2{0, 0},
     size := Vec2{400, 300},
@@ -138,27 +143,25 @@ make_window :: proc(
     parent_handle: Native_Window_Handle = nil,
     user_data: rawptr = nil,
     on_frame: proc() = nil,
-) -> Window {
-    return {
-        backend_window = backend.make(
-            title = title,
-            position = position,
-            size = size,
-            min_size = min_size,
-            max_size = max_size,
-            swap_interval = swap_interval,
-            dark_mode = dark_mode,
-            is_visible = is_visible,
-            is_resizable = is_resizable,
-            double_buffer = double_buffer,
-            child_kind = child_kind,
-            parent_handle = parent_handle,
-        ),
-        background_color = background_color,
-        default_font = default_font,
-        user_data = user_data,
-        on_frame = on_frame,
-    }
+) {
+    backend.init(&window.backend_window,
+        title = title,
+        position = position,
+        size = size,
+        min_size = min_size,
+        max_size = max_size,
+        swap_interval = swap_interval,
+        dark_mode = dark_mode,
+        is_visible = is_visible,
+        is_resizable = is_resizable,
+        double_buffer = double_buffer,
+        child_kind = child_kind,
+        parent_handle = parent_handle,
+    )
+    window.background_color = background_color
+    window.default_font = default_font
+    window.user_data = user_data
+    window.on_frame = on_frame
 }
 
 destroy_window :: proc(window: ^Window) {
