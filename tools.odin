@@ -73,15 +73,19 @@ begin_interaction_tracker :: proc() {
     append(&_current_window.interaction_tracker_stack, Interaction_Tracker{})
 }
 
-end_interaction_tracker :: proc() -> Interaction_Tracker {
-    result := pop(&_current_window.interaction_tracker_stack)
-    if result.detected_hover {
+end_interaction_tracker :: proc() {
+    tracker := pop(&_current_window.interaction_tracker_stack)
+    if tracker.detected_hover {
         _current_window.interaction_tracker_stack[len(_current_window.interaction_tracker_stack) - 1].detected_hover = true
     }
-    if result.detected_mouse_over {
+    if tracker.detected_mouse_over {
         _current_window.interaction_tracker_stack[len(_current_window.interaction_tracker_stack) - 1].detected_mouse_over = true
     }
-    return result
+}
+
+@(deferred_none=end_interaction_tracker)
+interaction_tracker :: proc() {
+    begin_interaction_tracker()
 }
 
 begin_offset :: proc(offset: Vec2, global := false) {
@@ -92,8 +96,13 @@ begin_offset :: proc(offset: Vec2, global := false) {
     }
 }
 
-end_offset :: proc() -> Vec2 {
-    return pop(&_current_window.offset_stack)
+end_offset :: proc() {
+    pop(&_current_window.offset_stack)
+}
+
+@(deferred_none=end_offset)
+offset :: proc(offset: Vec2, global := false) {
+    begin_offset(offset, global = global)
 }
 
 begin_clip :: proc(position, size: Vec2, global := false, intersect := true) {
@@ -114,11 +123,11 @@ begin_clip :: proc(position, size: Vec2, global := false, intersect := true) {
     })
 }
 
-end_clip :: proc() -> Rect {
-    result := pop(&_current_window.clip_stack)
+end_clip :: proc() {
+    pop(&_current_window.clip_stack)
 
     if len(_current_window.clip_stack) == 0 {
-        return result
+        return
     }
 
     clip_rect := _current_window.clip_stack[len(_current_window.clip_stack) - 1]
@@ -126,8 +135,11 @@ end_clip :: proc() -> Rect {
         position = clip_rect.position,
         size = clip_rect.size,
     })
+}
 
-    return result
+@(deferred_none=end_clip)
+clip :: proc(position, size: Vec2, global := false, intersect := true) {
+    begin_clip(position, size, global = global, intersect = intersect)
 }
 
 begin_z_index :: proc(z_index: int, global := false) {
@@ -138,10 +150,14 @@ begin_z_index :: proc(z_index: int, global := false) {
     }
 }
 
-end_z_index :: proc() -> int {
+end_z_index :: proc() {
     layer := pop(&_current_window.layer_stack)
     append(&_current_window.layers, layer)
-    return layer.z_index
+}
+
+@(deferred_none=end_z_index)
+z_index :: proc(z_index: int, global := false) {
+    begin_z_index(z_index, global = global)
 }
 
 mouse_hit_test :: proc(position, size: Vec2) -> bool {

@@ -97,6 +97,14 @@ fill_path :: proc(color: Color) {
     fill_path_paint(solid_paint(color))
 }
 
+stroke_path_paint :: proc(paint: Paint, width := f32(1)) {
+    append(&get_layer().draw_commands, Stroke_Path_Command{paint, width})
+}
+
+stroke_path :: proc(color: Color, width := f32(1)) {
+    append(&get_layer().draw_commands, Stroke_Path_Command{solid_paint(color), width})
+}
+
 fill_text_line :: proc(
     text: string,
     position: Vec2,

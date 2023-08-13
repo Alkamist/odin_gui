@@ -35,10 +35,6 @@ make_slider :: proc(
     }
 }
 
-destroy_slider :: proc(slider: ^Slider) {
-    free(slider)
-}
-
 draw_slider :: proc(slider: ^Slider) {
     gui.begin_path()
     gui.rounded_rect(slider.position, slider.size, 3)
