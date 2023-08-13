@@ -128,6 +128,8 @@ open :: proc(window: ^Window) -> bool {
 
     pugl.SetBackend(view, pugl.GlBackend())
 
+    pugl.SetViewHint(view, .STENCIL_BITS, 8)
+
     pugl.SetViewHint(view, .DARK_FRAME, window.dark_mode ? 1 : 0)
     pugl.SetViewHint(view, .RESIZABLE, window.is_resizable ? 1 : 0)
     pugl.SetViewHint(view, .SAMPLES, 1)
@@ -142,7 +144,7 @@ open :: proc(window: ^Window) -> bool {
         pugl.SetTransientParent(view, cast(uintptr)window.parent_handle)
     }
 
-    pugl.SetHandle(view, cast(rawptr)window)
+    pugl.SetHandle(view, window)
     pugl.SetEventFunc(view, _on_event)
 
     status := pugl.Realize(view)
@@ -324,7 +326,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         if window.backend_callbacks.on_update != nil {
             window.backend_callbacks.on_update(window)
         }
-        pugl.LeaveContext(view)
+
         pugl.PostRedisplay(view)
 
     case .LOOP_ENTER:
