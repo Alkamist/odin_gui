@@ -53,6 +53,7 @@ Window :: struct {
     layers: [dynamic]Layer,
 
     default_font: ^Font,
+    default_font_size: f32,
 
     current_font: ^Font,
     current_font_size: f32,
@@ -134,6 +135,7 @@ init_window :: proc(
     max_size: Maybe(Vec2) = nil,
     background_color := Color{0, 0, 0, 1},
     default_font: ^Font = nil,
+    default_font_size := f32(13),
     swap_interval := 1,
     dark_mode := true,
     is_visible := true,
@@ -160,6 +162,7 @@ init_window :: proc(
     )
     window.background_color = background_color
     window.default_font = default_font
+    window.default_font_size = default_font_size
     window.user_data = user_data
     window.on_frame = on_frame
 }
@@ -269,8 +272,13 @@ _begin_frame :: proc(window: ^Window) {
 
     nvg.BeginFrame(window.nvg_ctx, size.x, size.y, content_scale)
     nvg.TextAlign(window.nvg_ctx, .LEFT, .TOP)
-    window.current_font = window.default_font
+
     window.current_font_size = 16.0
+
+    if window.default_font != nil {
+        _set_font(window, window.default_font)
+        _set_font_size(window, window.default_font_size)
+    }
 
     window.tick = time.tick_now()
     if !window.open_multiple_frames {

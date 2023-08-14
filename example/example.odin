@@ -11,7 +11,7 @@ consola := gui.Font{"Consola", #load("consola.ttf")}
 
 window1: gui.Window
 
-position := gui.Vec2{0, 0}
+position := gui.Vec2{50, 50}
 
 draw_cross :: proc(position, size: Vec2, thickness: f32, color: Color) {
     if size.x <= 0 || size.y <= 0 {
@@ -40,21 +40,29 @@ thickness := f32(10)
 on_frame :: proc() {
     dt := gui.delta_time()
 
-    if gui.mouse_wheel_moved() {
-        thickness += gui.mouse_wheel().y
-    }
-    thickness = clamp(thickness, 0, 80)
+    // if gui.mouse_wheel_moved() {
+    //     thickness += gui.mouse_wheel().y
+    // }
+    // thickness = clamp(thickness, 0, 80)
 
-    draw_cross(
-        position = position,
-        size = {thickness, thickness},
-        thickness = 1,
-        color = {1, 1, 1, 1},
-    )
+    // draw_cross(
+    //     position = position,
+    //     size = {thickness, thickness},
+    //     thickness = 1,
+    //     color = {1, 1, 1, 1},
+    // )
 
-    // gui.fill_text_line("Hello World.", {0, 0})
+    metrics := gui.text_metrics()
 
-    position += {0.5, 0.5} * dt
+    width, _ := gui.measure_text("Hello World. px")
+
+    gui.fill_text_line("Hello World. px", position)
+
+    gui.begin_path()
+    gui.path_rect(position, {width, metrics.line_height})
+    gui.stroke_path({1, 0, 0, 1}, 1)
+
+    // position += {20, 20} * dt
 }
 
 main :: proc() {

@@ -133,12 +133,14 @@ fill_text_line :: proc(
     position: Vec2,
     color := Color{1, 1, 1, 1},
     font := _current_window.default_font,
-    font_size := f32(13),
+    font_size := _current_window.default_font_size,
 ) {
+    metrics := text_metrics(font, font_size)
+    center_offset := Vec2{0, metrics.ascender}
     append(&get_layer().draw_commands, Fill_Text_Command{
       font = font,
       font_size = font_size,
-      position = pixel_align(get_offset() + position),
+      position = pixel_align(position + get_offset() + center_offset),
       text = text,
       color = color,
     })
