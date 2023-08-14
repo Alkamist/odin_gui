@@ -9,10 +9,14 @@ Font :: struct {
     data: []byte,
 }
 
-text_metrics :: proc(w: ^Window, font: ^Font, font_size: f32) -> (ascender, descender, line_height: f32) {
-    _set_font(w, font)
-    _set_font_size(w, font_size)
-    return nvg.TextMetrics(w.nvg_ctx)
+text_metrics :: proc(
+    font := _current_window.default_font,
+    font_size := f32(13),
+) -> (ascender, descender, line_height: f32) {
+    window := _current_window
+    _set_font(window, font)
+    _set_font_size(window, font_size)
+    return nvg.TextMetrics(window.nvg_ctx)
 }
 
 
