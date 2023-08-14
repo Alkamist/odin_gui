@@ -4,40 +4,57 @@ import "core:mem"
 import "core:fmt"
 import "../../gui"
 
+Vec2 :: gui.Vec2
+Color :: gui.Color
+
 consola := gui.Font{"Consola", #load("consola.ttf")}
 
-State :: struct {
-    text_speed: f32,
-    text_x: f32,
-}
-
 window1: gui.Window
-window2: gui.Window
 
-state1: State
-state2: State
+position := gui.Vec2{0, 0}
 
-on_frame :: proc() {
-    state := gui.get_user_data(State)
+draw_cross :: proc(position, size: Vec2, thickness: f32, color: Color) {
+    if size.x <= 0 || size.y <= 0 {
+        return
+    }
 
-    dt := gui.delta_time()
+    pixel := gui.pixel_distance()
+    position := gui.pixel_align(position)
+    size := gui.quantize(size, pixel * 2.0) + pixel
+
+    half_size := size * 0.5
 
     gui.begin_path()
-    gui.rounded_rect({50, 50}, {100, 100}, 5)
-    gui.fill_path({1, 0, 0, 1})
 
-    state.text_x += state.text_speed * dt
+    gui.path_move_to(position + {0, half_size.y})
+    gui.path_line_to(position + {size.x, half_size.y})
 
-    size := gui.window_size()
+    gui.path_move_to(position + {half_size.x, 0})
+    gui.path_line_to(position + {half_size.x, size.y})
 
-    if state.text_x > size.x {
-        state.text_speed = -1200.0
+    gui.stroke_path(color, thickness)
+}
+
+thickness := f32(10)
+
+on_frame :: proc() {
+    dt := gui.delta_time()
+
+    if gui.mouse_wheel_moved() {
+        thickness += gui.mouse_wheel().y
     }
-    if state.text_x < 0 {
-        state.text_speed = 1200.0
-    }
+    thickness = clamp(thickness, 0, 80)
 
-    gui.fill_text_line("Some text.", {state.text_x, 0})
+    draw_cross(
+        position = position,
+        size = {thickness, thickness},
+        thickness = 1,
+        color = {1, 1, 1, 1},
+    )
+
+    // gui.fill_text_line("Hello World.", {0, 0})
+
+    position += {0.5, 0.5} * dt
 }
 
 main :: proc() {
@@ -70,39 +87,13 @@ main :: proc() {
         background_color = {0.05, 0.05, 0.05, 1},
         default_font = &consola,
         on_frame = on_frame,
-        user_data = &state1,
     )
-
-    state1 = {
-        text_speed = 1200.0,
-        text_x = 0.0,
-    }
 
     gui.open_window(&window1)
 
-    gui.init_window(
-        &window2,
-        title = "Window 2",
-        position = {600, 200},
-        background_color = {0.05, 0.05, 0.05, 1},
-        default_font = &consola,
-        on_frame = on_frame,
-        user_data = &state2,
-        parent_handle = gui.native_window_handle(&window1),
-        child_kind = .Transient,
-    )
-
-    state2 = {
-        text_speed = 1200.0,
-        text_x = 0.0,
-    }
-
-    gui.open_window(&window2)
-
-    for gui.window_is_open(&window1) && gui.window_is_open(&window2) {
+    for gui.window_is_open(&window1) {
         gui.update()
     }
 
     gui.destroy_window(&window1)
-    gui.destroy_window(&window2)
 }

@@ -23,17 +23,17 @@ draw_button :: proc(button: ^Button) {
     size := button.size
 
     gui.begin_path()
-    gui.rounded_rect(position, size, 3)
+    gui.path_rounded_rect(position, size, 3)
     gui.fill_path(color.rgb(31, 32, 34))
 
     if button.is_down {
         gui.begin_path()
-        gui.rounded_rect(position, size, 3)
+        gui.path_rounded_rect(position, size, 3)
         gui.fill_path(color.rgba(0, 0, 0, 8))
 
     } else if gui.is_hovered(button) {
         gui.begin_path()
-        gui.rounded_rect(position, size, 3)
+        gui.path_rounded_rect(position, size, 3)
         gui.fill_path(color.rgba(255, 255, 255, 8))
     }
 }

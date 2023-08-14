@@ -22,18 +22,41 @@ solid_paint :: proc(color: Color) -> Paint {
     return paint
 }
 
+quantize :: proc{
+    quantize_f32,
+    quantize_vec2,
+}
+
+quantize_f32 :: proc(value, distance: f32) -> f32 {
+    return math.round(value / distance) * distance
+}
+
+quantize_vec2 :: proc(vec: Vec2, distance: f32) -> Vec2 {
+    return {
+        math.round(vec.x / distance) * distance,
+        math.round(vec.y / distance) * distance,
+    }
+}
+
+pixel_distance :: proc(window := _current_window) -> f32 {
+    return 1.0 / window.cached_content_scale
+}
+
 pixel_align :: proc{
     pixel_align_f32,
     pixel_align_vec2,
 }
 
 pixel_align_f32 :: proc(value: f32, window := _current_window) -> f32 {
-    scale := window.cached_content_scale
-    return math.round(value * scale) / scale
+    return quantize_f32(value, pixel_distance(window))
 }
 
-pixel_align_vec2 :: proc(position: Vec2) -> Vec2 {
-    return {pixel_align_f32(position.x), pixel_align_f32(position.y)}
+pixel_align_vec2 :: proc(vec: Vec2, window := _current_window) -> Vec2 {
+    pixel_distance := pixel_distance(window)
+    return {
+        quantize_f32(vec.x, pixel_distance),
+        quantize_f32(vec.y, pixel_distance),
+    }
 }
 
 begin_path :: proc() {
@@ -44,19 +67,19 @@ close_path :: proc() {
     append(&get_layer().draw_commands, Close_Path_Command{})
 }
 
-move_to :: proc(position: Vec2) {
+path_move_to :: proc(position: Vec2) {
     append(&get_layer().draw_commands, Move_To_Command{
         position + get_offset(),
     })
 }
 
-line_to :: proc(position: Vec2) {
+path_line_to :: proc(position: Vec2) {
     append(&get_layer().draw_commands, Line_To_Command{
         position + get_offset(),
     })
 }
 
-arc_to :: proc(p0, p1: Vec2, radius: f32) {
+path_arc_to :: proc(p0, p1: Vec2, radius: f32) {
     offset := get_offset()
     append(&get_layer().draw_commands, Arc_To_Command{
         p0 + offset,
@@ -65,7 +88,7 @@ arc_to :: proc(p0, p1: Vec2, radius: f32) {
     })
 }
 
-rect :: proc(position, size: Vec2, winding: Path_Winding = .Positive) {
+path_rect :: proc(position, size: Vec2, winding: Path_Winding = .Positive) {
     layer := get_layer()
     append(&layer.draw_commands, Rect_Command{
         position + get_offset(),
@@ -74,7 +97,7 @@ rect :: proc(position, size: Vec2, winding: Path_Winding = .Positive) {
     append(&layer.draw_commands, Winding_Command{winding})
 }
 
-rounded_rect_varying :: proc(position, size: Vec2, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius: f32, winding: Path_Winding = .Positive) {
+path_rounded_rect_varying :: proc(position, size: Vec2, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius: f32, winding: Path_Winding = .Positive) {
     layer := get_layer()
     append(&layer.draw_commands, Rounded_Rect_Command{
         position + get_offset(),
@@ -85,8 +108,8 @@ rounded_rect_varying :: proc(position, size: Vec2, top_left_radius, top_right_ra
     append(&layer.draw_commands, Winding_Command{winding})
 }
 
-rounded_rect :: proc(position, size: Vec2, radius: f32, winding: Path_Winding = .Positive) {
-    rounded_rect_varying(position, size, radius, radius, radius, radius, winding)
+path_rounded_rect :: proc(position, size: Vec2, radius: f32, winding: Path_Winding = .Positive) {
+    path_rounded_rect_varying(position, size, radius, radius, radius, radius, winding)
 }
 
 fill_path_paint :: proc(paint: Paint) {
