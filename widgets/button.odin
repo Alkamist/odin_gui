@@ -13,9 +13,11 @@ Button :: struct {
     clicked: bool,
 }
 
-DEFAULT_BUTTON :: Button{
-    position = {0, 0},
-    size = {96, 32},
+init_button :: proc(position := Vec2{0, 0}, size := Vec2{96, 32}) -> Button {
+    return {
+        position = position,
+        size = size,
+    }
 }
 
 draw_button :: proc(button: ^Button) {

@@ -13,8 +13,10 @@ Performance :: struct {
     previous_average_window: int,
 }
 
-DEFAULT_PERFORMANCE :: Performance{
-    average_window = 100,
+init_performance :: proc(average_window := 100) -> Performance {
+    return {
+        average_window = average_window,
+    }
 }
 
 destroy_performance :: proc(perf: ^Performance) {

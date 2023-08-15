@@ -25,6 +25,22 @@ DEFAULT_TEXT :: Text{
     font_size = 13,
 }
 
+init_text :: proc(
+    font: ^Font,
+    font_size := f32(13),
+    data := "",
+    position := Vec2{0, 0},
+    color := Color{1, 1, 1, 1},
+) -> Text {
+    return {
+        font = font,
+        font_size = font_size,
+        data = data,
+        position = position,
+        color = color,
+    }
+}
+
 destroy_text :: proc(text: ^Text) {
     delete(text.glyphs)
 }

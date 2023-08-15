@@ -26,6 +26,13 @@ Glyph :: struct {
     draw_offset_x: f32,
 }
 
+init_font :: proc(name: string, data: []byte) -> Font {
+    return {
+        name = name,
+        data = data,
+    }
+}
+
 solid_paint :: proc(color: Color) -> Paint {
     paint: Paint
     nvg.TransformIdentity(&paint.xform)

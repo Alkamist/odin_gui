@@ -64,10 +64,52 @@ Window :: struct {
 
     loaded_fonts: [dynamic]^Font,
 
-    backend_window: backend.Window,
+    using backend_window: backend.Window,
 }
 
 update :: backend.update
+
+init_window :: proc(
+    title := "",
+    position := Vec2{0, 0},
+    size := Vec2{400, 300},
+    min_size: Maybe(Vec2) = nil,
+    max_size: Maybe(Vec2) = nil,
+    background_color := Color{0, 0, 0, 1},
+    default_font: ^Font = nil,
+    default_font_size := f32(13),
+    swap_interval := 1,
+    dark_mode := true,
+    is_visible := true,
+    is_resizable := true,
+    double_buffer := true,
+    child_kind := Window_Child_Kind.None,
+    parent_handle: Native_Window_Handle = nil,
+    user_data: rawptr = nil,
+    on_frame: proc() = nil,
+) -> Window {
+    return {
+        backend_window = backend.init(
+            title = title,
+            position = position,
+            size = size,
+            min_size = min_size,
+            max_size = max_size,
+            swap_interval = swap_interval,
+            dark_mode = dark_mode,
+            is_visible = is_visible,
+            is_resizable = is_resizable,
+            double_buffer = double_buffer,
+            child_kind = child_kind,
+            parent_handle = parent_handle,
+        ),
+        background_color = background_color,
+        default_font = default_font,
+        default_font_size = default_font_size,
+        user_data = user_data,
+        on_frame = on_frame,
+    }
+}
 
 activate_window_context :: proc(window: ^Window) {
     backend.activate_context(&window.backend_window)
@@ -126,47 +168,6 @@ window_content_scale :: proc(window := _current_window) -> f32 {
     return backend.content_scale(&window.backend_window)
 }
 
-init_window :: proc(
-    window: ^Window,
-    title := "",
-    position := Vec2{0, 0},
-    size := Vec2{400, 300},
-    min_size: Maybe(Vec2) = nil,
-    max_size: Maybe(Vec2) = nil,
-    background_color := Color{0, 0, 0, 1},
-    default_font: ^Font = nil,
-    default_font_size := f32(13),
-    swap_interval := 1,
-    dark_mode := true,
-    is_visible := true,
-    is_resizable := true,
-    double_buffer := true,
-    child_kind := Window_Child_Kind.None,
-    parent_handle: Native_Window_Handle = nil,
-    user_data: rawptr = nil,
-    on_frame: proc() = nil,
-) {
-    backend.init(&window.backend_window,
-        title = title,
-        position = position,
-        size = size,
-        min_size = min_size,
-        max_size = max_size,
-        swap_interval = swap_interval,
-        dark_mode = dark_mode,
-        is_visible = is_visible,
-        is_resizable = is_resizable,
-        double_buffer = double_buffer,
-        child_kind = child_kind,
-        parent_handle = parent_handle,
-    )
-    window.background_color = background_color
-    window.default_font = default_font
-    window.default_font_size = default_font_size
-    window.user_data = user_data
-    window.on_frame = on_frame
-}
-
 destroy_window :: proc(window: ^Window) {
     delete(window.mouse_presses)
     delete(window.mouse_releases)
@@ -189,61 +190,61 @@ open_window :: proc(window: ^Window) -> bool {
     clear(&window.loaded_fonts)
 
     backend_window := &window.backend_window
-    backend_window.user_data = window
+    backend_window.backend_data = window
 
     activate_window_context(window)
     window.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
 
     backend_window.backend_callbacks.on_close = proc(window: ^backend.Window) {
-        window := cast(^Window)(window.user_data)
+        window := cast(^Window)(window.backend_data)
         if window.on_close != nil {
             window.on_close()
         }
         nvg_gl.Destroy(window.nvg_ctx)
     }
     backend_window.backend_callbacks.on_mouse_move = proc(window: ^backend.Window, position, root_position: Vec2) {
-        window := cast(^Window)(window.user_data)
+        window := cast(^Window)(window.backend_data)
         window.global_mouse_position = position
         window.root_mouse_position = root_position
     }
     backend_window.backend_callbacks.on_mouse_enter = proc(window: ^backend.Window) {
-        window := cast(^Window)(window.user_data)
+        window := cast(^Window)(window.backend_data)
         window.client_area_hovered = true
     }
     backend_window.backend_callbacks.on_mouse_exit = proc(window: ^backend.Window) {
-        window := cast(^Window)(window.user_data)
+        window := cast(^Window)(window.backend_data)
         window.client_area_hovered = false
     }
     backend_window.backend_callbacks.on_mouse_wheel = proc(window: ^backend.Window, amount: Vec2) {
-        window := cast(^Window)(window.user_data)
+        window := cast(^Window)(window.backend_data)
         window.mouse_wheel_state = amount
     }
     backend_window.backend_callbacks.on_mouse_press = proc(window: ^backend.Window, button: Mouse_Button) {
-        window := cast(^Window)(window.user_data)
+        window := cast(^Window)(window.backend_data)
         window.mouse_down_states[button] = true
         append(&window.mouse_presses, button)
     }
     backend_window.backend_callbacks.on_mouse_release = proc(window: ^backend.Window, button: Mouse_Button) {
-        window := cast(^Window)(window.user_data)
+        window := cast(^Window)(window.backend_data)
         window.mouse_down_states[button] = false
         append(&window.mouse_releases, button)
     }
     backend_window.backend_callbacks.on_key_press = proc(window: ^backend.Window, key: Keyboard_Key) {
-        window := cast(^Window)(window.user_data)
+        window := cast(^Window)(window.backend_data)
         window.key_down_states[key] = true
         append(&window.key_presses, key)
     }
     backend_window.backend_callbacks.on_key_release = proc(window: ^backend.Window, key: Keyboard_Key) {
-        window := cast(^Window)(window.user_data)
+        window := cast(^Window)(window.backend_data)
         window.key_down_states[key] = false
         append(&window.key_releases, key)
     }
     backend_window.backend_callbacks.on_rune = proc(window: ^backend.Window, r: rune) {
-        window := cast(^Window)(window.user_data)
+        window := cast(^Window)(window.backend_data)
         strings.write_rune(&window.text_input, r)
     }
     backend_window.backend_callbacks.on_draw = proc(window: ^backend.Window) {
-        window := cast(^Window)(window.user_data)
+        window := cast(^Window)(window.backend_data)
         _begin_frame(window)
         if window.on_frame != nil {
             window.on_frame()
