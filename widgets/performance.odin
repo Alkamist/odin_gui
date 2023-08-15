@@ -58,8 +58,8 @@ update_performance :: proc(perf: ^Performance) {
     perf.previous_average_window = average_window
 }
 
-draw_performance :: proc(perf: ^Performance) {
-    fps_str := fmt.aprintf("Fps: %v", fps(perf))
-    defer delete(fps_str)
-    gui.fill_text_raw(fps_str, {0, 0})
-}
+// draw_performance :: proc(perf: ^Performance) {
+//     fps_str := fmt.aprintf("Fps: %v", fps(perf))
+//     defer delete(fps_str)
+//     gui.fill_text_raw(fps_str, {0, 0})
+// }

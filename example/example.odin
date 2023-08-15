@@ -14,7 +14,6 @@ window1 := gui.init_window(
     title = "Window 1",
     position = {200, 200},
     background_color = {0.05, 0.05, 0.05, 1},
-    default_font = &consola,
     on_frame = on_frame,
 )
 

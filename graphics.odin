@@ -162,9 +162,9 @@ stroke_path :: proc(color: Color, width := f32(1)) {
 fill_text_raw :: proc(
     text: string,
     position: Vec2,
-    color := Color{1, 1, 1, 1},
-    font := _current_window.default_font,
-    font_size := _current_window.default_font_size,
+    color: Color,
+    font: ^Font,
+    font_size: f32,
 ) {
     append(&get_layer().draw_commands, Fill_Text_Command{
       font = font,
@@ -175,10 +175,7 @@ fill_text_raw :: proc(
     })
 }
 
-text_metrics :: proc(
-    font := _current_window.default_font,
-    font_size := _current_window.default_font_size,
-) -> (ascender, descender, line_height: f32) {
+text_metrics :: proc(font: ^Font, font_size: f32) -> (ascender, descender, line_height: f32) {
     window := _current_window
     _set_font(window, font)
     _set_font_size(window, font_size)
@@ -188,8 +185,8 @@ text_metrics :: proc(
 measure_glyphs :: proc(
     glyphs: ^[dynamic]Glyph,
     text: string,
-    font := _current_window.default_font,
-    font_size := _current_window.default_font_size,
+    font: ^Font,
+    font_size: f32,
 ) {
     if len(text) == 0 {
         return

@@ -6,10 +6,10 @@ Font :: gui.Font
 Glyph :: gui.Glyph
 
 Text :: struct {
+    font: ^Font,
     data: string,
     position: Vec2,
     color: Color,
-    font: ^Font,
     font_size: f32,
 
     glyphs: [dynamic]Glyph,
@@ -19,18 +19,12 @@ Text :: struct {
     x_height: f32,
 }
 
-DEFAULT_TEXT :: Text{
-    data = "",
-    color = {1, 1, 1, 1},
-    font_size = 13,
-}
-
 init_text :: proc(
     font: ^Font,
-    font_size := f32(13),
     data := "",
     position := Vec2{0, 0},
     color := Color{1, 1, 1, 1},
+    font_size := f32(13),
 ) -> Text {
     return {
         font = font,
@@ -61,7 +55,7 @@ update_text :: proc(text: ^Text) {
         return
     }
 
-    gui.measure_glyphs(&text.glyphs, text.data)
+    gui.measure_glyphs(&text.glyphs, text.data, text.font, text.font_size)
 
     if len(text.glyphs) > 0 {
         text.size.x = text.glyphs[len(text.glyphs) - 1].right - text.glyphs[0].left

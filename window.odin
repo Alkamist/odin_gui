@@ -52,9 +52,6 @@ Window :: struct {
     interaction_tracker_stack: [dynamic]Interaction_Tracker,
     layers: [dynamic]Layer,
 
-    default_font: ^Font,
-    default_font_size: f32,
-
     current_font: ^Font,
     current_font_size: f32,
     nvg_ctx: ^nvg.Context,
@@ -76,8 +73,6 @@ init_window :: proc(
     min_size: Maybe(Vec2) = nil,
     max_size: Maybe(Vec2) = nil,
     background_color := Color{0, 0, 0, 1},
-    default_font: ^Font = nil,
-    default_font_size := f32(13),
     swap_interval := 1,
     dark_mode := true,
     is_visible := true,
@@ -104,8 +99,6 @@ init_window :: proc(
             parent_handle = parent_handle,
         ),
         background_color = background_color,
-        default_font = default_font,
-        default_font_size = default_font_size,
         user_data = user_data,
         on_frame = on_frame,
     }
@@ -275,11 +268,6 @@ _begin_frame :: proc(window: ^Window) {
     nvg.TextAlign(window.nvg_ctx, .LEFT, .TOP)
 
     window.current_font_size = 16.0
-
-    if window.default_font != nil {
-        _set_font(window, window.default_font)
-        _set_font_size(window, window.default_font_size)
-    }
 
     window.tick = time.tick_now()
     if !window.open_multiple_frames {
