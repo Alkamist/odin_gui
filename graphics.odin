@@ -1,6 +1,8 @@
 package gui
 
+import "core:fmt"
 import "core:math"
+import "core:slice"
 import nvg "vendor:nanovg"
 import "color"
 
@@ -10,6 +12,18 @@ Paint :: nvg.Paint
 Path_Winding :: enum {
     Positive,
     Negative,
+}
+
+Font :: struct {
+    name: string,
+    data: []byte,
+}
+
+Glyph :: struct {
+    rune_position: int,
+    left: f32,
+    right: f32,
+    draw_offset_x: f32,
 }
 
 solid_paint :: proc(color: Color) -> Paint {
@@ -89,7 +103,12 @@ path_arc_to :: proc(p0, p1: Vec2, radius: f32) {
 }
 
 path_rect :: proc(position, size: Vec2, winding: Path_Winding = .Positive) {
+    if size.x <= 0 || size.y <= 0 {
+        return
+    }
+
     layer := get_layer()
+
     append(&layer.draw_commands, Rect_Command{
         position + get_offset(),
         size,
@@ -98,7 +117,12 @@ path_rect :: proc(position, size: Vec2, winding: Path_Winding = .Positive) {
 }
 
 path_rounded_rect_varying :: proc(position, size: Vec2, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius: f32, winding: Path_Winding = .Positive) {
+    if size.x <= 0 || size.y <= 0 {
+        return
+    }
+
     layer := get_layer()
+
     append(&layer.draw_commands, Rounded_Rect_Command{
         position + get_offset(),
         size,
@@ -128,22 +152,63 @@ stroke_path :: proc(color: Color, width := f32(1)) {
     append(&get_layer().draw_commands, Stroke_Path_Command{solid_paint(color), width})
 }
 
-fill_text_line :: proc(
+fill_text_raw :: proc(
     text: string,
     position: Vec2,
     color := Color{1, 1, 1, 1},
     font := _current_window.default_font,
     font_size := _current_window.default_font_size,
 ) {
-    metrics := text_metrics(font, font_size)
-    center_offset := Vec2{0, metrics.ascender}
     append(&get_layer().draw_commands, Fill_Text_Command{
       font = font,
       font_size = font_size,
-      position = pixel_align(position + get_offset() + center_offset),
+      position = pixel_align(position + get_offset()),
       text = text,
       color = color,
     })
+}
+
+text_metrics :: proc(
+    font := _current_window.default_font,
+    font_size := _current_window.default_font_size,
+) -> (ascender, descender, line_height: f32) {
+    window := _current_window
+    _set_font(window, font)
+    _set_font_size(window, font_size)
+    return nvg.TextMetrics(window.nvg_ctx)
+}
+
+measure_glyphs :: proc(
+    glyphs: ^[dynamic]Glyph,
+    text: string,
+    font := _current_window.default_font,
+    font_size := _current_window.default_font_size,
+) {
+    if len(text) == 0 {
+        return
+    }
+
+    window := _current_window
+    _set_font(window, font)
+    _set_font_size(window, font_size)
+
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text))
+    defer delete(nvg_positions)
+
+    // This will change when nanovg is fixed.
+    temp_slice := nvg_positions[:]
+    position_count := nvg.TextGlyphPositions(window.nvg_ctx, 0, 0, text, &temp_slice)
+
+    resize(glyphs, position_count)
+
+    for i in 0 ..< position_count {
+        glyphs[i] = Glyph{
+            rune_position = nvg_positions[i].str,
+            left = nvg_positions[i].minx,
+            right = nvg_positions[i].maxx,
+            draw_offset_x = nvg_positions[i].x - nvg_positions[i].minx,
+        }
+    }
 }
 
 
@@ -155,4 +220,30 @@ _path_winding_to_nvg_winding :: proc(winding: Path_Winding) -> nvg.Winding {
     case .Positive: return .CCW
     }
     return .CW
+}
+
+@(private)
+_set_font :: proc(w: ^Window, font: ^Font) {
+    if !slice.contains(w.loaded_fonts[:], font) {
+        id := nvg.CreateFontMem(w.nvg_ctx, font.name, font.data, false)
+        if id == -1 {
+            fmt.eprintf("Failed to load font: %v\n", font.name)
+            return
+        }
+        append(&w.loaded_fonts, font)
+    }
+    if font == w.current_font {
+        return
+    }
+    nvg.FontFace(w.nvg_ctx, font.name)
+    w.current_font = font
+}
+
+@(private)
+_set_font_size :: proc(w: ^Window, font_size: f32) {
+    if font_size == w.current_font_size {
+        return
+    }
+    nvg.FontSize(w.nvg_ctx, font_size)
+    w.current_font_size = font_size
 }

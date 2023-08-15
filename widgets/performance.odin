@@ -1,5 +1,6 @@
 package widgets
 
+import "core:mem"
 import "core:fmt"
 import "core:time"
 import "../../gui"
@@ -12,9 +13,8 @@ Performance :: struct {
     previous_average_window: int,
 }
 
-init_performance :: proc(perf: ^Performance, average_window := 100) {
-    perf.average_window = average_window
-    perf.delta_times = make([dynamic]time.Duration, average_window, average_window)
+DEFAULT_PERFORMANCE :: Performance{
+    average_window = 100,
 }
 
 destroy_performance :: proc(perf: ^Performance) {
@@ -59,5 +59,5 @@ update_performance :: proc(perf: ^Performance) {
 draw_performance :: proc(perf: ^Performance) {
     fps_str := fmt.aprintf("Fps: %v", fps(perf))
     defer delete(fps_str)
-    gui.fill_text_line(fps_str, {0, 0})
+    gui.fill_text_raw(fps_str, {0, 0})
 }

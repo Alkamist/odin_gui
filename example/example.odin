@@ -3,6 +3,7 @@ package main
 import "core:mem"
 import "core:fmt"
 import "../../gui"
+import "../../gui/widgets"
 
 Vec2 :: gui.Vec2
 Color :: gui.Color
@@ -11,58 +12,20 @@ consola := gui.Font{"Consola", #load("consola.ttf")}
 
 window1: gui.Window
 
-position := gui.Vec2{50, 50}
-
-draw_cross :: proc(position, size: Vec2, thickness: f32, color: Color) {
-    if size.x <= 0 || size.y <= 0 {
-        return
-    }
-
-    pixel := gui.pixel_distance()
-    position := gui.pixel_align(position)
-    size := gui.quantize(size, pixel * 2.0) + pixel
-
-    half_size := size * 0.5
-
-    gui.begin_path()
-
-    gui.path_move_to(position + {0, half_size.y})
-    gui.path_line_to(position + {size.x, half_size.y})
-
-    gui.path_move_to(position + {half_size.x, 0})
-    gui.path_line_to(position + {half_size.x, size.y})
-
-    gui.stroke_path(color, thickness)
-}
-
-thickness := f32(10)
+text := widgets.DEFAULT_TEXT
 
 on_frame :: proc() {
-    dt := gui.delta_time()
-
-    // if gui.mouse_wheel_moved() {
-    //     thickness += gui.mouse_wheel().y
-    // }
-    // thickness = clamp(thickness, 0, 80)
-
-    // draw_cross(
-    //     position = position,
-    //     size = {thickness, thickness},
-    //     thickness = 1,
-    //     color = {1, 1, 1, 1},
-    // )
-
-    metrics := gui.text_metrics()
-
-    width, _ := gui.measure_text("Hello World. px")
-
-    gui.fill_text_line("Hello World. px", position)
+    text.data = "Hello world."
+    text.font = &consola
+    widgets.update_text(&text)
 
     gui.begin_path()
-    gui.path_rect(position, {width, metrics.line_height})
-    gui.stroke_path({1, 0, 0, 1}, 1)
+    gui.path_rect(text.position, text.size)
+    gui.fill_path({1, 0, 0, 1})
 
-    // position += {20, 20} * dt
+    widgets.draw_text(&text)
+
+    text.position += {20, 20} * gui.delta_time()
 }
 
 main :: proc() {
@@ -96,6 +59,7 @@ main :: proc() {
         default_font = &consola,
         on_frame = on_frame,
     )
+    defer gui.destroy_window(&window1)
 
     gui.open_window(&window1)
 
@@ -103,5 +67,5 @@ main :: proc() {
         gui.update()
     }
 
-    gui.destroy_window(&window1)
+    widgets.destroy_text(&text)
 }
