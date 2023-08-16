@@ -1,7 +1,5 @@
 package gui
 
-import "rect"
-
 Widget :: struct {}
 
 Layer :: struct {
@@ -113,7 +111,7 @@ begin_clip :: proc(position, size: Vec2, global := false, intersect := true) {
     }
 
     if intersect {
-        r = rect.intersect(r, _current_window.clip_stack[len(_current_window.clip_stack) - 1])
+        r = _rect_intersect(r, _current_window.clip_stack[len(_current_window.clip_stack) - 1])
     }
 
     append(&_current_window.clip_stack, r)
@@ -164,5 +162,5 @@ mouse_hit_test :: proc(position, size: Vec2) -> bool {
     m := mouse_position()
     return m.x >= position.x && m.x <= position.x + size.x &&
            m.y >= position.y && m.y <= position.y + size.y &&
-           rect.contains(get_clip(), m)
+           contains(get_clip(), m)
 }

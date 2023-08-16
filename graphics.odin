@@ -4,9 +4,7 @@ import "core:fmt"
 import "core:math"
 import "core:slice"
 import nvg "vendor:nanovg"
-import "color"
 
-Color :: color.Color
 Paint :: nvg.Paint
 
 Path_Winding :: enum {

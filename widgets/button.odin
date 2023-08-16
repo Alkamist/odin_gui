@@ -1,7 +1,6 @@
 package widgets
 
 import "../../gui"
-import "../../gui/color"
 
 Button :: struct {
     using widget: gui.Widget,
@@ -26,17 +25,17 @@ draw_button :: proc(button: ^Button) {
 
     gui.begin_path()
     gui.path_rounded_rect(position, size, 3)
-    gui.fill_path(color.rgb(31, 32, 34))
+    gui.fill_path(gui.rgb(31, 32, 34))
 
     if button.is_down {
         gui.begin_path()
         gui.path_rounded_rect(position, size, 3)
-        gui.fill_path(color.rgba(0, 0, 0, 8))
+        gui.fill_path(gui.rgba(0, 0, 0, 8))
 
     } else if gui.is_hovered(button) {
         gui.begin_path()
         gui.path_rounded_rect(position, size, 3)
-        gui.fill_path(color.rgba(255, 255, 255, 8))
+        gui.fill_path(gui.rgba(255, 255, 255, 8))
     }
 }
 

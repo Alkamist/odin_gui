@@ -1,4 +1,4 @@
-package color
+package gui
 
 Color :: [4]f32
 

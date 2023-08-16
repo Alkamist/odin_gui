@@ -7,11 +7,9 @@ import gl "vendor:OpenGL"
 import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
 import backend "window"
-import "rect"
 
 @(thread_local) _current_window: ^Window
 
-Rect :: rect.Rect
 Vec2 :: [2]f32
 
 Native_Window_Handle :: backend.Native_Handle

@@ -1,7 +1,6 @@
 package widgets
 
 import "../../gui"
-import "../../gui/color"
 
 Slider :: struct {
     position: Vec2,
@@ -38,7 +37,7 @@ init_slider :: proc(
 draw_slider :: proc(slider: ^Slider) {
     gui.begin_path()
     gui.path_rounded_rect(slider.position, slider.size, 3)
-    gui.fill_path(color.rgb(31, 32, 34))
+    gui.fill_path(gui.rgb(31, 32, 34))
 
     handle := &slider.handle
     handle_position := handle.position
@@ -46,17 +45,17 @@ draw_slider :: proc(slider: ^Slider) {
 
     gui.begin_path()
     gui.path_rounded_rect(handle_position, handle_size, 3)
-    gui.fill_path(color.lighten(color.rgb(49, 51, 56), 0.3))
+    gui.fill_path(gui.lighten(gui.rgb(49, 51, 56), 0.3))
 
     if handle.is_down {
         gui.begin_path()
         gui.path_rounded_rect(handle_position, handle_size, 3)
-        gui.fill_path(color.rgba(0, 0, 0, 8))
+        gui.fill_path(gui.rgba(0, 0, 0, 8))
 
     } else if gui.is_hovered(handle) {
         gui.begin_path()
         gui.path_rounded_rect(handle_position, handle_size, 3)
-        gui.fill_path(color.rgba(255, 255, 255, 8))
+        gui.fill_path(gui.rgba(255, 255, 255, 8))
     }
 }
 
