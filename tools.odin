@@ -37,6 +37,10 @@ get_clip :: proc() -> Rect {
     return _current_window.clip_stack[len(_current_window.clip_stack) - 1]
 }
 
+get_hover :: proc() -> ^Widget {
+    return _current_window.hover
+}
+
 is_hovered :: proc(widget: ^Widget) -> bool {
     return _current_window.hover == widget
 }
