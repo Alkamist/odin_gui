@@ -54,7 +54,7 @@ Window :: struct {
     current_font_size: f32,
     nvg_ctx: ^nvg.Context,
 
-    open_multiple_frames: bool,
+    open_for_multiple_frames: bool,
     cached_content_scale: f32,
 
     loaded_fonts: [dynamic]^Font,
@@ -122,9 +122,12 @@ set_window_child_kind :: proc(window: ^Window, child_kind: Window_Child_Kind) {
     window.backend_window.child_kind = child_kind
 }
 
-close_window :: proc(window := _current_window) {
+close_window :: proc(window: ^Window) {
     backend.close(&window.backend_window)
-    window.open_multiple_frames = false
+}
+
+request_window_close :: proc(window := _current_window) {
+    backend.request_close(window)
 }
 
 window_is_open :: proc(window := _current_window) -> bool {
@@ -192,6 +195,7 @@ open_window :: proc(window: ^Window) -> bool {
             window.on_close()
         }
         nvg_gl.Destroy(window.nvg_ctx)
+        window.open_for_multiple_frames = false
     }
     backend_window.backend_callbacks.on_mouse_move = proc(window: ^backend.Window, position, root_position: Vec2) {
         window := cast(^Window)(window.backend_data)
@@ -268,7 +272,7 @@ _begin_frame :: proc(window: ^Window) {
     window.current_font_size = 16.0
 
     window.tick = time.tick_now()
-    if !window.open_multiple_frames {
+    if !window.open_for_multiple_frames {
         window.previous_tick = window.tick
     }
 
@@ -335,5 +339,5 @@ _end_frame :: proc(window: ^Window) {
     window.previous_root_mouse_position = window.root_mouse_position
     window.previous_tick = window.tick
 
-    window.open_multiple_frames = true
+    window.open_for_multiple_frames = true
 }
