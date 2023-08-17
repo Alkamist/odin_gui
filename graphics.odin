@@ -108,11 +108,12 @@ path_arc_to :: proc(p0, p1: Vec2, radius: f32) {
 }
 
 path_rect :: proc(position, size: Vec2, winding: Path_Winding = .Positive) {
-    if size.x <= 0 || size.y <= 0 {
-        return
-    }
-
     layer := get_layer()
+    pixel := pixel_distance()
+    size := Vec2{
+        max(pixel, size.x),
+        max(pixel, size.y),
+    }
 
     append(&layer.draw_commands, Rect_Command{
         position + get_offset(),
@@ -122,11 +123,12 @@ path_rect :: proc(position, size: Vec2, winding: Path_Winding = .Positive) {
 }
 
 path_rounded_rect_varying :: proc(position, size: Vec2, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius: f32, winding: Path_Winding = .Positive) {
-    if size.x <= 0 || size.y <= 0 {
-        return
-    }
-
     layer := get_layer()
+    pixel := pixel_distance()
+    size := Vec2{
+        max(pixel, size.x),
+        max(pixel, size.y),
+    }
 
     append(&layer.draw_commands, Rounded_Rect_Command{
         position + get_offset(),
