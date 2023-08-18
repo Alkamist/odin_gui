@@ -174,6 +174,7 @@ open :: proc(window: ^Window) -> bool {
     return true
 }
 
+// It is not safe for a window to close itself this way.
 close :: proc(window: ^Window) {
     if !window.is_open {
         return
@@ -203,6 +204,7 @@ close :: proc(window: ^Window) {
     }
 }
 
+// Ask the window to close itself. This is safe for a window to do itself.
 request_close :: proc(window: ^Window) {
     if !window.is_open {
         return

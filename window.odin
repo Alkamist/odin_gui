@@ -59,7 +59,7 @@ Window :: struct {
 
     loaded_fonts: [dynamic]^Font,
 
-    using backend_window: backend.Window,
+    backend_window: backend.Window,
 }
 
 update :: backend.update
@@ -122,12 +122,14 @@ set_window_child_kind :: proc(window: ^Window, child_kind: Window_Child_Kind) {
     window.backend_window.child_kind = child_kind
 }
 
+// It is not safe for a window to close itself this way.
 close_window :: proc(window: ^Window) {
     backend.close(&window.backend_window)
 }
 
+// Ask the window to close itself. This is safe for a window to do itself.
 request_window_close :: proc(window := _current_window) {
-    backend.request_close(window)
+    backend.request_close(&window.backend_window)
 }
 
 window_is_open :: proc(window := _current_window) -> bool {
@@ -252,7 +254,6 @@ open_window :: proc(window: ^Window) -> bool {
 
 
 
-@(private)
 _begin_frame :: proc(window: ^Window) {
     _current_window = window
 
@@ -282,7 +283,6 @@ _begin_frame :: proc(window: ^Window) {
     append(&window.interaction_tracker_stack, Interaction_Tracker{})
 }
 
-@(private)
 _end_frame :: proc(window: ^Window) {
     pop(&window.interaction_tracker_stack)
     end_clip()

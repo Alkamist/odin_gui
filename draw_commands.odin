@@ -75,7 +75,6 @@ Draw_Command :: union {
 
 
 
-@(private)
 _render_draw_commands :: proc(w: ^Window, commands: []Draw_Command) {
     nvg_ctx := w.nvg_ctx
     for command in commands {
