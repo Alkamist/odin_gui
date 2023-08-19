@@ -32,6 +32,11 @@ Arc_To_Command :: struct {
     radius: f32,
 }
 
+Circle_Command :: struct {
+    center: Vec2,
+    radius: f32,
+}
+
 Winding_Command :: struct {
     winding: Path_Winding,
 }
@@ -66,6 +71,7 @@ Draw_Command :: union {
     Move_To_Command,
     Line_To_Command,
     Arc_To_Command,
+    Circle_Command,
     Winding_Command,
     Fill_Path_Command,
     Stroke_Path_Command,
@@ -98,6 +104,9 @@ _render_draw_commands :: proc(w: ^Window, commands: []Draw_Command) {
         case Arc_To_Command:
             c := command.(Arc_To_Command)
             nvg.ArcTo(nvg_ctx, c.p0.x, c.p0.y, c.p1.x, c.p1.y, c.radius)
+        case Circle_Command:
+            c := command.(Circle_Command)
+            nvg.Circle(nvg_ctx, c.center.x, c.center.y, c.radius)
         case Winding_Command:
             c := command.(Winding_Command)
             winding: nvg.Winding = ---
