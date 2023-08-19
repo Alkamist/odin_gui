@@ -197,7 +197,35 @@ open_window :: proc(window: ^Window) -> bool {
             window.on_close()
         }
         nvg_gl.Destroy(window.nvg_ctx)
+
         window.open_for_multiple_frames = false
+        window.client_area_hovered = false
+
+        window.global_mouse_position = {0, 0}
+        window.root_mouse_position = {0, 0}
+        window.previous_root_mouse_position = {0, 0}
+
+        window.mouse_wheel_state = {0, 0}
+
+        clear(&window.mouse_presses)
+        clear(&window.mouse_releases)
+        for button in Mouse_Button {
+            window.mouse_down_states[button] = false
+        }
+
+        clear(&window.key_presses)
+        clear(&window.key_releases)
+        for key in Keyboard_Key {
+            window.key_down_states[key] = false
+        }
+
+        window.hover = nil
+        window.mouse_over = nil
+        window.hover_capture = nil
+
+        window.highest_z_index = 0
+
+        strings.builder_reset(&window.text_input)
     }
     backend_window.backend_callbacks.on_mouse_move = proc(window: ^backend.Window, position, root_position: Vec2) {
         window := cast(^Window)(window.backend_data)
