@@ -72,11 +72,11 @@ any_mouse_released :: proc() -> bool {
     return len(_current_window.mouse_releases) > 0
 }
 
-key_pressed :: proc(key: Keyboard_Key, ) -> bool {
+key_pressed :: proc(key: Keyboard_Key) -> bool {
     return slice.contains(_current_window.key_presses[:], key)
 }
 
-key_released :: proc(key: Keyboard_Key, ) -> bool {
+key_released :: proc(key: Keyboard_Key) -> bool {
     return slice.contains(_current_window.key_releases[:], key)
 }
 

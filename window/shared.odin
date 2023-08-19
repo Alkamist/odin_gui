@@ -54,6 +54,8 @@ Keyboard_Key :: enum {
 
 Backend_Callbacks :: struct {
     on_close: proc(window: ^Window),
+    on_gain_focus: proc(window: ^Window),
+    on_lose_focus: proc(window: ^Window),
     on_draw: proc(window: ^Window),
     on_update: proc(window: ^Window),
     on_show: proc(window: ^Window),

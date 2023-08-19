@@ -227,6 +227,15 @@ open_window :: proc(window: ^Window) -> bool {
 
         strings.builder_reset(&window.text_input)
     }
+    backend_window.backend_callbacks.on_lose_focus = proc(window: ^backend.Window) {
+        window := cast(^Window)(window.backend_data)
+        for key in Keyboard_Key {
+            if window.key_down_states[key] {
+                append(&window.key_releases, key)
+                window.key_down_states[key] = false
+            }
+        }
+    }
     backend_window.backend_callbacks.on_mouse_move = proc(window: ^backend.Window, position, root_position: Vec2) {
         window := cast(^Window)(window.backend_data)
         window.global_mouse_position = position
@@ -246,23 +255,31 @@ open_window :: proc(window: ^Window) -> bool {
     }
     backend_window.backend_callbacks.on_mouse_press = proc(window: ^backend.Window, button: Mouse_Button) {
         window := cast(^Window)(window.backend_data)
-        window.mouse_down_states[button] = true
-        append(&window.mouse_presses, button)
+        if !window.mouse_down_states[button] {
+            append(&window.mouse_presses, button)
+            window.mouse_down_states[button] = true
+        }
     }
     backend_window.backend_callbacks.on_mouse_release = proc(window: ^backend.Window, button: Mouse_Button) {
         window := cast(^Window)(window.backend_data)
-        window.mouse_down_states[button] = false
-        append(&window.mouse_releases, button)
+        if window.mouse_down_states[button] {
+            append(&window.mouse_releases, button)
+            window.mouse_down_states[button] = false
+        }
     }
     backend_window.backend_callbacks.on_key_press = proc(window: ^backend.Window, key: Keyboard_Key) {
         window := cast(^Window)(window.backend_data)
-        window.key_down_states[key] = true
-        append(&window.key_presses, key)
+        if !window.key_down_states[key] {
+            append(&window.key_presses, key)
+            window.key_down_states[key] = true
+        }
     }
     backend_window.backend_callbacks.on_key_release = proc(window: ^backend.Window, key: Keyboard_Key) {
         window := cast(^Window)(window.backend_data)
-        window.key_down_states[key] = false
-        append(&window.key_releases, key)
+        if window.key_down_states[key] {
+            append(&window.key_releases, key)
+            window.key_down_states[key] = false
+        }
     }
     backend_window.backend_callbacks.on_rune = proc(window: ^backend.Window, r: rune) {
         window := cast(^Window)(window.backend_data)

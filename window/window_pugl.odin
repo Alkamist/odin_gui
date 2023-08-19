@@ -402,6 +402,24 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
         pugl.PostRedisplay(view)
 
+    case .FOCUS_IN:
+        window := cast(^Window)pugl.GetHandle(view)
+        context = window.odin_context
+        if window.backend_callbacks.on_gain_focus != nil {
+            window.backend_callbacks.on_gain_focus(window)
+        }
+
+        pugl.PostRedisplay(view)
+
+    case .FOCUS_OUT:
+        window := cast(^Window)pugl.GetHandle(view)
+        context = window.odin_context
+        if window.backend_callbacks.on_lose_focus != nil {
+            window.backend_callbacks.on_lose_focus(window)
+        }
+
+        pugl.PostRedisplay(view)
+
     case .SCROLL:
         window := cast(^Window)pugl.GetHandle(view)
         context = window.odin_context
