@@ -102,6 +102,10 @@ init_window :: proc(
     }
 }
 
+current_window :: proc() -> ^Window {
+    return _current_window
+}
+
 activate_window_context :: proc(window: ^Window) {
     backend.activate_context(&window.backend_window)
 }
@@ -128,39 +132,39 @@ close_window :: proc(window: ^Window) {
 }
 
 // Ask the window to close itself. This is safe for a window to do itself.
-request_window_close :: proc(window := _current_window) {
+request_window_close :: proc(window: ^Window) {
     backend.request_close(&window.backend_window)
 }
 
-window_is_open :: proc(window := _current_window) -> bool {
+window_is_open :: proc(window: ^Window) -> bool {
     return backend.is_open(&window.backend_window)
 }
 
-window_is_visible :: proc(window := _current_window) -> bool {
+window_is_visible :: proc(window: ^Window) -> bool {
     return backend.is_visible(&window.backend_window)
 }
 
-set_window_visibility :: proc(visibility: bool, window := _current_window) {
+set_window_visibility :: proc(window: ^Window, visibility: bool) {
     backend.set_visibility(&window.backend_window, visibility)
 }
 
-window_position :: proc(window := _current_window) -> Vec2 {
+window_position :: proc(window: ^Window) -> Vec2 {
     return backend.position(&window.backend_window)
 }
 
-set_window_position :: proc(position: Vec2, window := _current_window) {
+set_window_position :: proc(window: ^Window, position: Vec2) {
     backend.set_position(&window.backend_window, position)
 }
 
-window_size :: proc(window := _current_window) -> Vec2 {
+window_size :: proc(window: ^Window) -> Vec2 {
     return backend.size(&window.backend_window)
 }
 
-set_window_size :: proc(size: Vec2, window := _current_window) {
+set_window_size :: proc(window: ^Window, size: Vec2) {
     backend.set_size(&window.backend_window, size)
 }
 
-window_content_scale :: proc(window := _current_window) -> f32 {
+window_content_scale :: proc(window: ^Window) -> f32 {
     return backend.content_scale(&window.backend_window)
 }
 

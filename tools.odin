@@ -13,10 +13,6 @@ Interaction_Tracker :: struct {
     detected_mouse_over: bool,
 }
 
-get_window :: proc() -> ^Window {
-    return _current_window
-}
-
 get_user_data :: proc($T: typeid) -> ^T {
     return cast(^T)_current_window.user_data
 }
