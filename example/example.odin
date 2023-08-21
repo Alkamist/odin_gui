@@ -8,16 +8,16 @@ import "../../gui/widgets"
 Vec2 :: gui.Vec2
 Color :: gui.Color
 
-consola := gui.init_font("Consola", #load("consola.ttf"))
+consola := gui.make_font("Consola", #load("consola.ttf"))
 
-window1 := gui.init_window(
+window1 := gui.make_window(
     title = "Window 1",
     position = {200, 200},
     background_color = {0.05, 0.05, 0.05, 1},
     on_frame = on_frame,
 )
 
-text := widgets.init_text(&consola)
+text := widgets.make_text(&consola)
 
 on_frame :: proc() {
     text.data = "Hello world."

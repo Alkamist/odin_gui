@@ -12,7 +12,7 @@ Button :: struct {
     clicked: bool,
 }
 
-init_button :: proc(position := Vec2{0, 0}, size := Vec2{96, 32}) -> Button {
+make_button :: proc(position := Vec2{0, 0}, size := Vec2{96, 32}) -> Button {
     return {
         position = position,
         size = size,

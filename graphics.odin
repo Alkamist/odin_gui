@@ -24,7 +24,7 @@ Glyph :: struct {
     draw_offset_x: f32,
 }
 
-init_font :: proc(name: string, data: []byte) -> Font {
+make_font :: proc(name: string, data: []byte) -> Font {
     return {
         name = name,
         data = data,

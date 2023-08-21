@@ -64,7 +64,7 @@ Window :: struct {
 
 update :: backend.update
 
-init_window :: proc(
+make_window :: proc(
     title := "",
     position := Vec2{0, 0},
     size := Vec2{400, 300},
@@ -82,7 +82,7 @@ init_window :: proc(
     on_frame: proc() = nil,
 ) -> Window {
     return {
-        backend_window = backend.init(
+        backend_window = backend.make_window(
             title = title,
             position = position,
             size = size,

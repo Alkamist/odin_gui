@@ -19,7 +19,7 @@ Text :: struct {
     x_height: f32,
 }
 
-init_text :: proc(
+make_text :: proc(
     font: ^Font,
     data := "",
     position := Vec2{0, 0},

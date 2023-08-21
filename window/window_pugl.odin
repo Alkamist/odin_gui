@@ -41,7 +41,7 @@ Window :: struct {
     odin_context: runtime.Context,
 }
 
-init :: proc(
+make_window :: proc(
     title := "",
     position := Vec2{0, 0},
     size := Vec2{400, 300},

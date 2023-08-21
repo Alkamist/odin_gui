@@ -13,7 +13,7 @@ Performance :: struct {
     previous_average_window: int,
 }
 
-init_performance :: proc(average_window := 100) -> Performance {
+make_performance :: proc(average_window := 100) -> Performance {
     return {
         average_window = average_window,
     }
