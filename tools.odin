@@ -143,11 +143,11 @@ clip :: proc(position, size: Vec2, global := false, intersect := true) {
 }
 
 begin_z_index :: proc(z_index: int, global := false) {
-    if global {
-        append(&_current_window.layer_stack, Layer{z_index = z_index})
-    } else {
-        append(&_current_window.layer_stack, Layer{z_index = get_z_index() + z_index})
-    }
+    layer: Layer
+    layer.draw_commands = make([dynamic]Draw_Command, _current_window.frame_allocator)
+    if global do layer.z_index = z_index
+    else do layer.z_index = get_z_index() + z_index
+    append(&_current_window.layer_stack, layer)
 }
 
 end_z_index :: proc() {

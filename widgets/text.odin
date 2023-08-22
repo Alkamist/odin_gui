@@ -1,15 +1,16 @@
 package widgets
 
+import "core:mem"
 import "../../gui"
 
 Font :: gui.Font
 Glyph :: gui.Glyph
 
 Text :: struct {
-    font: ^Font,
     data: string,
     position: Vec2,
     color: Color,
+    font: ^Font,
     font_size: f32,
 
     glyphs: [dynamic]Glyph,
@@ -19,20 +20,22 @@ Text :: struct {
     x_height: f32,
 }
 
-make_text :: proc(
-    font: ^Font,
+init_text :: proc(
+    text: ^Text,
     data := "",
     position := Vec2{0, 0},
     color := Color{1, 1, 1, 1},
+    font := _default_font,
     font_size := f32(13),
-) -> Text {
-    return {
-        font = font,
-        font_size = font_size,
-        data = data,
-        position = position,
-        color = color,
-    }
+    allocator := context.allocator,
+) -> (res: ^Text, err: mem.Allocator_Error) #optional_allocator_error {
+    text.font = font
+    text.font_size = font_size
+    text.data = data
+    text.position = position
+    text.color = color
+    text.glyphs = make([dynamic]Glyph, allocator) or_return
+    return text, nil
 }
 
 destroy_text :: proc(text: ^Text) {

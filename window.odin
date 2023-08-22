@@ -1,5 +1,7 @@
 package gui
 
+import "core:mem"
+import "core:mem/virtual"
 import "core:time"
 import "core:slice"
 import "core:strings"
@@ -48,6 +50,7 @@ Window :: struct {
     clip_stack: [dynamic]Rect,
     layer_stack: [dynamic]Layer,
     interaction_tracker_stack: [dynamic]Interaction_Tracker,
+
     layers: [dynamic]Layer,
 
     current_font: ^Font,
@@ -60,11 +63,15 @@ Window :: struct {
     loaded_fonts: [dynamic]^Font,
 
     backend_window: backend.Window,
+
+    frame_arena: virtual.Arena,
+    frame_allocator: mem.Allocator,
 }
 
 update :: backend.update
 
-make_window :: proc(
+init_window :: proc(
+    window: ^Window,
     title := "",
     position := Vec2{0, 0},
     size := Vec2{400, 300},
@@ -80,26 +87,28 @@ make_window :: proc(
     parent_handle: Native_Window_Handle = nil,
     user_data: rawptr = nil,
     on_frame: proc() = nil,
-) -> Window {
-    return {
-        backend_window = backend.make_window(
-            title = title,
-            position = position,
-            size = size,
-            min_size = min_size,
-            max_size = max_size,
-            swap_interval = swap_interval,
-            dark_mode = dark_mode,
-            is_visible = is_visible,
-            is_resizable = is_resizable,
-            double_buffer = double_buffer,
-            child_kind = child_kind,
-            parent_handle = parent_handle,
-        ),
-        background_color = background_color,
-        user_data = user_data,
-        on_frame = on_frame,
-    }
+) -> (res: ^Window, err: mem.Allocator_Error) #optional_allocator_error {
+    backend.init_window(
+        &window.backend_window,
+        title = title,
+        position = position,
+        size = size,
+        min_size = min_size,
+        max_size = max_size,
+        swap_interval = swap_interval,
+        dark_mode = dark_mode,
+        is_visible = is_visible,
+        is_resizable = is_resizable,
+        double_buffer = double_buffer,
+        child_kind = child_kind,
+        parent_handle = parent_handle,
+    )
+    window.background_color = background_color
+    window.user_data = user_data
+    window.on_frame = on_frame
+    virtual.arena_init_growing(&window.frame_arena) or_return
+    window.frame_allocator = virtual.arena_allocator(&window.frame_arena)
+    return window, nil
 }
 
 current_window :: proc() -> ^Window {
@@ -173,13 +182,14 @@ destroy_window :: proc(window: ^Window) {
     delete(window.mouse_releases)
     delete(window.key_presses)
     delete(window.key_releases)
-    delete(window.offset_stack)
-    delete(window.clip_stack)
-    delete(window.layer_stack)
-    delete(window.interaction_tracker_stack)
-    delete(window.layers)
     delete(window.loaded_fonts)
+    // delete(window.offset_stack)
+    // delete(window.clip_stack)
+    // delete(window.layer_stack)
+    // delete(window.interaction_tracker_stack)
+    // delete(window.layers)
     backend.destroy(&window.backend_window)
+    virtual.arena_destroy(&window.frame_arena)
 }
 
 open_window :: proc(window: ^Window) -> bool {
@@ -304,6 +314,12 @@ open_window :: proc(window: ^Window) -> bool {
 
 
 _begin_frame :: proc(window: ^Window) {
+    window.offset_stack = make([dynamic]Vec2, window.frame_allocator)
+    window.clip_stack = make([dynamic]Rect, window.frame_allocator)
+    window.interaction_tracker_stack = make([dynamic]Interaction_Tracker, window.frame_allocator)
+    window.layer_stack = make([dynamic]Layer, window.frame_allocator)
+    window.layers = make([dynamic]Layer, window.frame_allocator)
+
     _current_window = window
 
     bg := window.background_color
@@ -338,13 +354,6 @@ _end_frame :: proc(window: ^Window) {
     end_offset()
     end_z_index()
 
-    nvg.EndFrame(window.nvg_ctx)
-
-    assert(len(window.offset_stack) == 0, "Mismatch in begin_offset and end_offset calls.")
-    assert(len(window.layer_stack) == 0, "Mismatch in begin_z_index and end_z_index calls.")
-    assert(len(window.clip_stack) == 0, "Mismatch in begin_clip and end_clip calls.")
-    assert(len(window.interaction_tracker_stack) == 0, "Mismatch in begin_interaction_tracker and end_interaction_tracker calls.")
-
     // The layers are in reverse order because they were added in end_z_index.
     // Stable sort preserves the order of layers with the same z index, so they
     // must first be reversed and then sorted to keep that ordering in tact.
@@ -368,8 +377,6 @@ _end_frame :: proc(window: ^Window) {
             window.hover = hover_request
             window.mouse_over = hover_request
         }
-
-        delete(layer.draw_commands)
     }
 
     if window.hover_capture != nil {
@@ -377,6 +384,8 @@ _end_frame :: proc(window: ^Window) {
     }
 
     window.highest_z_index = highest_z_index
+
+    nvg.EndFrame(window.nvg_ctx)
 
     clear(&window.layers)
     clear(&window.mouse_presses)
@@ -389,4 +398,6 @@ _end_frame :: proc(window: ^Window) {
     window.previous_tick = window.tick
 
     window.open_for_multiple_frames = true
+
+    free_all(window.frame_allocator)
 }

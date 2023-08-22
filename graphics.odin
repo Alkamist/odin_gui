@@ -24,13 +24,6 @@ Glyph :: struct {
     draw_offset_x: f32,
 }
 
-make_font :: proc(name: string, data: []byte) -> Font {
-    return {
-        name = name,
-        data = data,
-    }
-}
-
 solid_paint :: proc(color: Color) -> Paint {
     paint: Paint
     nvg.TransformIdentity(&paint.xform)
@@ -199,16 +192,15 @@ measure_glyphs :: proc(
         return
     }
 
-    window := _current_window
-    _set_font(window, font)
-    _set_font_size(window, font_size)
+    _set_font(_current_window, font)
+    _set_font_size(_current_window, font_size)
 
-    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text))
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), _current_window.frame_allocator)
     defer delete(nvg_positions)
 
     // This will change when nanovg is fixed.
     temp_slice := nvg_positions[:]
-    position_count := nvg.TextGlyphPositions(window.nvg_ctx, 0, 0, text, &temp_slice)
+    position_count := nvg.TextGlyphPositions(_current_window.nvg_ctx, 0, 0, text, &temp_slice)
 
     resize(glyphs, position_count)
 

@@ -8,19 +8,16 @@ import "../../gui/widgets"
 Vec2 :: gui.Vec2
 Color :: gui.Color
 
-consola := gui.make_font("Consola", #load("consola.ttf"))
+consola := gui.Font{"Consola", #load("consola.ttf")}
 
-window1 := gui.make_window(
-    title = "Window 1",
-    position = {200, 200},
-    background_color = {0.05, 0.05, 0.05, 1},
-    on_frame = on_frame,
-)
-
-text := widgets.make_text(&consola)
+window1: gui.Window
+text: widgets.Text
 
 on_frame :: proc() {
-    text.data = "Hello world."
+    if gui.mouse_pressed(.Right) {
+        fmt.println("Yee")
+    }
+
     widgets.update_text(&text)
 
     gui.begin_path()
@@ -55,12 +52,24 @@ main :: proc() {
         }
     }
 
+    widgets.set_default_font(&consola)
+
+    widgets.init_text(&text, "Hello world.")
+    defer widgets.destroy_text(&text)
+
+    gui.init_window(
+        &window1,
+        title = "Window 1",
+        position = {200, 200},
+        background_color = {0.05, 0.05, 0.05, 1},
+        on_frame = on_frame,
+    )
+    defer gui.destroy_window(&window1)
+
     gui.open_window(&window1)
 
     for gui.window_is_open(&window1) {
         gui.update()
+        free_all(context.temp_allocator)
     }
-
-    widgets.destroy_text(&text)
-    gui.destroy_window(&window1)
 }
