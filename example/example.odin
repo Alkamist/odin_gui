@@ -14,19 +14,18 @@ window1: gui.Window
 text: widgets.Text
 
 on_frame :: proc() {
-    if gui.mouse_pressed(.Right) {
-        fmt.println("Yee")
-    }
+    text.position = {100, 100}
 
     widgets.update_text(&text)
+    widgets.edit_text(&text)
 
-    gui.begin_path()
-    gui.path_rect(text.position, text.size)
-    gui.fill_path({1, 0, 0, 1})
+    // gui.begin_path()
+    // gui.path_rect(text.position, text.size)
+    // gui.fill_path({1, 0, 0, 1})
 
     widgets.draw_text(&text)
 
-    text.position += {20, 20} * gui.delta_time()
+    // text.position += {20, 20} * gui.delta_time()
 }
 
 main :: proc() {

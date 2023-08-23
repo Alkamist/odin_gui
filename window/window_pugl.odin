@@ -463,6 +463,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         window := cast(^Window)pugl.GetHandle(view)
         context = _odin_context
         event := &event.text
+
         if window.backend_callbacks.on_rune != nil {
             r, len := utf8.decode_rune(event.string[:4])
             window.backend_callbacks.on_rune(window, r)
