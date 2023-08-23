@@ -36,6 +36,7 @@ Window :: struct {
     mouse_releases: [dynamic]Mouse_Button,
     mouse_down_states: [Mouse_Button]bool,
     key_presses: [dynamic]Keyboard_Key,
+    key_repeats: [dynamic]Keyboard_Key,
     key_releases: [dynamic]Keyboard_Key,
     key_down_states: [Keyboard_Key]bool,
     text_input: strings.Builder,
@@ -181,6 +182,7 @@ destroy_window :: proc(window: ^Window) {
     delete(window.mouse_presses)
     delete(window.mouse_releases)
     delete(window.key_presses)
+    delete(window.key_repeats)
     delete(window.key_releases)
     delete(window.loaded_fonts)
     // delete(window.offset_stack)
@@ -228,6 +230,7 @@ open_window :: proc(window: ^Window) -> bool {
         }
 
         clear(&window.key_presses)
+        clear(&window.key_repeats)
         clear(&window.key_releases)
         for key in Keyboard_Key {
             window.key_down_states[key] = false
@@ -286,6 +289,8 @@ open_window :: proc(window: ^Window) -> bool {
         if !window.key_down_states[key] {
             append(&window.key_presses, key)
             window.key_down_states[key] = true
+        } else {
+            append(&window.key_repeats, key)
         }
     }
     backend_window.backend_callbacks.on_key_release = proc(window: ^backend.Window, key: Keyboard_Key) {
@@ -391,6 +396,7 @@ _end_frame :: proc(window: ^Window) {
     clear(&window.mouse_presses)
     clear(&window.mouse_releases)
     clear(&window.key_presses)
+    clear(&window.key_repeats)
     clear(&window.key_releases)
     strings.builder_reset(&window.text_input)
     window.mouse_wheel_state = {0, 0}
