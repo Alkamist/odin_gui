@@ -3,14 +3,7 @@ package widgets
 import "core:fmt"
 import "core:mem"
 import "core:strings"
-import text_edit "core:text/edit"
 import "../../gui"
-
-
-
-// Remove dependence on text/edit
-
-
 
 Font :: gui.Font
 Glyph :: gui.Glyph
@@ -29,9 +22,8 @@ Text :: struct {
     descender: f32,
     x_height: f32,
 
-    _edit_state: text_edit.State,
-    _selection_head: int,
-    _selection_tail: int,
+    selection_head: int,
+    selection_tail: int,
 }
 
 init_text :: proc(
@@ -55,14 +47,11 @@ init_text :: proc(
     strings.builder_init(&text.builder, allocator) or_return
     strings.write_string(&text.builder, data)
 
-    text_edit.init(&text._edit_state, allocator, allocator)
-
     return text, nil
 }
 
 destroy_text :: proc(text: ^Text) {
     strings.builder_destroy(&text.builder)
-    text_edit.destroy(&text._edit_state)
     delete(text.glyphs)
 }
 
@@ -94,12 +83,6 @@ update_text :: proc(text: ^Text) {
         press = gui.mouse_pressed(.Left),
         release = gui.mouse_released(.Left),
     )
-
-    text_edit.end(&text._edit_state)
-
-    last_selection := text._edit_state.selection
-    text_edit.begin(&text._edit_state, 0, &text.builder)
-    text._edit_state.selection = last_selection
 }
 
 edit_text :: proc(text: ^Text) {
@@ -147,13 +130,17 @@ edit_text :: proc(text: ^Text) {
         input_string(text, gui.get_clipboard())
     }
 
+    if control && gui.key_pressed(.A) {
+        select_all(text)
+    }
+
     if !control {
         if data := gui.text_input(); data != "" {
             input_string(text, data)
         }
     }
 
-    _draw_selection(text)
+    draw_selection(text)
 }
 
 draw_text :: proc(text: ^Text) {
@@ -193,58 +180,71 @@ index_at_position :: proc(text: ^Text, position: Vec2) -> int {
 }
 
 move_caret :: proc(text: ^Text, index: int) {
-    text._selection_tail = index
-    text._selection_head = index
-    _sync_selection(text)
+    text.selection_tail = index
+    text.selection_head = index
 }
 
 nudge_caret :: proc(text: ^Text, amount: int) {
-    text._selection_head += amount
-    text._selection_tail = text._selection_head
-    _sync_selection(text)
+    text.selection_head += amount
+    text.selection_tail = text.selection_head
 }
 
 drag_selection :: proc(text: ^Text, index: int) {
-    text._selection_head = index
-    _sync_selection(text)
+    text.selection_head = index
 }
 
 nudge_selection :: proc(text: ^Text, amount: int) {
-    text._selection_head += amount
-    _sync_selection(text)
+    text.selection_head += amount
 }
 
-no_text_selected :: proc(text: ^Text) -> bool {
-    return abs(text._edit_state.selection[0] - text._edit_state.selection[1]) == 0
+get_selection :: proc(text: ^Text) -> (low, high: int) {
+    low = clamp(min(text.selection_tail, text.selection_head), 0, strings.builder_len(text.builder))
+    high = clamp(max(text.selection_tail, text.selection_head), 0, strings.builder_len(text.builder))
+    return low, high
+}
+
+select_all :: proc(text: ^Text) {
+    text.selection_tail = 0
+    text.selection_head = strings.builder_len(text.builder)
+}
+
+text_is_selected :: proc(text: ^Text) -> bool {
+    return abs(text.selection_head - text.selection_tail) > 0
+}
+
+delete_selection :: proc(text: ^Text) {
+    low, high := get_selection(text)
+    remove_range(&text.builder.buf, low, high)
+    text.selection_tail = low
+    text.selection_head = low
 }
 
 get_selected_text :: proc(text: ^Text) -> string {
-    return text_edit.current_selected_text(&text._edit_state)
+    low, high := get_selection(text)
+    return string(text.builder.buf[low:high])
 }
 
 backspace_text :: proc(text: ^Text) {
-    if no_text_selected(text) {
-        text_edit.delete_to(&text._edit_state, .Left)
-    } else {
-        text_edit.selection_delete(&text._edit_state)
+    if !text_is_selected(text) {
+        text.selection_head -= 1
     }
-}
-
-input_rune :: proc(text: ^Text, r: rune) {
-    text_edit.input_runes(&text._edit_state, {r})
+    delete_selection(text)
 }
 
 input_string :: proc(text: ^Text, data: string) {
-    text_edit.input_text(&text._edit_state, data)
+    if len(data) == 0 {
+		return
+	}
+	if text_is_selected(text) {
+		delete_selection(text)
+	}
+    inject_at(&text.builder.buf, text.selection_tail, data)
+    text.selection_tail += len(data)
+    text.selection_head += len(data)
 }
 
-_sync_selection :: proc(text: ^Text) {
-    text._edit_state.selection[0] = min(text._selection_tail, text._selection_head)
-    text._edit_state.selection[1] = max(text._selection_tail, text._selection_head)
-}
-
-_draw_selection :: proc(text: ^Text) {
-    low, high := text_edit.sorted_selection(&text._edit_state)
+draw_selection :: proc(text: ^Text) {
+    low, high := get_selection(text)
 
     // Draw selection.
     if high - low > 0 {
