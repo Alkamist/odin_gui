@@ -278,6 +278,23 @@ content_scale :: proc(window: ^Window) -> f32 {
     return f32(pugl.GetScaleFactor(window.view))
 }
 
+set_cursor_style :: proc(window: ^Window, style: Cursor_Style) {
+    pugl.SetCursor(window.view, _cursor_style_to_pugl_cursor(style))
+}
+
+get_clipboard :: proc(window: ^Window) -> string {
+    length: uint
+    clipboard_cstring := cast(cstring)pugl.GetClipboard(window.view, 0, &length)
+    return string(clipboard_cstring)
+}
+
+set_clipboard :: proc(window: ^Window, data: string) {
+    checkpoint := runtime.default_temp_allocator_temp_begin()
+    defer runtime.default_temp_allocator_temp_end(checkpoint)
+    data_cstring := strings.clone_to_cstring(data, context.temp_allocator)
+    pugl.SetClipboard(window.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1)
+}
+
 
 
 _generate_id :: proc "contextless" () -> u64 {
@@ -616,4 +633,19 @@ _pugl_button_to_mouse_button :: proc(button: u32) -> Mouse_Button {
     case 4: return .Extra_2
     case: return .Unknown
     }
+}
+
+_cursor_style_to_pugl_cursor :: proc(style: Cursor_Style) -> pugl.Cursor {
+    switch style {
+    case .Arrow: return .ARROW
+    case .I_Beam: return .CARET
+    case .Crosshair: return .CROSSHAIR
+    case .Hand: return .HAND
+    case .Resize_Left_Right: return .LEFT_RIGHT
+    case .Resize_Top_Bottom: return .UP_DOWN
+    case .Resize_Top_Left_Bottom_Right: return .UP_LEFT_DOWN_RIGHT
+    case .Resize_Top_Right_Bottom_Left: return .UP_RIGHT_DOWN_LEFT
+    case .Scroll: return .ALL_SCROLL
+    }
+    return .ARROW
 }

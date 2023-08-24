@@ -14,11 +14,12 @@ Cursor_Style :: enum {
     Arrow,
     I_Beam,
     Crosshair,
-    Pointing_Hand,
+    Hand,
     Resize_Left_Right,
     Resize_Top_Bottom,
     Resize_Top_Left_Bottom_Right,
     Resize_Top_Right_Bottom_Left,
+    Scroll,
 }
 
 Mouse_Button :: enum {

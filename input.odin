@@ -9,6 +9,18 @@ Cursor_Style :: backend.Cursor_Style
 Mouse_Button :: backend.Mouse_Button
 Keyboard_Key :: backend.Keyboard_Key
 
+set_cursor_style :: proc(style: Cursor_Style) {
+    _current_window.cursor_style = style
+}
+
+get_clipboard :: proc() -> string {
+    return backend.get_clipboard(&_current_window.backend_window)
+}
+
+set_clipboard :: proc(data: string) {
+    backend.set_clipboard(&_current_window.backend_window, data)
+}
+
 delta_time_duration :: proc() -> time.Duration {
     window := _current_window
     return time.tick_diff(window.previous_tick, window.tick)

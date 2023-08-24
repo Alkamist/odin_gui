@@ -41,6 +41,8 @@ Window :: struct {
     key_down_states: [Keyboard_Key]bool,
     text_input: strings.Builder,
 
+    cursor_style: Cursor_Style,
+
     hover: ^Widget,
     mouse_over: ^Widget,
     hover_capture: ^Widget,
@@ -114,6 +116,10 @@ init_window :: proc(
 
 current_window :: proc() -> ^Window {
     return _current_window
+}
+
+frame_allocator :: proc() -> mem.Allocator {
+    return _current_window.frame_allocator
 }
 
 activate_window_context :: proc(window: ^Window) {
@@ -257,6 +263,7 @@ open_window :: proc(window: ^Window) -> bool {
         window := cast(^Window)(window.backend_data)
         window.global_mouse_position = position
         window.root_mouse_position = root_position
+        backend.set_cursor_style(&window.backend_window, window.cursor_style)
     }
     backend_window.backend_callbacks.on_mouse_enter = proc(window: ^backend.Window) {
         window := cast(^Window)(window.backend_data)
@@ -327,6 +334,8 @@ _begin_frame :: proc(window: ^Window) {
 
     _current_window = window
 
+    window.cursor_style = .Arrow
+
     bg := window.background_color
     gl.ClearColor(bg.r, bg.g, bg.b, bg.a)
     gl.Clear(gl.COLOR_BUFFER_BIT)
@@ -391,6 +400,8 @@ _end_frame :: proc(window: ^Window) {
     window.highest_z_index = highest_z_index
 
     nvg.EndFrame(window.nvg_ctx)
+
+    backend.set_cursor_style(&window.backend_window, window.cursor_style)
 
     clear(&window.layers)
     clear(&window.mouse_presses)

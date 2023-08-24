@@ -6,6 +6,12 @@ import "core:strings"
 import text_edit "core:text/edit"
 import "../../gui"
 
+
+
+// Remove dependence on text/edit
+
+
+
 Font :: gui.Font
 Glyph :: gui.Glyph
 
@@ -100,6 +106,11 @@ edit_text :: proc(text: ^Text) {
     hover_index := index_at_position(text, gui.mouse_position())
 
     shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
+    control := gui.key_down(.Left_Control) || gui.key_down(.Right_Control)
+
+    if gui.is_hovered(text) {
+        gui.set_cursor_style(.I_Beam)
+    }
 
     if gui.mouse_pressed(.Left) {
         move_caret(text, hover_index)
@@ -128,51 +139,21 @@ edit_text :: proc(text: ^Text) {
         }
     }
 
-    if data := gui.text_input(); data != "" {
-        input_string(text, data)
+    if control && gui.key_pressed(.C) {
+        gui.set_clipboard(get_selected_text(text))
     }
 
-    // Drawing code.
-    if strings.builder_len(text.builder) == 0 || len(text.glyphs) == 0 {
-        return
+    if control && gui.key_pressed(.V, true) {
+        input_string(text, gui.get_clipboard())
     }
 
-    low, high := text_edit.sorted_selection(&text._edit_state)
-
-    // Draw selection.
-    if high - low > 0 {
-        low := clamp(low, 0, len(text.glyphs) - 1)
-
-        selection_position := text.position + {text.glyphs[low].left, 0}
-
-        selection_size := Vec2{0, text.size.y}
-        if high < len(text.glyphs) {
-            selection_size.x += text.glyphs[high - 1].right - text.glyphs[low].left
-        } else {
-            selection_size.x += text.glyphs[len(text.glyphs) - 1].right - text.glyphs[low].left
+    if !control {
+        if data := gui.text_input(); data != "" {
+            input_string(text, data)
         }
-
-        gui.begin_path()
-        gui.path_rounded_rect(selection_position, selection_size, 3)
-        gui.fill_path(text.selection_color)
-
-    // Draw caret.
-    } else {
-        pixel := gui.pixel_distance()
-
-        caret_position := text.position + {pixel * 0.5, 0}
-        if low < len(text.glyphs) {
-            low := max(low, 0)
-            caret_position.x += text.glyphs[low].left
-        } else {
-            caret_position.x += text.glyphs[len(text.glyphs) - 1].right
-        }
-
-        gui.begin_path()
-        gui.path_move_to(caret_position)
-        gui.path_line_to(caret_position + {0, text.size.y})
-        gui.stroke_path(text.selection_color, pixel)
     }
+
+    _draw_selection(text)
 }
 
 draw_text :: proc(text: ^Text) {
@@ -237,6 +218,10 @@ no_text_selected :: proc(text: ^Text) -> bool {
     return abs(text._edit_state.selection[0] - text._edit_state.selection[1]) == 0
 }
 
+get_selected_text :: proc(text: ^Text) -> string {
+    return text_edit.current_selected_text(&text._edit_state)
+}
+
 backspace_text :: proc(text: ^Text) {
     if no_text_selected(text) {
         text_edit.delete_to(&text._edit_state, .Left)
@@ -256,4 +241,47 @@ input_string :: proc(text: ^Text, data: string) {
 _sync_selection :: proc(text: ^Text) {
     text._edit_state.selection[0] = min(text._selection_tail, text._selection_head)
     text._edit_state.selection[1] = max(text._selection_tail, text._selection_head)
+}
+
+_draw_selection :: proc(text: ^Text) {
+    low, high := text_edit.sorted_selection(&text._edit_state)
+
+    // Draw selection.
+    if high - low > 0 {
+        if strings.builder_len(text.builder) == 0 || len(text.glyphs) == 0 {
+            return
+        }
+
+        low := clamp(low, 0, len(text.glyphs) - 1)
+
+        selection_position := text.position + {text.glyphs[low].left, 0}
+
+        selection_size := Vec2{0, text.size.y}
+        if high < len(text.glyphs) {
+            selection_size.x += text.glyphs[high - 1].right - text.glyphs[low].left
+        } else {
+            selection_size.x += text.glyphs[len(text.glyphs) - 1].right - text.glyphs[low].left
+        }
+
+        gui.begin_path()
+        gui.path_rounded_rect(selection_position, selection_size, 3)
+        gui.fill_path(text.selection_color)
+
+    // Draw caret.
+    } else {
+        pixel := gui.pixel_distance()
+
+        caret_position := text.position + {pixel * 0.5, 0}
+        if low < len(text.glyphs) {
+            low := max(low, 0)
+            caret_position.x += text.glyphs[low].left
+        } else {
+            caret_position.x += text.glyphs[len(text.glyphs) - 1].right
+        }
+
+        gui.begin_path()
+        gui.path_move_to(caret_position)
+        gui.path_line_to(caret_position + {0, text.size.y})
+        gui.stroke_path(text.selection_color, pixel)
+    }
 }

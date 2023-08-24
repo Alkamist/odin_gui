@@ -13,11 +13,19 @@ consola := gui.Font{"Consola", #load("consola.ttf")}
 window1: gui.Window
 text: widgets.Text
 
+is_editable: bool
+
 on_frame :: proc() {
     text.position = {100, 100}
 
+    if gui.mouse_pressed(.Right) {
+        is_editable = !is_editable
+    }
+
     widgets.update_text(&text)
-    widgets.edit_text(&text)
+    if is_editable {
+        widgets.edit_text(&text)
+    }
 
     // gui.begin_path()
     // gui.path_rect(text.position, text.size)
