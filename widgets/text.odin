@@ -67,13 +67,11 @@ update_text :: proc(text: ^Text) {
 
     text.size.y = line_height
 
-    if strings.builder_len(text.builder) == 0 {
-        return
-    }
-
     gui.measure_glyphs(&text.glyphs, strings.to_string(text.builder), text.font, text.font_size)
 
-    if len(text.glyphs) > 0 {
+    if len(text.glyphs) == 0 {
+        text.size.x = 0
+    } else {
         text.size.x = text.glyphs[len(text.glyphs) - 1].right - text.glyphs[0].left
     }
 
@@ -91,9 +89,7 @@ edit_text :: proc(text: ^Text) {
     shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
     control := gui.key_down(.Left_Control) || gui.key_down(.Right_Control)
 
-    if gui.is_hovered(text) {
-        gui.set_cursor_style(.I_Beam)
-    }
+    gui.set_cursor_style(.I_Beam)
 
     if gui.mouse_pressed(.Left) {
         move_caret(text, hover_index)
@@ -123,7 +119,7 @@ edit_text :: proc(text: ^Text) {
     }
 
     if control && gui.key_pressed(.C) {
-        gui.set_clipboard(get_selected_text(text))
+        gui.set_clipboard(selection_to_string(text))
     }
 
     if control && gui.key_pressed(.V, true) {
@@ -179,6 +175,11 @@ index_at_position :: proc(text: ^Text, position: Vec2) -> int {
     return len(text.glyphs)
 }
 
+set_text :: proc(text: ^Text, data: string) {
+    strings.builder_reset(&text.builder)
+    strings.write_string(&text.builder, data)
+}
+
 move_caret :: proc(text: ^Text, index: int) {
     text.selection_tail = index
     text.selection_head = index
@@ -219,7 +220,11 @@ delete_selection :: proc(text: ^Text) {
     text.selection_head = low
 }
 
-get_selected_text :: proc(text: ^Text) -> string {
+to_string :: proc(text: ^Text) -> string {
+    return strings.to_string(text.builder)
+}
+
+selection_to_string :: proc(text: ^Text) -> string {
     low, high := get_selection(text)
     return string(text.builder.buf[low:high])
 }
@@ -272,11 +277,13 @@ draw_selection :: proc(text: ^Text) {
         pixel := gui.pixel_distance()
 
         caret_position := text.position + {pixel * 0.5, 0}
-        if low < len(text.glyphs) {
-            low := max(low, 0)
-            caret_position.x += text.glyphs[low].left
-        } else {
-            caret_position.x += text.glyphs[len(text.glyphs) - 1].right
+        if len(text.glyphs) > 0 {
+            if low < len(text.glyphs) {
+                low := max(low, 0)
+                caret_position.x += text.glyphs[low].left
+            } else {
+                caret_position.x += text.glyphs[len(text.glyphs) - 1].right
+            }
         }
 
         gui.begin_path()

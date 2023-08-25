@@ -188,6 +188,8 @@ measure_glyphs :: proc(
     font: ^Font,
     font_size: f32,
 ) {
+    clear(glyphs)
+
     if len(text) == 0 {
         return
     }
