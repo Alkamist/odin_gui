@@ -47,14 +47,6 @@ update_button_ex :: proc(button: ^Button, hover, press, release: bool) {
         }
     }
 
-    if button.pressed {
-        gui.capture_hover(button)
-    }
-
-    if button.released {
-        gui.release_hover(button)
-    }
-
     if hover {
         gui.request_hover(button)
     }
