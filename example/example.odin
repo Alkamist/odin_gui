@@ -11,29 +11,47 @@ Color :: gui.Color
 consola := gui.Font{"Consola", #load("consola.ttf")}
 
 window1: gui.Window
-text: widgets.Text
 
 is_editable: bool
 
+// on_frame :: proc() {
+//     text.position = {100, 100}
+
+//     if gui.mouse_pressed(.Right) {
+//         is_editable = !is_editable
+//     }
+
+//     widgets.update_text(&text)
+//     if is_editable {
+//         widgets.edit_text(&text)
+//     }
+
+//     // gui.begin_path()
+//     // gui.path_rect(text.position, text.size)
+//     // gui.fill_path({1, 0, 0, 1})
+
+//     widgets.draw_text(&text)
+
+//     // text.position += {20, 20} * gui.delta_time()
+// }
+
+text: widgets.Text
+
 on_frame :: proc() {
+    // layout := gui.Rect{{0, 0}, gui.window_position(gui.current_window())}
+
+    // top_bar := gui.trim_top(&layout, 32)
+
     text.position = {100, 100}
 
-    if gui.mouse_pressed(.Right) {
-        is_editable = !is_editable
-    }
-
     widgets.update_text(&text)
-    if is_editable {
-        widgets.edit_text(&text)
-    }
+    widgets.edit_text(&text)
+    widgets.draw_text(&text, show_selection = true)
 
-    // gui.begin_path()
-    // gui.path_rect(text.position, text.size)
-    // gui.fill_path({1, 0, 0, 1})
+    // tool_bar := gui.claim_space(&layout, .Top, 32)
 
-    widgets.draw_text(&text)
-
-    // text.position += {20, 20} * gui.delta_time()
+    // gui.outline_rect(gui.claim_space(&tool_bar, .Left, 100).rect, {1, 1, 1, 0.5})
+    // gui.outline_rect(gui.claim_space(&tool_bar, .Left, 100).rect, {1, 1, 1, 0.5})
 }
 
 main :: proc() {
@@ -59,13 +77,17 @@ main :: proc() {
         }
     }
 
+    if gui.init() != nil {
+        fmt.eprintln("Failed to initialize gui.")
+        return
+    }
+
     widgets.set_default_font(&consola)
 
-    widgets.init_text(&text, "Hello world.")
+    text = widgets.make_text("Hello world.")
     defer widgets.destroy_text(&text)
 
-    gui.init_window(
-        &window1,
+    window1 = gui.make_window(
         title = "Window 1",
         position = {200, 200},
         background_color = {0.05, 0.05, 0.05, 1},

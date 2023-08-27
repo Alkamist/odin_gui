@@ -12,33 +12,19 @@ Button :: struct {
     clicked: bool,
 }
 
-init_button :: proc(
-    button: ^Button,
-    position := Vec2{0, 0},
-    size := Vec2{96, 32}
-) -> ^Button {
-    button.position = position
-    button.size = size
-    return button
+make_button :: proc(position: Vec2 = {0, 0}, size: Vec2 = {96, 32}) -> Button {
+    return {
+        position = position,
+        size = size,
+    }
 }
 
-draw_button :: proc(button: ^Button) {
-    position := button.position
-    size := button.size
-
-    gui.begin_path()
-    gui.path_rounded_rect(position, size, 3)
-    gui.fill_path(gui.rgb(31, 32, 34))
-
+draw_button :: proc(button: ^Button, color: Color, rounding := f32(3)) {
+    fill_rounded_rect(button.position, button.size, 3, color)
     if button.is_down {
-        gui.begin_path()
-        gui.path_rounded_rect(position, size, 3)
-        gui.fill_path(gui.rgba(0, 0, 0, 8))
-
+        fill_rounded_rect(button.position, button.size, 3, {0, 0, 0, 0.1})
     } else if gui.is_hovered(button) {
-        gui.begin_path()
-        gui.path_rounded_rect(position, size, 3)
-        gui.fill_path(gui.rgba(255, 255, 255, 8))
+        fill_rounded_rect(button.position, button.size, 3, {1, 1, 1, 0.1})
     }
 }
 
@@ -75,8 +61,7 @@ update_button_ex :: proc(button: ^Button, hover, press, release: bool) {
 }
 
 update_button :: proc(button: ^Button, mouse_button := Mouse_Button.Left) {
-    update_button_ex(
-        button,
+    update_button_ex(button,
         hover = gui.mouse_hit_test(button.position, button.size),
         press = gui.mouse_pressed(mouse_button),
         release = gui.mouse_released(mouse_button),

@@ -167,14 +167,13 @@ fill_text_raw :: proc(
     font_size: f32,
 ) {
     append(&get_layer().draw_commands, Fill_Text_Command{
-      font = font,
-      font_size = font_size,
-      position = pixel_align(position + get_offset()),
-      text = text,
-      color = color,
+        font = font,
+        font_size = font_size,
+        position = pixel_align(position + get_offset()),
+        text = text,
+        color = color,
     })
 }
-
 text_metrics :: proc(font: ^Font, font_size: f32) -> (ascender, descender, line_height: f32) {
     window := _current_window
     _set_font(window, font)
@@ -197,7 +196,7 @@ measure_glyphs :: proc(
     _set_font(_current_window, font)
     _set_font_size(_current_window, font_size)
 
-    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), _current_window.frame_allocator)
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), _arena_allocator)
     defer delete(nvg_positions)
 
     // This will change when nanovg is fixed.

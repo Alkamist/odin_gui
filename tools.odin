@@ -113,7 +113,7 @@ begin_clip :: proc(position, size: Vec2, global := false, intersect := true) {
     }
 
     if intersect {
-        r = _rect_intersect(r, _current_window.clip_stack[len(_current_window.clip_stack) - 1])
+        r = _rect_intersection(r, _current_window.clip_stack[len(_current_window.clip_stack) - 1])
     }
 
     append(&_current_window.clip_stack, r)
@@ -144,7 +144,7 @@ clip :: proc(position, size: Vec2, global := false, intersect := true) {
 
 begin_z_index :: proc(z_index: int, global := false) {
     layer: Layer
-    layer.draw_commands = make([dynamic]Draw_Command, _current_window.frame_allocator)
+    layer.draw_commands = make([dynamic]Draw_Command, _arena_allocator)
     if global do layer.z_index = z_index
     else do layer.z_index = get_z_index() + z_index
     append(&_current_window.layer_stack, layer)
@@ -162,7 +162,5 @@ z_index :: proc(z_index: int, global := false) {
 
 mouse_hit_test :: proc(position, size: Vec2) -> bool {
     m := mouse_position()
-    return m.x >= position.x && m.x <= position.x + size.x &&
-           m.y >= position.y && m.y <= position.y + size.y &&
-           contains(get_clip(), m)
+    return contains({position, size}, m) && contains(get_clip(), m)
 }

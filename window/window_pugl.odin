@@ -38,8 +38,7 @@ Window :: struct {
     view: ^pugl.View,
 }
 
-init_window :: proc(
-    window: ^Window,
+make_window :: proc(
     title := "",
     position := Vec2{0, 0},
     size := Vec2{400, 300},
@@ -52,20 +51,21 @@ init_window :: proc(
     double_buffer := true,
     child_kind := Child_Kind.None,
     parent_handle: Native_Handle = nil,
-) {
-    close(window)
-    window.title = title
-    window.last_position = position
-    window.last_size = size
-    window.min_size = min_size
-    window.max_size = max_size
-    window.swap_interval = swap_interval
-    window.dark_mode = dark_mode
-    window.last_visibility = is_visible
-    window.is_resizable = is_resizable
-    window.double_buffer = double_buffer
-    window.child_kind = child_kind
-    window.parent_handle = parent_handle
+) -> Window {
+    return {
+        title = title,
+        last_position = position,
+        last_size = size,
+        min_size = min_size,
+        max_size = max_size,
+        swap_interval = swap_interval,
+        dark_mode = dark_mode,
+        last_visibility = is_visible,
+        is_resizable = is_resizable,
+        double_buffer = double_buffer,
+        child_kind = child_kind,
+        parent_handle = parent_handle,
+    }
 }
 
 update :: proc() {

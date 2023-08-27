@@ -13,14 +13,14 @@ Performance :: struct {
     previous_average_window: int,
 }
 
-init_performance :: proc(
-    perf: ^Performance,
+make_performance :: proc(
     average_window := 100,
     allocator := context.allocator,
-) -> (res: ^Performance, err: mem.Allocator_Error) #optional_allocator_error {
-    perf.average_window = average_window
-    perf.delta_times = make([dynamic]time.Duration, allocator)
-    return perf, nil
+) -> (res: Performance, err: mem.Allocator_Error) #optional_allocator_error {
+    return {
+        average_window = average_window,
+        delta_times = make([dynamic]time.Duration, allocator) or_return,
+    }, nil
 }
 
 destroy_performance :: proc(perf: ^Performance) {
@@ -63,6 +63,6 @@ update_performance :: proc(perf: ^Performance) {
 }
 
 draw_performance :: proc(perf: ^Performance) {
-    fps_string := fmt.aprintf("Fps: %v", fps(perf), gui.frame_allocator())
+    fps_string := fmt.aprintf("Fps: %v", fps(perf), gui.arena_allocator())
     gui.fill_text_raw(fps_string, {0, 0}, {1, 1, 1, 1}, _default_font, 13)
 }

@@ -1,5 +1,6 @@
 package gui
 
+import "core:fmt"
 import "core:mem"
 import "core:mem/virtual"
 import "core:time"
@@ -11,6 +12,8 @@ import nvg_gl "vendor:nanovg/gl"
 import backend "window"
 
 @(thread_local) _current_window: ^Window
+@(thread_local) _arena: virtual.Arena
+@(thread_local) _arena_allocator: mem.Allocator
 
 Vec2 :: [2]f32
 
@@ -66,15 +69,21 @@ Window :: struct {
     loaded_fonts: [dynamic]^Font,
 
     backend_window: backend.Window,
-
-    frame_arena: virtual.Arena,
-    frame_allocator: mem.Allocator,
 }
 
-update :: backend.update
+@(require_results)
+init :: proc() -> mem.Allocator_Error {
+    virtual.arena_init_growing(&_arena) or_return
+    _arena_allocator = virtual.arena_allocator(&_arena)
+    return nil
+}
 
-init_window :: proc(
-    window: ^Window,
+update :: proc() {
+    backend.update()
+    free_all(_arena_allocator)
+}
+
+make_window :: proc(
     title := "",
     position := Vec2{0, 0},
     size := Vec2{400, 300},
@@ -90,36 +99,34 @@ init_window :: proc(
     parent_handle: Native_Window_Handle = nil,
     user_data: rawptr = nil,
     on_frame: proc() = nil,
-) -> (res: ^Window, err: mem.Allocator_Error) #optional_allocator_error {
-    backend.init_window(
-        &window.backend_window,
-        title = title,
-        position = position,
-        size = size,
-        min_size = min_size,
-        max_size = max_size,
-        swap_interval = swap_interval,
-        dark_mode = dark_mode,
-        is_visible = is_visible,
-        is_resizable = is_resizable,
-        double_buffer = double_buffer,
-        child_kind = child_kind,
-        parent_handle = parent_handle,
-    )
-    window.background_color = background_color
-    window.user_data = user_data
-    window.on_frame = on_frame
-    virtual.arena_init_growing(&window.frame_arena) or_return
-    window.frame_allocator = virtual.arena_allocator(&window.frame_arena)
-    return window, nil
+) -> Window {
+    return {
+        backend_window = backend.make_window(
+            title = title,
+            position = position,
+            size = size,
+            min_size = min_size,
+            max_size = max_size,
+            swap_interval = swap_interval,
+            dark_mode = dark_mode,
+            is_visible = is_visible,
+            is_resizable = is_resizable,
+            double_buffer = double_buffer,
+            child_kind = child_kind,
+            parent_handle = parent_handle,
+        ),
+        background_color = background_color,
+        user_data = user_data,
+        on_frame = on_frame,
+    }
 }
 
 current_window :: proc() -> ^Window {
     return _current_window
 }
 
-frame_allocator :: proc() -> mem.Allocator {
-    return _current_window.frame_allocator
+arena_allocator :: proc() -> mem.Allocator {
+    return _arena_allocator
 }
 
 activate_window_context :: proc(window: ^Window) {
@@ -191,13 +198,7 @@ destroy_window :: proc(window: ^Window) {
     delete(window.key_repeats)
     delete(window.key_releases)
     delete(window.loaded_fonts)
-    // delete(window.offset_stack)
-    // delete(window.clip_stack)
-    // delete(window.layer_stack)
-    // delete(window.interaction_tracker_stack)
-    // delete(window.layers)
     backend.destroy(&window.backend_window)
-    virtual.arena_destroy(&window.frame_arena)
 }
 
 open_window :: proc(window: ^Window) -> bool {
@@ -326,11 +327,11 @@ open_window :: proc(window: ^Window) -> bool {
 
 
 _begin_frame :: proc(window: ^Window) {
-    window.offset_stack = make([dynamic]Vec2, window.frame_allocator)
-    window.clip_stack = make([dynamic]Rect, window.frame_allocator)
-    window.interaction_tracker_stack = make([dynamic]Interaction_Tracker, window.frame_allocator)
-    window.layer_stack = make([dynamic]Layer, window.frame_allocator)
-    window.layers = make([dynamic]Layer, window.frame_allocator)
+    window.offset_stack = make([dynamic]Vec2, _arena_allocator)
+    window.clip_stack = make([dynamic]Rect, _arena_allocator)
+    window.interaction_tracker_stack = make([dynamic]Interaction_Tracker, _arena_allocator)
+    window.layer_stack = make([dynamic]Layer, _arena_allocator)
+    window.layers = make([dynamic]Layer, _arena_allocator)
 
     _current_window = window
 
@@ -367,6 +368,11 @@ _end_frame :: proc(window: ^Window) {
     end_clip()
     end_offset()
     end_z_index()
+
+    clear(&window.offset_stack)
+    clear(&window.clip_stack)
+    clear(&window.interaction_tracker_stack)
+    clear(&window.layer_stack)
 
     // The layers are in reverse order because they were added in end_z_index.
     // Stable sort preserves the order of layers with the same z index, so they
@@ -415,6 +421,4 @@ _end_frame :: proc(window: ^Window) {
     window.previous_tick = window.tick
 
     window.open_for_multiple_frames = true
-
-    free_all(window.frame_allocator)
 }
