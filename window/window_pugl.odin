@@ -481,8 +481,11 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         context = _odin_context
         event := &event.text
 
-        // Filter out backspace and enter.
-        skip := event.character == 8 || event.character == 13
+        // Filter out backspace, enter, tab, and escape.
+        skip := false
+        switch event.character {
+        case 8, 9, 13, 27: skip = true
+        }
 
         if !skip && window.backend_callbacks.on_rune != nil {
             r, len := utf8.decode_rune(event.string[:4])

@@ -174,19 +174,23 @@ set_text :: proc(text: ^Text, data: string) {
 move_caret :: proc(text: ^Text, index: int) {
     text.selection_tail = index
     text.selection_head = index
+    _keep_selection_in_bounds(text)
 }
 
 nudge_caret :: proc(text: ^Text, amount: int) {
     text.selection_head += amount
     text.selection_tail = text.selection_head
+    _keep_selection_in_bounds(text)
 }
 
 drag_selection :: proc(text: ^Text, index: int) {
     text.selection_head = index
+    _keep_selection_in_bounds(text)
 }
 
 nudge_selection :: proc(text: ^Text, amount: int) {
     text.selection_head += amount
+    _keep_selection_in_bounds(text)
 }
 
 get_selection :: proc(text: ^Text) -> (low, high: int) {
@@ -237,6 +241,11 @@ input_string :: proc(text: ^Text, data: string) {
     inject_at(&text.builder.buf, text.selection_tail, data)
     text.selection_tail += len(data)
     text.selection_head += len(data)
+}
+
+_keep_selection_in_bounds :: proc(text: ^Text) {
+    text.selection_tail = clamp(text.selection_tail, 0, strings.builder_len(text.builder))
+    text.selection_head = clamp(text.selection_head, 0, strings.builder_len(text.builder))
 }
 
 _draw_selection :: proc(text: ^Text, color: Color) {
