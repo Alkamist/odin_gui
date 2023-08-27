@@ -3,6 +3,7 @@ package gui
 import "core:fmt"
 import "core:mem"
 import "core:mem/virtual"
+import "core:math"
 import "core:time"
 import "core:slice"
 import "core:strings"
@@ -69,6 +70,8 @@ Window :: struct {
     loaded_fonts: [dynamic]^Font,
 
     backend_window: backend.Window,
+
+    _content_scale_modifier: f32,
 }
 
 @(require_results)
@@ -118,6 +121,7 @@ make_window :: proc(
         background_color = background_color,
         user_data = user_data,
         on_frame = on_frame,
+        _content_scale_modifier = 1.0,
     }
 }
 
@@ -180,15 +184,24 @@ set_window_position :: proc(window: ^Window, position: Vec2) {
 }
 
 window_size :: proc(window: ^Window) -> Vec2 {
-    return backend.size(&window.backend_window)
+    return backend.size(&window.backend_window) / window._content_scale_modifier
 }
 
 set_window_size :: proc(window: ^Window, size: Vec2) {
-    backend.set_size(&window.backend_window, size)
+    backend.set_size(&window.backend_window, size * window._content_scale_modifier)
 }
 
 window_content_scale :: proc(window: ^Window) -> f32 {
-    return backend.content_scale(&window.backend_window)
+    return backend.content_scale(&window.backend_window) * window._content_scale_modifier
+}
+
+reset_window_content_scale_modifier :: proc(window: ^Window) {
+    window._content_scale_modifier = 1.0
+}
+
+adjust_window_content_scale_modifier :: proc(window: ^Window, amount: f32) {
+    window._content_scale_modifier *= math.pow(2, amount)
+    window._content_scale_modifier = clamp(window._content_scale_modifier, 1, 8)
 }
 
 destroy_window :: proc(window: ^Window) {
@@ -262,7 +275,7 @@ open_window :: proc(window: ^Window) -> bool {
     }
     backend_window.backend_callbacks.on_mouse_move = proc(window: ^backend.Window, position, root_position: Vec2) {
         window := cast(^Window)(window.backend_data)
-        window.global_mouse_position = position
+        window.global_mouse_position = position / window._content_scale_modifier
         window.root_mouse_position = root_position
         backend.set_cursor_style(&window.backend_window, window.cursor_style)
     }
@@ -342,7 +355,7 @@ _begin_frame :: proc(window: ^Window) {
     gl.Clear(gl.COLOR_BUFFER_BIT)
 
     size := window_size(window)
-    gl.Viewport(0, 0, i32(size.x), i32(size.y))
+    gl.Viewport(0, 0, i32(size.x * window._content_scale_modifier), i32(size.y * window._content_scale_modifier))
 
     content_scale := window_content_scale(window)
     window.cached_content_scale = content_scale

@@ -174,6 +174,7 @@ fill_text_raw :: proc(
         color = color,
     })
 }
+
 text_metrics :: proc(font: ^Font, font_size: f32) -> (ascender, descender, line_height: f32) {
     window := _current_window
     _set_font(window, font)
@@ -197,7 +198,6 @@ measure_glyphs :: proc(
     _set_font_size(_current_window, font_size)
 
     nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), _arena_allocator)
-    defer delete(nvg_positions)
 
     // This will change when nanovg is fixed.
     temp_slice := nvg_positions[:]
@@ -205,12 +205,14 @@ measure_glyphs :: proc(
 
     resize(glyphs, position_count)
 
+    content_scale_modifier := _current_window._content_scale_modifier
+
     for i in 0 ..< position_count {
         glyphs[i] = Glyph{
             rune_position = nvg_positions[i].str,
-            left = nvg_positions[i].minx,
-            right = nvg_positions[i].maxx,
-            draw_offset_x = nvg_positions[i].x - nvg_positions[i].minx,
+            left = nvg_positions[i].minx / content_scale_modifier,
+            right = nvg_positions[i].maxx / content_scale_modifier,
+            draw_offset_x = (nvg_positions[i].x - nvg_positions[i].minx) / content_scale_modifier,
         }
     }
 }
