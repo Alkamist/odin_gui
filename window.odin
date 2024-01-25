@@ -1,98 +1,32 @@
 package gui
 
-import "core:fmt"
-import "core:mem"
-import "core:mem/virtual"
-import "core:math"
-import "core:time"
-import "core:slice"
-import "core:strings"
-import gl "vendor:OpenGL"
-import nvg "vendor:nanovg"
-import nvg_gl "vendor:nanovg/gl"
-import backend "window"
+import wnd "window"
 
 @(thread_local) _current_window: ^Window
-@(thread_local) _arena: virtual.Arena
-@(thread_local) _arena_allocator: mem.Allocator
 
-Vec2 :: [2]f32
+Vec2 :: wnd.Vec2
 
-Native_Window_Handle :: backend.Native_Handle
-Window_Child_Kind :: backend.Child_Kind
+Window_Child_Kind :: wnd.Child_Kind
+Native_Window_Handle :: wnd.Native_Handle
 
 Window :: struct {
-    user_data: rawptr,
-
-    on_frame: proc(),
-    on_close: proc(),
-
-    background_color: Color,
-
-    tick: time.Tick,
-    previous_tick: time.Tick,
-    client_area_hovered: bool,
-    global_mouse_position: Vec2,
-    root_mouse_position: Vec2,
-    previous_root_mouse_position: Vec2,
-    mouse_wheel_state: Vec2,
-    mouse_presses: [dynamic]Mouse_Button,
-    mouse_releases: [dynamic]Mouse_Button,
-    mouse_down_states: [Mouse_Button]bool,
-    key_presses: [dynamic]Keyboard_Key,
-    key_repeats: [dynamic]Keyboard_Key,
-    key_releases: [dynamic]Keyboard_Key,
-    key_down_states: [Keyboard_Key]bool,
-    text_input: strings.Builder,
-
-    cursor_style: Cursor_Style,
-
+    root: ^Widget,
+    backend: ^wnd.Window,
+    focus: ^Widget,
+    mouse_hit: ^Widget,
     hover: ^Widget,
-    mouse_over: ^Widget,
-    hover_capture: ^Widget,
-
-    highest_z_index: int,
-
-    offset_stack: [dynamic]Vec2,
-    clip_stack: [dynamic]Rect,
-    layer_stack: [dynamic]Layer,
-    interaction_tracker_stack: [dynamic]Interaction_Tracker,
-
-    layers: [dynamic]Layer,
-
-    current_font: ^Font,
-    current_font_size: f32,
-    nvg_ctx: ^nvg.Context,
-
-    open_for_multiple_frames: bool,
-    cached_content_scale: f32,
-
-    loaded_fonts: [dynamic]^Font,
-
-    backend_window: backend.Window,
-
-    _content_scale_modifier: f32,
+    previous_hover: ^Widget,
+    hover_captured: bool,
 }
 
-@(require_results)
-init :: proc() -> mem.Allocator_Error {
-    virtual.arena_init_growing(&_arena) or_return
-    _arena_allocator = virtual.arena_allocator(&_arena)
-    return nil
-}
+update :: wnd.update
 
-update :: proc() {
-    backend.update()
-    free_all(_arena_allocator)
-}
-
-make_window :: proc(
+create_window :: proc(
     title := "",
     position := Vec2{0, 0},
     size := Vec2{400, 300},
     min_size: Maybe(Vec2) = nil,
     max_size: Maybe(Vec2) = nil,
-    background_color := Color{0, 0, 0, 1},
     swap_interval := 1,
     dark_mode := true,
     is_visible := true,
@@ -100,338 +34,194 @@ make_window :: proc(
     double_buffer := true,
     child_kind := Window_Child_Kind.None,
     parent_handle: Native_Window_Handle = nil,
-    user_data: rawptr = nil,
-    on_frame: proc() = nil,
-) -> Window {
-    return {
-        backend_window = backend.make_window(
-            title = title,
-            position = position,
-            size = size,
-            min_size = min_size,
-            max_size = max_size,
-            swap_interval = swap_interval,
-            dark_mode = dark_mode,
-            is_visible = is_visible,
-            is_resizable = is_resizable,
-            double_buffer = double_buffer,
-            child_kind = child_kind,
-            parent_handle = parent_handle,
-        ),
-        background_color = background_color,
-        user_data = user_data,
-        on_frame = on_frame,
-        _content_scale_modifier = 1.0,
-    }
+) -> ^Window {
+    window := new(Window)
+    window.root = create_widget(Widget)
+    window.root.size = size
+    window.backend = wnd.create(
+        title = title,
+        position = position,
+        size = size,
+        min_size = min_size,
+        max_size = max_size,
+        swap_interval = swap_interval,
+        dark_mode = dark_mode,
+        is_visible = is_visible,
+        is_resizable = is_resizable,
+        double_buffer = double_buffer,
+        child_kind = child_kind,
+        parent_handle = parent_handle,
+    )
+    window.backend.user_data = window
+    window.backend.event_proc = _window_event_proc
+    _current_window = window
+    return window
+}
+
+destroy_window :: proc(window := _current_window) {
+    destroy_widget(window.root)
+    wnd.destroy(window.backend)
+    free(window)
 }
 
 current_window :: proc() -> ^Window {
     return _current_window
 }
 
-arena_allocator :: proc() -> mem.Allocator {
-    return _arena_allocator
+open_window :: proc(window := _current_window) {
+    wnd.open(window.backend)
 }
 
-activate_window_context :: proc(window: ^Window) {
-    backend.activate_context(&window.backend_window)
+close_window :: proc(window := _current_window) {
+    wnd.close(window.backend)
 }
 
-deactivate_window_context :: proc(window: ^Window) {
-    backend.deactivate_context(&window.backend_window)
+redraw :: proc(window := _current_window) {
+    wnd.redraw(window.backend)
 }
 
-native_window_handle :: proc(window: ^Window) -> Native_Window_Handle {
-    return backend.native_handle(&window.backend_window)
+native_window_handle :: proc(window := _current_window) -> Native_Window_Handle {
+    return wnd.native_handle(window.backend)
 }
 
-set_window_parent :: proc(window: ^Window, parent: Native_Window_Handle) {
-    window.backend_window.parent_handle = parent
+activate_window_context :: proc(window := _current_window) {
+    wnd.activate_context(window.backend)
 }
 
-set_window_child_kind :: proc(window: ^Window, child_kind: Window_Child_Kind) {
-    window.backend_window.child_kind = child_kind
+deactivate_window_context :: proc(window := _current_window) {
+    wnd.deactivate_context(window.backend)
 }
 
-// It is not safe for a window to close itself this way.
-close_window :: proc(window: ^Window) {
-    backend.close(&window.backend_window)
+window_is_open :: proc(window := _current_window) -> bool {
+    return wnd.is_open(window.backend)
 }
 
-// Ask the window to close itself. This is safe for a window to do itself.
-request_window_close :: proc(window: ^Window) {
-    backend.request_close(&window.backend_window)
+window_is_visible :: proc(window := _current_window) -> bool {
+    return wnd.is_visible(window.backend)
 }
 
-window_is_open :: proc(window: ^Window) -> bool {
-    return backend.is_open(&window.backend_window)
+set_window_visibility :: proc(visibility: bool, window := _current_window) {
+    wnd.set_visibility(window.backend, visibility)
 }
 
-window_is_visible :: proc(window: ^Window) -> bool {
-    return backend.is_visible(&window.backend_window)
+window_position :: proc(window := _current_window) -> Vec2 {
+    return wnd.position(window.backend)
 }
 
-set_window_visibility :: proc(window: ^Window, visibility: bool) {
-    backend.set_visibility(&window.backend_window, visibility)
+set_window_position :: proc(position: Vec2, window := _current_window) {
+    wnd.set_position(window.backend, position)
 }
 
-window_position :: proc(window: ^Window) -> Vec2 {
-    return backend.position(&window.backend_window)
+window_size :: proc(window := _current_window) -> Vec2 {
+    return wnd.size(window.backend)
 }
 
-set_window_position :: proc(window: ^Window, position: Vec2) {
-    backend.set_position(&window.backend_window, position)
+set_window_size :: proc(size: Vec2, window := _current_window) {
+    wnd.set_size(window.backend, size)
 }
 
-window_size :: proc(window: ^Window) -> Vec2 {
-    return backend.size(&window.backend_window) / window._content_scale_modifier
+content_scale :: proc(window := _current_window) -> f32 {
+    return wnd.content_scale(window.backend)
 }
 
-set_window_size :: proc(window: ^Window, size: Vec2) {
-    backend.set_size(&window.backend_window, size * window._content_scale_modifier)
+global_mouse_position :: proc(window := _current_window) -> Vec2 {
+    return wnd.mouse_position(window.backend)
 }
 
-window_content_scale :: proc(window: ^Window) -> f32 {
-    return backend.content_scale(&window.backend_window) * window._content_scale_modifier
+// set_cursor_style :: proc(style: Cursor_Style, window: ^Window) {}
+
+get_clipboard :: proc(window := _current_window) -> string {
+    return wnd.get_clipboard(window.backend)
 }
 
-reset_window_content_scale_modifier :: proc(window: ^Window) {
-    window._content_scale_modifier = 1.0
-}
-
-adjust_window_content_scale_modifier :: proc(window: ^Window, amount: f32) {
-    window._content_scale_modifier *= math.pow(2, amount)
-    window._content_scale_modifier = clamp(window._content_scale_modifier, 1, 8)
-}
-
-destroy_window :: proc(window: ^Window) {
-    delete(window.mouse_presses)
-    delete(window.mouse_releases)
-    delete(window.key_presses)
-    delete(window.key_repeats)
-    delete(window.key_releases)
-    delete(window.loaded_fonts)
-    backend.destroy(&window.backend_window)
-}
-
-open_window :: proc(window: ^Window) -> bool {
-    if !backend.open(&window.backend_window) {
-        return false
-    }
-
-    clear(&window.loaded_fonts)
-
-    backend_window := &window.backend_window
-    backend_window.backend_data = window
-
-    activate_window_context(window)
-    window.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
-
-    backend_window.backend_callbacks.on_close = proc(window: ^backend.Window) {
-        window := cast(^Window)(window.backend_data)
-        if window.on_close != nil {
-            window.on_close()
-        }
-        nvg_gl.Destroy(window.nvg_ctx)
-
-        window.open_for_multiple_frames = false
-        window.client_area_hovered = false
-
-        window.global_mouse_position = {0, 0}
-        window.root_mouse_position = {0, 0}
-        window.previous_root_mouse_position = {0, 0}
-
-        window.mouse_wheel_state = {0, 0}
-
-        clear(&window.mouse_presses)
-        clear(&window.mouse_releases)
-        for button in Mouse_Button {
-            window.mouse_down_states[button] = false
-        }
-
-        clear(&window.key_presses)
-        clear(&window.key_repeats)
-        clear(&window.key_releases)
-        for key in Keyboard_Key {
-            window.key_down_states[key] = false
-        }
-
-        window.hover = nil
-        window.mouse_over = nil
-        window.hover_capture = nil
-
-        window.highest_z_index = 0
-
-        strings.builder_reset(&window.text_input)
-    }
-    backend_window.backend_callbacks.on_lose_focus = proc(window: ^backend.Window) {
-        window := cast(^Window)(window.backend_data)
-        for key in Keyboard_Key {
-            if window.key_down_states[key] {
-                append(&window.key_releases, key)
-                window.key_down_states[key] = false
-            }
-        }
-    }
-    backend_window.backend_callbacks.on_mouse_move = proc(window: ^backend.Window, position, root_position: Vec2) {
-        window := cast(^Window)(window.backend_data)
-        window.global_mouse_position = position / window._content_scale_modifier
-        window.root_mouse_position = root_position
-        backend.set_cursor_style(&window.backend_window, window.cursor_style)
-    }
-    backend_window.backend_callbacks.on_mouse_enter = proc(window: ^backend.Window) {
-        window := cast(^Window)(window.backend_data)
-        window.client_area_hovered = true
-    }
-    backend_window.backend_callbacks.on_mouse_exit = proc(window: ^backend.Window) {
-        window := cast(^Window)(window.backend_data)
-        window.client_area_hovered = false
-    }
-    backend_window.backend_callbacks.on_mouse_wheel = proc(window: ^backend.Window, amount: Vec2) {
-        window := cast(^Window)(window.backend_data)
-        window.mouse_wheel_state = amount
-    }
-    backend_window.backend_callbacks.on_mouse_press = proc(window: ^backend.Window, button: Mouse_Button) {
-        window := cast(^Window)(window.backend_data)
-        if !window.mouse_down_states[button] {
-            append(&window.mouse_presses, button)
-            window.mouse_down_states[button] = true
-        }
-    }
-    backend_window.backend_callbacks.on_mouse_release = proc(window: ^backend.Window, button: Mouse_Button) {
-        window := cast(^Window)(window.backend_data)
-        if window.mouse_down_states[button] {
-            append(&window.mouse_releases, button)
-            window.mouse_down_states[button] = false
-        }
-    }
-    backend_window.backend_callbacks.on_key_press = proc(window: ^backend.Window, key: Keyboard_Key) {
-        window := cast(^Window)(window.backend_data)
-        if !window.key_down_states[key] {
-            append(&window.key_presses, key)
-            window.key_down_states[key] = true
-        } else {
-            append(&window.key_repeats, key)
-        }
-    }
-    backend_window.backend_callbacks.on_key_release = proc(window: ^backend.Window, key: Keyboard_Key) {
-        window := cast(^Window)(window.backend_data)
-        if window.key_down_states[key] {
-            append(&window.key_releases, key)
-            window.key_down_states[key] = false
-        }
-    }
-    backend_window.backend_callbacks.on_rune = proc(window: ^backend.Window, r: rune) {
-        window := cast(^Window)(window.backend_data)
-        strings.write_rune(&window.text_input, r)
-    }
-    backend_window.backend_callbacks.on_draw = proc(window: ^backend.Window) {
-        window := cast(^Window)(window.backend_data)
-        _begin_frame(window)
-        if window.on_frame != nil {
-            window.on_frame()
-        }
-        _end_frame(window)
-    }
-
-    return true
+set_clipboard :: proc(data: string, window: ^Window) {
+    wnd.set_clipboard(window.backend, data)
 }
 
 
 
-_begin_frame :: proc(window: ^Window) {
-    window.offset_stack = make([dynamic]Vec2, _arena_allocator)
-    window.clip_stack = make([dynamic]Rect, _arena_allocator)
-    window.interaction_tracker_stack = make([dynamic]Interaction_Tracker, _arena_allocator)
-    window.layer_stack = make([dynamic]Layer, _arena_allocator)
-    window.layers = make([dynamic]Layer, _arena_allocator)
-
+_window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
+    window := cast(^Window)window.user_data
     _current_window = window
 
-    window.cursor_style = .Arrow
+    switch e in event {
+    case Window_Resized_Event:
+        window.root.size = e.size
 
-    bg := window.background_color
-    gl.ClearColor(bg.r, bg.g, bg.b, bg.a)
-    gl.Clear(gl.COLOR_BUFFER_BIT)
+    case Window_Mouse_Moved_Event:
+        window.previous_hover = window.hover
 
-    size := window_size(window)
-    gl.Viewport(0, 0, i32(size.x * window._content_scale_modifier), i32(size.y * window._content_scale_modifier))
+        window.mouse_hit = _hit_test_from_root(window.root, e.position)
 
-    content_scale := window_content_scale(window)
-    window.cached_content_scale = content_scale
-
-    nvg.BeginFrame(window.nvg_ctx, size.x, size.y, content_scale)
-    nvg.TextAlign(window.nvg_ctx, .LEFT, .TOP)
-
-    window.current_font_size = 16.0
-
-    window.tick = time.tick_now()
-    if !window.open_for_multiple_frames {
-        window.previous_tick = window.tick
-    }
-
-    begin_z_index(0, global = true)
-    begin_offset({0, 0}, global = true)
-    begin_clip({0, 0}, size, global = true, intersect = false)
-    append(&window.interaction_tracker_stack, Interaction_Tracker{})
-}
-
-_end_frame :: proc(window: ^Window) {
-    pop(&window.interaction_tracker_stack)
-    end_clip()
-    end_offset()
-    end_z_index()
-
-    clear(&window.offset_stack)
-    clear(&window.clip_stack)
-    clear(&window.interaction_tracker_stack)
-    clear(&window.layer_stack)
-
-    // The layers are in reverse order because they were added in end_z_index.
-    // Stable sort preserves the order of layers with the same z index, so they
-    // must first be reversed and then sorted to keep that ordering in tact.
-    slice.reverse(window.layers[:])
-    slice.stable_sort_by(window.layers[:], proc(i, j: Layer) -> bool {
-        return i.z_index < j.z_index
-    })
-
-    window.hover = nil
-    window.mouse_over = nil
-    highest_z_index := min(int)
-
-    for layer in window.layers {
-        if layer.z_index > highest_z_index {
-            highest_z_index = layer.z_index
+        if !window.hover_captured {
+            window.hover = window.mouse_hit
         }
-        _render_draw_commands(window, layer.draw_commands[:])
 
-        hover_request := layer.final_hover_request
-        if hover_request != nil {
-            window.hover = hover_request
-            window.mouse_over = hover_request
+        if window.hover != window.previous_hover {
+            if window.previous_hover != nil {
+                send_event(window.previous_hover, Mouse_Exited_Event{
+                    position = e.position,
+                })
+            }
+            if window.hover != nil {
+                send_event(window.hover, Mouse_Entered_Event{
+                    position = e.position,
+                })
+            }
+        }
+
+        if window.hover != nil {
+            send_event(window.hover, Mouse_Moved_Event{
+                position = e.position,
+                delta = e.delta,
+            })
+        }
+
+    case Window_Mouse_Pressed_Event:
+        if window.hover != nil {
+            send_event(window.hover, Mouse_Pressed_Event{
+                position = e.position,
+                button = e.button,
+            })
+        }
+
+    case Window_Mouse_Released_Event:
+        if window.hover != nil {
+            send_event(window.hover, Mouse_Released_Event{
+                position = e.position,
+                button = e.button,
+            })
+        }
+
+    case Window_Mouse_Scrolled_Event:
+        if window.hover != nil {
+            send_event(window.hover, Mouse_Scrolled_Event{
+                position = e.position,
+                amount = e.amount,
+            })
+        }
+
+    case Window_Key_Pressed_Event:
+        if window.focus != nil {
+            send_event(window.focus, Key_Pressed_Event{
+                key = e.key,
+            })
+        }
+
+    case Window_Key_Released_Event:
+        if window.focus != nil {
+            send_event(window.focus, Key_Released_Event{
+                key = e.key,
+            })
+        }
+
+    case Window_Text_Event:
+        if window.focus != nil {
+            send_event(window.focus, Text_Event{
+                text = e.text,
+            })
         }
     }
 
-    if window.hover_capture != nil {
-        window.hover = window.hover_capture
-    }
-
-    window.highest_z_index = highest_z_index
-
-    nvg.EndFrame(window.nvg_ctx)
-
-    backend.set_cursor_style(&window.backend_window, window.cursor_style)
-
-    clear(&window.layers)
-    clear(&window.mouse_presses)
-    clear(&window.mouse_releases)
-    clear(&window.key_presses)
-    clear(&window.key_repeats)
-    clear(&window.key_releases)
-    strings.builder_reset(&window.text_input)
-    window.mouse_wheel_state = {0, 0}
-    window.previous_root_mouse_position = window.root_mouse_position
-    window.previous_tick = window.tick
-
-    window.open_for_multiple_frames = true
+    return send_event_recursively(window.root, event)
 }

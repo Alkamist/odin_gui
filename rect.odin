@@ -152,24 +152,16 @@ intersects :: proc(a, b: Rect, include_borders := false) -> bool {
     return true
 }
 
-contains :: proc{
-    contains_rect,
-    contains_vec2,
-}
-
-contains_rect :: proc(a, b: Rect) -> bool {
+rect_contains_rect :: proc(a, b: Rect) -> bool {
     assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
-
     return b.position.x >= a.position.x &&
            b.position.y >= a.position.y &&
            b.position.x + b.size.x <= a.position.x + a.size.x &&
            b.position.y + b.size.y <= a.position.y + a.size.y
 }
 
-contains_vec2 :: proc(a: Rect, b: Vec2) -> bool {
+rect_contains_vec2 :: proc(a: Rect, b: Vec2) -> bool {
     assert(a.size.x >= 0 && a.size.y >= 0)
     return b.x >= a.position.x && b.x <= a.position.x + a.size.x &&
            b.y >= a.position.y && b.y <= a.position.y + a.size.y
 }
-
-_rect_intersection :: intersection

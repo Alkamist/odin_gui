@@ -1,6 +1,8 @@
 package gui
 
-Color :: [4]f32
+import "window"
+
+Color :: window.Color
 
 rgb :: proc(r, g, b: u8) -> Color {
     return {

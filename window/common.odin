@@ -1,6 +1,7 @@
 package window
 
 Vec2 :: [2]f32
+Color :: [4]f32
 
 Native_Handle :: rawptr
 
@@ -53,23 +54,68 @@ Keyboard_Key :: enum {
     Pad_Decimal, Print_Screen,
 }
 
-Backend_Callbacks :: struct {
-    on_close: proc(window: ^Window),
-    on_gain_focus: proc(window: ^Window),
-    on_lose_focus: proc(window: ^Window),
-    on_draw: proc(window: ^Window),
-    on_update: proc(window: ^Window),
-    on_show: proc(window: ^Window),
-    on_hide: proc(window: ^Window),
-    on_move: proc(window: ^Window, position: Vec2),
-    on_resize: proc(window: ^Window, size: Vec2),
-    on_mouse_move: proc(window: ^Window, position, global_position: Vec2),
-    on_mouse_enter: proc(window: ^Window),
-    on_mouse_exit: proc(window: ^Window),
-    on_mouse_wheel: proc(window: ^Window, amount: Vec2),
-    on_mouse_press: proc(window: ^Window, button: Mouse_Button),
-    on_mouse_release: proc(window: ^Window, button: Mouse_Button),
-    on_key_press: proc(window: ^Window, key: Keyboard_Key),
-    on_key_release: proc(window: ^Window, key: Keyboard_Key),
-    on_rune: proc(window: ^Window, r: rune),
+Draw_Event :: struct {}
+Update_Event :: struct {}
+Opened_Event :: struct {}
+Closed_Event :: struct {}
+Gained_Focus_Event :: struct {}
+Lost_Focus_Event :: struct {}
+Shown_Event :: struct {}
+Hidden_Event :: struct {}
+
+Moved_Event :: struct {
+    position: Vec2,
+    delta: Vec2,
+}
+
+Resized_Event :: struct {
+    size: Vec2,
+    delta: Vec2,
+}
+
+Mouse_Entered_Event :: struct {
+    position: Vec2,
+}
+
+Mouse_Exited_Event :: struct {
+    position: Vec2,
+}
+
+Mouse_Moved_Event :: struct {
+    position: Vec2,
+    delta: Vec2,
+}
+
+Mouse_Scrolled_Event :: struct {
+    position: Vec2,
+    amount: Vec2,
+}
+
+Mouse_Pressed_Event :: struct {
+    position: Vec2,
+    button: Mouse_Button,
+}
+
+Mouse_Released_Event :: struct {
+    position: Vec2,
+    button: Mouse_Button,
+}
+
+Key_Pressed_Event :: struct {
+    key: Keyboard_Key,
+}
+
+Key_Released_Event :: struct {
+    key: Keyboard_Key,
+}
+
+Text_Event :: struct {
+    text: rune,
+}
+
+send_event :: proc(window: ^Window, event: $T) -> (was_consumed: bool) {
+    if window.event_proc != nil {
+        return window->event_proc(event)
+    }
+    return false
 }

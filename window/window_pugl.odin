@@ -2,11 +2,14 @@ package window
 
 import "core:c"
 import "core:fmt"
+import "core:math"
 import "core:strings"
 import "core:runtime"
 import "core:intrinsics"
 import utf8 "core:unicode/utf8"
 import gl "vendor:OpenGL"
+import nvg "vendor:nanovg"
+import nvg_gl "vendor:nanovg/gl"
 import "pugl"
 
 _open_gl_is_loaded: bool
@@ -29,16 +32,29 @@ Window :: struct {
     last_visibility: bool,
     last_position: Vec2,
     last_size: Vec2,
+    last_mouse_position: Vec2,
+
+    background_color: Color,
+
+    user_data: rawptr,
+    event_proc: proc(^Window, any) -> bool,
 
     close_requested: bool,
 
-    backend_data: rawptr,
-    backend_callbacks: Backend_Callbacks,
     timer_id: uintptr,
     view: ^pugl.View,
+    ctx: ^nvg.Context,
 }
 
-make_window :: proc(
+update :: proc() {
+    _odin_context = context
+    if _world == nil {
+        return
+    }
+    pugl.Update(_world, 0)
+}
+
+create :: proc(
     title := "",
     position := Vec2{0, 0},
     size := Vec2{400, 300},
@@ -51,33 +67,26 @@ make_window :: proc(
     double_buffer := true,
     child_kind := Child_Kind.None,
     parent_handle: Native_Handle = nil,
-) -> Window {
-    return {
-        title = title,
-        last_position = position,
-        last_size = size,
-        min_size = min_size,
-        max_size = max_size,
-        swap_interval = swap_interval,
-        dark_mode = dark_mode,
-        last_visibility = is_visible,
-        is_resizable = is_resizable,
-        double_buffer = double_buffer,
-        child_kind = child_kind,
-        parent_handle = parent_handle,
-    }
-}
-
-update :: proc() {
-    _odin_context = context
-    if _world == nil {
-        return
-    }
-    pugl.Update(_world, 0)
+) -> ^Window {
+    window := new(Window)
+    window.title = title
+    window.last_position = position
+    window.last_size = size
+    window.min_size = min_size
+    window.max_size = max_size
+    window.swap_interval = swap_interval
+    window.dark_mode = dark_mode
+    window.last_visibility = is_visible
+    window.is_resizable = is_resizable
+    window.double_buffer = double_buffer
+    window.child_kind = child_kind
+    window.parent_handle = parent_handle
+    return window
 }
 
 destroy :: proc(window: ^Window) {
-    close(window)
+    _force_close(window)
+    free(window)
 }
 
 open :: proc(window: ^Window) -> bool {
@@ -162,47 +171,24 @@ open :: proc(window: ^Window) -> bool {
         _open_gl_is_loaded = true
     }
 
+    window.ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
+    send_event(window, Opened_Event{})
+
     return true
 }
 
-// It is not safe for a window to close itself this way.
+// Asks the window to close itself when it gets the chance.
 close :: proc(window: ^Window) {
-    if !window.is_open {
-        return
-    }
-
-    view := window.view
-
-    pugl.EnterContext(view)
-
-    window.last_visibility = pugl.GetVisible(view)
-
-    if window.backend_callbacks.on_close != nil {
-        window.backend_callbacks.on_close(window)
-    }
-
-    pugl.Unrealize(view)
-    pugl.FreeView(view)
-
-    window.view = nil
-    window.is_open = false
-
-    _window_count -= 1
-
-    if _window_count == 0 {
-        pugl.FreeWorld(_world)
-        _world = nil
-    }
-}
-
-// Ask the window to close itself. This is safe for a window to do itself.
-request_close :: proc(window: ^Window) {
     if !window.is_open {
         return
     }
     event := pugl.EventType.CLOSE
     pugl.SendEvent(window.view, cast(^pugl.Event)(&event))
     window.close_requested = true
+}
+
+redraw :: proc(window: ^Window) {
+    pugl.PostRedisplay(window.view)
 }
 
 native_handle :: proc(window: ^Window) -> Native_Handle {
@@ -278,6 +264,10 @@ content_scale :: proc(window: ^Window) -> f32 {
     return f32(pugl.GetScaleFactor(window.view))
 }
 
+mouse_position :: proc(window: ^Window) -> Vec2 {
+    return window.last_mouse_position
+}
+
 set_cursor_style :: proc(window: ^Window, style: Cursor_Style) {
     pugl.SetCursor(window.view, _cursor_style_to_pugl_cursor(style))
 }
@@ -296,190 +286,310 @@ set_clipboard :: proc(window: ^Window, data: string) {
 }
 
 
+//====================================================================================
+// Vector Graphics
+//====================================================================================
+
+
+Paint :: nvg.Paint
+
+Path_Winding :: enum {
+    Positive,
+    Negative,
+}
+
+Font :: struct {
+    name: string,
+    data: []byte,
+}
+
+Glyph :: struct {
+    rune_position: int,
+    left: f32,
+    right: f32,
+    draw_offset_x: f32,
+}
+
+solid_paint :: proc(color: Color) -> Paint {
+    paint: Paint
+    nvg.TransformIdentity(&paint.xform)
+    paint.radius = 0.0
+    paint.feather = 1.0
+    paint.innerColor = color
+    paint.outerColor = color
+    return paint
+}
+
+quantize :: proc{
+    quantize_f32,
+    quantize_vec2,
+}
+
+quantize_f32 :: proc(value, distance: f32) -> f32 {
+    return math.round(value / distance) * distance
+}
+
+quantize_vec2 :: proc(vec: Vec2, distance: f32) -> Vec2 {
+    return {
+        math.round(vec.x / distance) * distance,
+        math.round(vec.y / distance) * distance,
+    }
+}
+
+begin_path :: proc(window: ^Window) {
+    nvg.BeginPath(window.ctx)
+}
+
+close_path :: proc(window: ^Window) {
+    nvg.ClosePath(window.ctx)
+}
+
+path_move_to :: proc(window: ^Window, position: Vec2) {
+    nvg.MoveTo(window.ctx, position.x, position.y)
+}
+
+path_line_to :: proc(window: ^Window, position: Vec2) {
+    nvg.LineTo(window.ctx, position.x, position.y)
+}
+
+path_arc_to :: proc(window: ^Window, p0, p1: Vec2, radius: f32) {
+    nvg.ArcTo(window.ctx, p0.x, p0.y, p1.x, p1.y, radius)
+}
+
+path_circle :: proc(window: ^Window, center: Vec2, radius: f32, winding: Path_Winding = .Positive) {
+    nvg.Circle(window.ctx, center.x, center.y, radius)
+    nvg.PathWinding(window.ctx, _path_winding_to_nvg_winding(winding))
+}
+
+path_rect :: proc(window: ^Window, position, size: Vec2, winding: Path_Winding = .Positive) {
+    nvg.Rect(window.ctx, position.x, position.y, size.x, size.y)
+    nvg.PathWinding(window.ctx, _path_winding_to_nvg_winding(winding))
+}
+
+path_rounded_rect_varying :: proc(window: ^Window, position, size: Vec2, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius: f32, winding: Path_Winding = .Positive) {
+    nvg.RoundedRectVarying(window.ctx, position.x, position.y, size.x, size.y, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius)
+    nvg.PathWinding(window.ctx, _path_winding_to_nvg_winding(winding))
+}
+
+path_rounded_rect :: proc(window: ^Window, position, size: Vec2, radius: f32, winding: Path_Winding = .Positive) {
+    path_rounded_rect_varying(window, position, size, radius, radius, radius, radius, winding)
+}
+
+fill_path_paint :: proc(window: ^Window, paint: Paint) {
+    nvg.FillPaint(window.ctx, paint)
+    nvg.Fill(window.ctx)
+}
+
+fill_path :: proc(window: ^Window, color: Color) {
+    fill_path_paint(window, solid_paint(color))
+}
+
+stroke_path_paint :: proc(window: ^Window, paint: Paint, width := f32(1)) {
+    nvg.StrokeWidth(window.ctx, width)
+    nvg.StrokePaint(window.ctx, paint)
+    nvg.Stroke(window.ctx)
+}
+
+stroke_path :: proc(window: ^Window, color: Color, width := f32(1)) {
+    stroke_path_paint(window, solid_paint(color), width)
+}
+
+translate_path :: proc(window: ^Window, amount: Vec2) {
+    nvg.Translate(window.ctx, amount.x, amount.y)
+}
+
+
+//====================================================================================
+// Private
+//====================================================================================
+
+
+_path_winding_to_nvg_winding :: proc(winding: Path_Winding) -> nvg.Winding {
+    switch winding {
+    case .Negative: return .CW
+    case .Positive: return .CCW
+    }
+    return .CW
+}
 
 _generate_id :: proc "contextless" () -> u64 {
     @(static) id: u64
     return 1 + intrinsics.atomic_add(&id, 1)
 }
 
-_on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
-    #partial switch event.type {
+// It is not safe for a window to close itself this way.
+_force_close :: proc(window: ^Window) {
+    if !window.is_open {
+        return
+    }
 
+    view := window.view
+
+    pugl.EnterContext(view)
+
+    window.last_visibility = pugl.GetVisible(view)
+
+    send_event(window, Closed_Event{})
+    nvg_gl.Destroy(window.ctx)
+
+    pugl.Unrealize(view)
+    pugl.FreeView(view)
+
+    window.view = nil
+    window.is_open = false
+
+    _window_count -= 1
+
+    if _window_count == 0 {
+        pugl.FreeWorld(_world)
+        _world = nil
+    }
+}
+
+_on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
+    window := cast(^Window)pugl.GetHandle(view)
+    context = _odin_context
+
+    #partial switch event.type {
     case .EXPOSE:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
-        if window.backend_callbacks.on_draw != nil {
-            window.backend_callbacks.on_draw(window)
-        }
+        size := size(window)
+        gl.Viewport(0, 0, i32(size.x), i32(size.y))
+        c := window.background_color
+        gl.ClearColor(c.r, c.g, c.b, c.a)
+        gl.Clear(gl.COLOR_BUFFER_BIT)
+        nvg.BeginFrame(window.ctx, size.x, size.y, 1)
+        send_event(window, Draw_Event{})
+        nvg.EndFrame(window.ctx)
 
     case .UPDATE:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
+        pugl.EnterContext(view)
 
         is_visible := pugl.GetVisible(view)
         if is_visible != window.last_visibility {
             if is_visible {
-                if window.backend_callbacks.on_show != nil {
-                    window.backend_callbacks.on_show(window)
-                }
+                send_event(window, Shown_Event{})
             } else {
-                if window.backend_callbacks.on_hide != nil {
-                    window.backend_callbacks.on_hide(window)
-                }
+                send_event(window, Hidden_Event{})
             }
             window.last_visibility = is_visible
         }
 
-        pugl.EnterContext(view)
-        if window.backend_callbacks.on_update != nil {
-            window.backend_callbacks.on_update(window)
-        }
-
-        pugl.PostRedisplay(view)
+        send_event(window, Update_Event{})
 
     case .LOOP_ENTER:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
         pugl.StartTimer(view, window.timer_id, 0)
 
     case .LOOP_LEAVE:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
         pugl.StopTimer(view, window.timer_id)
 
     case .TIMER:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
         event := event.timer
         if window.timer_id == event.id {
             update()
         }
 
     case .CONFIGURE:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
         event := event.configure
+
+        pugl.EnterContext(view)
 
         position := Vec2{f32(event.x), f32(event.y)}
         size := Vec2{f32(event.width), f32(event.height)}
 
-        if window.backend_callbacks.on_move != nil && position != window.last_position {
-            window.backend_callbacks.on_move(window, position)
+        if position != window.last_position {
+            send_event(window, Moved_Event{
+                position = position,
+                delta = position - window.last_position,
+            })
         }
 
-        if window.backend_callbacks.on_resize != nil && size != window.last_size {
-            window.backend_callbacks.on_resize(window, size)
+        if size != window.last_size {
+            send_event(window, Resized_Event{
+                size = size,
+                delta = size - window.last_size,
+            })
         }
 
         window.last_position = position
         window.last_size = size
 
-        pugl.PostRedisplay(view)
-
     case .MOTION:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
         event := event.motion
-        if window.backend_callbacks.on_mouse_move != nil {
-            window.backend_callbacks.on_mouse_move(
-                window,
-                {f32(event.x), f32(event.y)},
-                {f32(event.xRoot), f32(event.yRoot)},
-            )
-        }
 
-        pugl.PostRedisplay(view)
+        pugl.EnterContext(view)
+
+        position := Vec2{f32(event.x), f32(event.y)}
+
+        send_event(window, Mouse_Moved_Event{
+            position = position,
+            delta = position - window.last_mouse_position,
+        })
+
+        window.last_mouse_position = position
 
     case .POINTER_IN:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
-        if window.backend_callbacks.on_mouse_enter != nil {
-            window.backend_callbacks.on_mouse_enter(window)
-        }
-
-        pugl.PostRedisplay(view)
+        event := event.crossing
+        pugl.EnterContext(view)
+        send_event(window, Mouse_Entered_Event{
+            position = Vec2{f32(event.x), f32(event.y)},
+        })
 
     case .POINTER_OUT:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
-        if window.backend_callbacks.on_mouse_exit != nil {
-            window.backend_callbacks.on_mouse_exit(window)
-        }
-
-        pugl.PostRedisplay(view)
+        event := event.crossing
+        pugl.EnterContext(view)
+        send_event(window, Mouse_Exited_Event{
+            position = Vec2{f32(event.x), f32(event.y)},
+        })
 
     case .FOCUS_IN:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
-        if window.backend_callbacks.on_gain_focus != nil {
-            window.backend_callbacks.on_gain_focus(window)
-        }
-
-        pugl.PostRedisplay(view)
+        pugl.EnterContext(view)
+        send_event(window, Gained_Focus_Event{})
 
     case .FOCUS_OUT:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
-        if window.backend_callbacks.on_lose_focus != nil {
-            window.backend_callbacks.on_lose_focus(window)
-        }
-
-        pugl.PostRedisplay(view)
+        pugl.EnterContext(view)
+        send_event(window, Lost_Focus_Event{})
 
     case .SCROLL:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
         event := &event.scroll
-        if window.backend_callbacks.on_mouse_wheel != nil {
-            window.backend_callbacks.on_mouse_wheel(window, {f32(event.dx), f32(event.dy)})
-        }
-
-        pugl.PostRedisplay(view)
+        pugl.EnterContext(view)
+        send_event(window, Mouse_Scrolled_Event{
+            position = window.last_mouse_position,
+            amount = {f32(event.dx), f32(event.dy)},
+        })
 
     case .BUTTON_PRESS:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
         event := &event.button
-        if window.backend_callbacks.on_mouse_press != nil {
-            window.backend_callbacks.on_mouse_press(window, _pugl_button_to_mouse_button(event.button))
-        }
-
-        pugl.PostRedisplay(view)
+        pugl.EnterContext(view)
+        send_event(window, Mouse_Pressed_Event{
+            position = window.last_mouse_position,
+            button = _pugl_button_to_mouse_button(event.button),
+        })
 
     case .BUTTON_RELEASE:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
         event := &event.button
-        if window.backend_callbacks.on_mouse_release != nil {
-            window.backend_callbacks.on_mouse_release(window, _pugl_button_to_mouse_button(event.button))
-        }
-
-        pugl.PostRedisplay(view)
+        pugl.EnterContext(view)
+        send_event(window, Mouse_Released_Event{
+            position = window.last_mouse_position,
+            button = _pugl_button_to_mouse_button(event.button),
+        })
 
     case .KEY_PRESS:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
         event := &event.key
-        if window.backend_callbacks.on_key_press != nil {
-            window.backend_callbacks.on_key_press(window, _pugl_key_event_to_keyboard_key(event))
-        }
-
-        pugl.PostRedisplay(view)
+        pugl.EnterContext(view)
+        send_event(window, Key_Pressed_Event{
+            key = _pugl_key_event_to_keyboard_key(event),
+        })
 
     case .KEY_RELEASE:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
         event := &event.key
-        if window.backend_callbacks.on_key_release != nil {
-            window.backend_callbacks.on_key_release(window, _pugl_key_event_to_keyboard_key(event))
-        }
-
-        pugl.PostRedisplay(view)
+        pugl.EnterContext(view)
+        send_event(window, Key_Released_Event{
+            key = _pugl_key_event_to_keyboard_key(event),
+        })
 
     case .TEXT:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
         event := &event.text
+        pugl.EnterContext(view)
 
         // Filter out backspace, enter, tab, and escape.
         skip := false
@@ -487,17 +597,15 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         case 8, 9, 13, 27: skip = true
         }
 
-        if !skip && window.backend_callbacks.on_rune != nil {
+        if !skip {
             r, len := utf8.decode_rune(event.string[:4])
-            window.backend_callbacks.on_rune(window, r)
+            send_event(window, Text_Event{
+                text = r,
+            })
         }
 
-        pugl.PostRedisplay(view)
-
     case .CLOSE:
-        window := cast(^Window)pugl.GetHandle(view)
-        context = _odin_context
-        close(window)
+        _force_close(window)
         window.close_requested = false
     }
 

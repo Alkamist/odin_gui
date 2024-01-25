@@ -4,58 +4,61 @@ import "../../gui"
 
 Button :: struct {
     using widget: gui.Widget,
-    position: Vec2,
-    size: Vec2,
+    color: Color,
+    mouse_button: gui.Mouse_Button,
     is_down: bool,
-    pressed: bool,
-    released: bool,
-    clicked: bool,
 }
 
-make_button :: proc(position: Vec2 = {0, 0}, size: Vec2 = {96, 32}) -> Button {
-    return {
-        position = position,
-        size = size,
-    }
+Button_Pressed_Event :: struct {}
+Button_Released_Event :: struct {}
+Button_Clicked_Event :: struct {}
+
+create_button :: proc(
+    position := Vec2{0, 0},
+    size := Vec2{96, 32},
+    color := Color{0.5, 0.5, 0.5, 1},
+    mouse_button := gui.Mouse_Button.Left,
+) -> ^Button {
+    button := gui.create_widget(Button)
+    button.event_proc = button_event_proc
+    button.position = position
+    button.size = size
+    button.color = color
+    button.mouse_button = mouse_button
+    return button
 }
 
-draw_button :: proc(button: ^Button, color: Color, rounding := f32(3)) {
-    fill_rounded_rect(button.position, button.size, 3, color)
-    if button.is_down {
-        fill_rounded_rect(button.position, button.size, 3, {0, 0, 0, 0.1})
-    } else if gui.is_hovered(button) {
-        fill_rounded_rect(button.position, button.size, 3, {1, 1, 1, 0.1})
-    }
+destroy_button :: proc(button: ^Button) {
+    gui.destroy_widget(button)
 }
 
-update_button_ex :: proc(button: ^Button, hover, press, release: bool) {
-    button.pressed = false
-    button.released = false
-    button.clicked = false
+button_event_proc :: proc(widget: ^gui.Widget, event: any) -> bool {
+    button := cast(^Button)widget
 
-    if gui.is_hovered(button) && !button.is_down && press {
-        button.is_down = true
-        button.pressed = true
-    }
-
-    if button.is_down && release {
-        button.is_down = false
-        button.released = true
-
-        if gui.mouse_is_over(button) {
-            button.clicked = true
+    switch e in event {
+    case gui.Mouse_Pressed_Event:
+        if e.button == button.mouse_button {
+            button.is_down = true
+            gui.capture_hover()
+            gui.send_event(button, Button_Pressed_Event{})
         }
+
+    case gui.Mouse_Released_Event:
+        if e.button == button.mouse_button {
+            gui.release_hover()
+            if button.is_down && gui.current_mouse_hit() == button {
+                button.is_down = false
+                gui.send_event(button, Button_Clicked_Event{})
+            }
+            button.is_down = false
+            gui.send_event(button, Button_Released_Event{})
+        }
+
+    case gui.Draw_Event:
+        gui.begin_path()
+        gui.path_rect(button.position, button.size)
+        gui.fill_path(button.color)
     }
 
-    if hover {
-        gui.request_hover(button)
-    }
-}
-
-update_button :: proc(button: ^Button, mouse_button := Mouse_Button.Left) {
-    update_button_ex(button,
-        hover = gui.mouse_hit_test(button.position, button.size),
-        press = gui.mouse_pressed(mouse_button),
-        release = gui.mouse_released(mouse_button),
-    )
+    return false
 }
