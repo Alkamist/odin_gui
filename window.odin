@@ -164,19 +164,19 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
 
         if window.hover != window.previous_hover {
             if window.previous_hover != nil {
-                send_event(window.previous_hover, Mouse_Exited_Event{
+                send_event(window.previous_hover, Mouse_Exit_Event{
                     position = e.position,
                 })
             }
             if window.hover != nil {
-                send_event(window.hover, Mouse_Entered_Event{
+                send_event(window.hover, Mouse_Enter_Event{
                     position = e.position,
                 })
             }
         }
 
         if window.hover != nil {
-            send_event(window.hover, Mouse_Moved_Event{
+            send_event(window.hover, Mouse_Move_Event{
                 position = e.position,
                 delta = e.delta,
             })
@@ -184,7 +184,7 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
 
     case Window_Mouse_Press_Event:
         if window.hover != nil {
-            send_event(window.hover, Mouse_Pressed_Event{
+            send_event(window.hover, Mouse_Press_Event{
                 position = e.position,
                 button = e.button,
             })
@@ -192,7 +192,7 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
 
     case Window_Mouse_Release_Event:
         if window.hover != nil {
-            send_event(window.hover, Mouse_Released_Event{
+            send_event(window.hover, Mouse_Release_Event{
                 position = e.position,
                 button = e.button,
             })
@@ -200,7 +200,7 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
 
     case Window_Mouse_Scroll_Event:
         if window.hover != nil {
-            send_event(window.hover, Mouse_Scrolled_Event{
+            send_event(window.hover, Mouse_Scroll_Event{
                 position = e.position,
                 amount = e.amount,
             })
@@ -208,14 +208,14 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
 
     case Window_Key_Press_Event:
         if window.focus != nil {
-            send_event(window.focus, Key_Pressed_Event{
+            send_event(window.focus, Key_Press_Event{
                 key = e.key,
             })
         }
 
     case Window_Key_Release_Event:
         if window.focus != nil {
-            send_event(window.focus, Key_Released_Event{
+            send_event(window.focus, Key_Release_Event{
                 key = e.key,
             })
         }

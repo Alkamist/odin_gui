@@ -45,9 +45,9 @@ main :: proc() {
         event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
             button := cast(^widgets.Button)widget
             switch e in event {
-            case widgets.Button_Clicked_Event:
+            case widgets.Button_Click_Event:
                 fmt.println("Clicked 1")
-            case gui.Mouse_Moved_Event:
+            case gui.Mouse_Move_Event:
                 if button.is_down {
                     button.position += e.delta
                     gui.redraw()
@@ -65,9 +65,9 @@ main :: proc() {
         event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
             button := cast(^widgets.Button)widget
             switch e in event {
-            case widgets.Button_Clicked_Event:
+            case widgets.Button_Click_Event:
                 fmt.println("Clicked 2")
-            case gui.Mouse_Moved_Event:
+            case gui.Mouse_Move_Event:
                 if button.is_down {
                     button.position += e.delta
                     gui.redraw()

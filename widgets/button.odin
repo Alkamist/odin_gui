@@ -9,9 +9,9 @@ Button :: struct {
     is_down: bool,
 }
 
-Button_Pressed_Event :: struct {}
-Button_Released_Event :: struct {}
-Button_Clicked_Event :: struct {}
+Button_Press_Event :: struct {}
+Button_Release_Event :: struct {}
+Button_Click_Event :: struct {}
 
 init_button :: proc(
     button: ^Button,
@@ -39,29 +39,29 @@ button_event_proc :: proc(widget: ^gui.Widget, event: any) -> bool {
     button := cast(^Button)widget
 
     switch e in event {
-    case gui.Mouse_Entered_Event:
+    case gui.Mouse_Enter_Event:
         gui.redraw()
 
-    case gui.Mouse_Exited_Event:
+    case gui.Mouse_Exit_Event:
         gui.redraw()
 
-    case gui.Mouse_Pressed_Event:
+    case gui.Mouse_Press_Event:
         if e.button == button.mouse_button {
             button.is_down = true
             gui.capture_hover()
-            gui.send_event(button, Button_Pressed_Event{})
+            gui.send_event(button, Button_Press_Event{})
         }
         gui.redraw()
 
-    case gui.Mouse_Released_Event:
+    case gui.Mouse_Release_Event:
         if e.button == button.mouse_button {
             gui.release_hover()
             if button.is_down && gui.current_mouse_hit() == button {
                 button.is_down = false
-                gui.send_event(button, Button_Clicked_Event{})
+                gui.send_event(button, Button_Click_Event{})
             }
             button.is_down = false
-            gui.send_event(button, Button_Released_Event{})
+            gui.send_event(button, Button_Release_Event{})
         }
         gui.redraw()
 

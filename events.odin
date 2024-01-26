@@ -25,39 +25,39 @@ Window_Key_Press_Event :: window.Key_Press_Event
 Window_Key_Release_Event :: window.Key_Release_Event
 Window_Text_Event :: window.Text_Event
 
-Mouse_Entered_Event :: struct {
+Mouse_Enter_Event :: struct {
     position: Vec2,
 }
 
-Mouse_Exited_Event :: struct {
+Mouse_Exit_Event :: struct {
     position: Vec2,
 }
 
-Mouse_Moved_Event :: struct {
+Mouse_Move_Event :: struct {
     position: Vec2,
     delta: Vec2,
 }
 
-Mouse_Scrolled_Event :: struct {
+Mouse_Scroll_Event :: struct {
     position: Vec2,
     amount: Vec2,
 }
 
-Mouse_Pressed_Event :: struct {
+Mouse_Press_Event :: struct {
     position: Vec2,
     button: Mouse_Button,
 }
 
-Mouse_Released_Event :: struct {
+Mouse_Release_Event :: struct {
     position: Vec2,
     button: Mouse_Button,
 }
 
-Key_Pressed_Event :: struct {
+Key_Press_Event :: struct {
     key: Keyboard_Key,
 }
 
-Key_Released_Event :: struct {
+Key_Release_Event :: struct {
     key: Keyboard_Key,
 }
 
