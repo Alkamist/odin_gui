@@ -8,6 +8,7 @@ import "../widgets"
 main_window: gui.Window
 test_button: widgets.Button
 test_button2: widgets.Button
+test_slider: widgets.Slider
 
 main :: proc() {
     when ODIN_DEBUG {
@@ -78,8 +79,21 @@ main :: proc() {
     )
     defer widgets.destroy_button(&test_button2)
 
+    widgets.init_slider(&test_slider,
+        position = {10, 200},
+        event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
+            slider := cast(^widgets.Slider)widget
+            switch e in event {
+            case widgets.Slider_Value_Change_Event:
+                gui.set_position(&test_button2, test_button2.position + {e.delta * 200.0, 0})
+            }
+            return widgets.slider_event_proc(widget, event)
+        },
+    )
+    defer widgets.destroy_slider(&test_slider)
+
     gui.add_children(&test_button, {&test_button2})
-    gui.add_children(&main_window.root, {&test_button})
+    gui.add_children(&main_window.root, {&test_button, &test_slider})
 
     gui.open_window(&main_window)
     for gui.window_is_open(&main_window) {

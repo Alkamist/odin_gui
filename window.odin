@@ -151,7 +151,7 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
         window.cached_content_scale = content_scale()
 
     case Window_Resize_Event:
-        window.root.size = e.size
+        set_size(&window.root, e.size)
 
     case Window_Mouse_Move_Event:
         window.previous_hover = window.hover

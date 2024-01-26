@@ -18,8 +18,8 @@ init_widget :: proc(
 ) {
     widget.parent = nil
     clear(&widget.children)
-    widget.position = position
-    widget.size = size
+    set_position(widget, position)
+    set_size(widget, size)
     widget.event_proc = event_proc
 }
 
@@ -49,6 +49,28 @@ remove_child :: proc(widget: ^Widget, child: ^Widget) {
         }
     }
     child.parent = nil
+}
+
+set_position :: proc(widget: ^Widget, position: Vec2) {
+    previous_position := widget.position
+    widget.position = position
+    if widget.position != previous_position {
+        send_event(widget, Move_Event{
+            position = widget.position,
+            delta = widget.position - previous_position,
+        })
+    }
+}
+
+set_size :: proc(widget: ^Widget, size: Vec2) {
+    previous_size := widget.size
+    widget.size = size
+    if widget.size != previous_size {
+        send_event(widget, Resize_Event{
+            size = widget.size,
+            delta = widget.size - previous_size,
+        })
+    }
 }
 
 send_event :: proc(widget: ^Widget, event: any) -> (was_consumed: bool) {

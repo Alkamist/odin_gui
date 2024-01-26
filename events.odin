@@ -25,6 +25,16 @@ Window_Key_Press_Event :: window.Key_Press_Event
 Window_Key_Release_Event :: window.Key_Release_Event
 Window_Text_Event :: window.Text_Event
 
+Move_Event :: struct {
+    position: Vec2,
+    delta: Vec2,
+}
+
+Resize_Event :: struct {
+    size: Vec2,
+    delta: Vec2,
+}
+
 Mouse_Enter_Event :: struct {
     position: Vec2,
 }

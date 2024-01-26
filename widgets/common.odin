@@ -31,22 +31,3 @@ drop_shadow :: proc(position, size: Vec2, corner_radius, feather, intensity: f32
         {0, 0, 0, 0},
     ))
 }
-
-// proc drawShadow(window: Window) =
-//   let gui = window.gui
-//   let position = window.position
-//   let size = window.size
-
-//   const feather = 10.0
-//   const feather2 = feather * 2.0
-
-//   let path = Path.new()
-//   path.rect(position - vec2(feather, feather), size + feather2)
-//   path.roundedRect(position, size, windowCornerRadius, Negative)
-//   gui.fillPath(path, boxGradient(
-//     vec2(position.x, position.y + 2),
-//     size,
-//     windowCornerRadius * 2.0,
-//     feather,
-//     rgba(0, 0, 0, 128), rgba(0, 0, 0, 0),
-//   ))
