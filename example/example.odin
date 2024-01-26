@@ -34,13 +34,14 @@ main :: proc() {
 
     gui.init_window(&main_window,
         position = {50, 50},
+        background_color = gui.rgb(71, 75, 82),
     )
     defer gui.destroy_window(&main_window)
 
     widgets.init_button(&test_button,
         position = {50, 50},
-        size = {100, 100},
-        color = gui.rgb(255, 0, 0),
+        size = {120, 32},
+        color = gui.rgb(70, 74, 81),
         event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
             button := cast(^widgets.Button)widget
             switch e in event {
@@ -59,8 +60,8 @@ main :: proc() {
 
     widgets.init_button(&test_button2,
         position = {50, 50},
-        size = {100, 100},
-        color = gui.rgb(0, 255, 0),
+        size = {120, 32},
+        color = gui.rgb(70, 74, 81),
         event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
             button := cast(^widgets.Button)widget
             switch e in event {

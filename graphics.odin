@@ -1,5 +1,6 @@
 package gui
 
+import "core:math"
 import wnd "window"
 
 Paint :: wnd.Paint
@@ -7,8 +8,49 @@ Path_Winding :: wnd.Path_Winding
 Font :: wnd.Font
 Glyph :: wnd.Glyph
 
-solid_paint :: wnd.solid_paint
-quantize :: wnd.quantize
+transform_identity :: wnd.transform_identity
+transform_rotate :: wnd.transform_rotate
+linear_gradient :: wnd.linear_gradient
+radial_gradient :: wnd.radial_gradient
+box_gradient :: wnd.box_gradient
+image_pattern :: wnd.image_pattern
+
+quantize :: proc{
+    quantize_f32,
+    quantize_vec2,
+}
+
+quantize_f32 :: proc(value, distance: f32) -> f32 {
+    return math.round(value / distance) * distance
+}
+
+quantize_vec2 :: proc(vec: Vec2, distance: f32) -> Vec2 {
+    return {
+        math.round(vec.x / distance) * distance,
+        math.round(vec.y / distance) * distance,
+    }
+}
+
+pixel_distance :: proc(window := _current_window) -> f32 {
+    return 1.0 / window.cached_content_scale
+}
+
+pixel_align :: proc{
+    pixel_align_f32,
+    pixel_align_vec2,
+}
+
+pixel_align_f32 :: proc(value: f32, window := _current_window) -> f32 {
+    return quantize_f32(value, pixel_distance(window))
+}
+
+pixel_align_vec2 :: proc(vec: Vec2, window := _current_window) -> Vec2 {
+    pixel_distance := pixel_distance(window)
+    return {
+        quantize_f32(vec.x, pixel_distance),
+        quantize_f32(vec.y, pixel_distance),
+    }
+}
 
 begin_path :: proc(window := _current_window) {
     wnd.begin_path(&window.backend)

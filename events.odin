@@ -7,22 +7,22 @@ Keyboard_Key :: window.Keyboard_Key
 
 Draw_Event :: window.Draw_Event
 Update_Event :: window.Update_Event
-Window_Opened_Event :: window.Opened_Event
-Window_Closed_Event :: window.Closed_Event
-Window_Gained_Focus_Event :: window.Gained_Focus_Event
-Window_Lost_Focus_Event :: window.Lost_Focus_Event
-Window_Shown_Event :: window.Shown_Event
-Window_Hidden_Event :: window.Hidden_Event
-Window_Moved_Event :: window.Moved_Event
-Window_Resized_Event :: window.Resized_Event
-Window_Mouse_Entered_Event :: window.Mouse_Entered_Event
-Window_Mouse_Exited_Event :: window.Mouse_Exited_Event
-Window_Mouse_Moved_Event :: window.Mouse_Moved_Event
-Window_Mouse_Scrolled_Event :: window.Mouse_Scrolled_Event
-Window_Mouse_Pressed_Event :: window.Mouse_Pressed_Event
-Window_Mouse_Released_Event :: window.Mouse_Released_Event
-Window_Key_Pressed_Event :: window.Key_Pressed_Event
-Window_Key_Released_Event :: window.Key_Released_Event
+Window_Open_Event :: window.Open_Event
+Window_Close_Event :: window.Close_Event
+Window_Gain_Focus_Event :: window.Gain_Focus_Event
+Window_Lose_Focus_Event :: window.Lose_Focus_Event
+Window_Show_Event :: window.Show_Event
+Window_Hide_Event :: window.Hide_Event
+Window_Move_Event :: window.Move_Event
+Window_Resize_Event :: window.Resize_Event
+Window_Mouse_Enter_Event :: window.Mouse_Enter_Event
+Window_Mouse_Exit_Event :: window.Mouse_Exit_Event
+Window_Mouse_Move_Event :: window.Mouse_Move_Event
+Window_Mouse_Scroll_Event :: window.Mouse_Scroll_Event
+Window_Mouse_Press_Event :: window.Mouse_Press_Event
+Window_Mouse_Release_Event :: window.Mouse_Release_Event
+Window_Key_Press_Event :: window.Key_Press_Event
+Window_Key_Release_Event :: window.Key_Release_Event
 Window_Text_Event :: window.Text_Event
 
 Mouse_Entered_Event :: struct {

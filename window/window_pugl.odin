@@ -61,7 +61,8 @@ init :: proc(
     size := Vec2{400, 300},
     min_size: Maybe(Vec2) = nil,
     max_size: Maybe(Vec2) = nil,
-    swap_interval := 1,
+    background_color := Color{0, 0, 0, 0},
+    swap_interval := 0,
     dark_mode := true,
     is_visible := true,
     is_resizable := true,
@@ -74,6 +75,7 @@ init :: proc(
     window.last_size = size
     window.min_size = min_size
     window.max_size = max_size
+    window.background_color = background_color
     window.swap_interval = swap_interval
     window.dark_mode = dark_mode
     window.last_visibility = is_visible
@@ -170,7 +172,7 @@ open :: proc(window: ^Window) -> bool {
     }
 
     window.ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
-    send_event(window, Opened_Event{})
+    send_event(window, Open_Event{})
 
     return true
 }
@@ -318,20 +320,128 @@ solid_paint :: proc(color: Color) -> Paint {
     return paint
 }
 
-quantize :: proc{
-    quantize_f32,
-    quantize_vec2,
+transform_identity :: proc(t: ^[6]f32) {
+    t[0] = 1.0
+    t[1] = 0.0
+    t[2] = 0.0
+    t[3] = 1.0
+    t[4] = 0.0
+    t[5] = 0.0
 }
 
-quantize_f32 :: proc(value, distance: f32) -> f32 {
-    return math.round(value / distance) * distance
+transform_rotate :: proc(t: ^[6]f32, angle: f32) {
+    cs := math.cos(angle)
+    sn := math.sin(angle)
+    t[0] = cs
+    t[1] = sn
+    t[2] = -sn
+    t[3] = cs
+    t[4] = 0.0
+    t[5] = 0.0
 }
 
-quantize_vec2 :: proc(vec: Vec2, distance: f32) -> Vec2 {
-    return {
-        math.round(vec.x / distance) * distance,
-        math.round(vec.y / distance) * distance,
+linear_gradient :: proc(start, finish: Vec2, inner_color, outer_color: Color) -> Paint {
+    large :: 1e5
+
+    dx, dy, d: f32
+
+    // Calculate transform aligned to the line
+    dx = finish.x - start.x
+    dy = finish.y - start.y
+    d = math.sqrt(dx * dx + dy * dy)
+
+    if d > 0.0001 {
+        dx /= d
+        dy /= d
+    } else {
+        dx = 0
+        dy = 1
     }
+
+    paint: Paint
+
+    paint.xform[0] = dy
+    paint.xform[1] = -dx
+    paint.xform[2] = dx
+    paint.xform[3] = dy
+    paint.xform[4] = start.x - dx * large
+    paint.xform[5] = start.y - dy * large
+
+    paint.extent[0] = large
+    paint.extent[1] = large + d * 0.5
+
+    paint.radius = 0.0
+
+    paint.feather = max(1.0, d)
+
+    paint.innerColor = inner_color
+    paint.outerColor = outer_color
+
+    return paint
+}
+
+radial_gradient :: proc(center: Vec2, inner_radius, outer_radius: f32, inner_color, outer_color: Color) -> Paint {
+    radius := (inner_radius + outer_radius) * 0.5
+    feather := (outer_radius - inner_radius)
+
+    paint: Paint
+
+    transform_identity(&paint.xform)
+
+    paint.xform[4] = center.x
+    paint.xform[5] = center.y
+
+    paint.extent[0] = radius
+    paint.extent[1] = radius
+
+    paint.radius = radius
+
+    paint.feather = max(1.0, feather)
+
+    paint.innerColor = inner_color
+    paint.outerColor = outer_color
+
+    return paint
+}
+
+box_gradient :: proc(position, size: Vec2, radius, feather: f32, inner_color, outer_color: Color) -> Paint {
+    paint: Paint
+
+    transform_identity(&paint.xform)
+
+    paint.xform[4] = position.x + size.x * 0.5
+    paint.xform[5] = position.y + size.y * 0.5
+
+    paint.extent[0] = size.x * 0.5
+    paint.extent[1] = size.y * 0.5
+
+    paint.radius = radius
+
+    paint.feather = max(1.0, feather)
+
+    paint.innerColor = inner_color
+    paint.outerColor = outer_color
+
+    return paint
+}
+
+image_pattern :: proc(center, size: Vec2, angle: f32, image: int, alpha: f32) -> Paint {
+    paint: Paint
+
+    transform_rotate(&paint.xform, angle)
+
+    paint.xform[4] = center.x
+    paint.xform[5] = center.y
+
+    paint.extent[0] = size.x
+    paint.extent[1] = size.y
+
+    paint.image = image
+
+    paint.innerColor = {1, 1, 1, alpha}
+    paint.outerColor = {1, 1, 1, alpha}
+
+    return paint
 }
 
 begin_path :: proc(window: ^Window) {
@@ -427,7 +537,7 @@ _force_close :: proc(window: ^Window) {
 
     window.last_visibility = pugl.GetVisible(view)
 
-    send_event(window, Closed_Event{})
+    send_event(window, Close_Event{})
     nvg_gl.Destroy(window.ctx)
 
     pugl.Unrealize(view)
@@ -465,9 +575,9 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         is_visible := pugl.GetVisible(view)
         if is_visible != window.last_visibility {
             if is_visible {
-                send_event(window, Shown_Event{})
+                send_event(window, Show_Event{})
             } else {
-                send_event(window, Hidden_Event{})
+                send_event(window, Hide_Event{})
             }
             window.last_visibility = is_visible
         }
@@ -495,14 +605,14 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         size := Vec2{f32(event.width), f32(event.height)}
 
         if position != window.last_position {
-            send_event(window, Moved_Event{
+            send_event(window, Move_Event{
                 position = position,
                 delta = position - window.last_position,
             })
         }
 
         if size != window.last_size {
-            send_event(window, Resized_Event{
+            send_event(window, Resize_Event{
                 size = size,
                 delta = size - window.last_size,
             })
@@ -518,7 +628,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
         position := Vec2{f32(event.x), f32(event.y)}
 
-        send_event(window, Mouse_Moved_Event{
+        send_event(window, Mouse_Move_Event{
             position = position,
             delta = position - window.last_mouse_position,
         })
@@ -528,29 +638,29 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .POINTER_IN:
         event := event.crossing
         pugl.EnterContext(view)
-        send_event(window, Mouse_Entered_Event{
+        send_event(window, Mouse_Enter_Event{
             position = Vec2{f32(event.x), f32(event.y)},
         })
 
     case .POINTER_OUT:
         event := event.crossing
         pugl.EnterContext(view)
-        send_event(window, Mouse_Exited_Event{
+        send_event(window, Mouse_Exit_Event{
             position = Vec2{f32(event.x), f32(event.y)},
         })
 
     case .FOCUS_IN:
         pugl.EnterContext(view)
-        send_event(window, Gained_Focus_Event{})
+        send_event(window, Gain_Focus_Event{})
 
     case .FOCUS_OUT:
         pugl.EnterContext(view)
-        send_event(window, Lost_Focus_Event{})
+        send_event(window, Lose_Focus_Event{})
 
     case .SCROLL:
         event := &event.scroll
         pugl.EnterContext(view)
-        send_event(window, Mouse_Scrolled_Event{
+        send_event(window, Mouse_Scroll_Event{
             position = window.last_mouse_position,
             amount = {f32(event.dx), f32(event.dy)},
         })
@@ -558,7 +668,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .BUTTON_PRESS:
         event := &event.button
         pugl.EnterContext(view)
-        send_event(window, Mouse_Pressed_Event{
+        send_event(window, Mouse_Press_Event{
             position = window.last_mouse_position,
             button = _pugl_button_to_mouse_button(event.button),
         })
@@ -566,7 +676,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .BUTTON_RELEASE:
         event := &event.button
         pugl.EnterContext(view)
-        send_event(window, Mouse_Released_Event{
+        send_event(window, Mouse_Release_Event{
             position = window.last_mouse_position,
             button = _pugl_button_to_mouse_button(event.button),
         })
@@ -574,14 +684,14 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .KEY_PRESS:
         event := &event.key
         pugl.EnterContext(view)
-        send_event(window, Key_Pressed_Event{
+        send_event(window, Key_Press_Event{
             key = _pugl_key_event_to_keyboard_key(event),
         })
 
     case .KEY_RELEASE:
         event := &event.key
         pugl.EnterContext(view)
-        send_event(window, Key_Released_Event{
+        send_event(window, Key_Release_Event{
             key = _pugl_key_event_to_keyboard_key(event),
         })
 

@@ -17,6 +17,7 @@ Window :: struct {
     hover: ^Widget,
     previous_hover: ^Widget,
     hover_captured: bool,
+    cached_content_scale: f32,
 }
 
 update :: wnd.update
@@ -29,7 +30,8 @@ init_window :: proc(
     size := Vec2{400, 300},
     min_size: Maybe(Vec2) = nil,
     max_size: Maybe(Vec2) = nil,
-    swap_interval := 1,
+    background_color := Color{0, 0, 0, 0},
+    swap_interval := 0,
     dark_mode := true,
     is_visible := true,
     is_resizable := true,
@@ -45,6 +47,7 @@ init_window :: proc(
         size = size,
         min_size = min_size,
         max_size = max_size,
+        background_color = background_color,
         swap_interval = swap_interval,
         dark_mode = dark_mode,
         is_visible = is_visible,
@@ -144,10 +147,13 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
     _current_window = window
 
     switch e in event {
-    case Window_Resized_Event:
+    case Draw_Event:
+        window.cached_content_scale = content_scale()
+
+    case Window_Resize_Event:
         window.root.size = e.size
 
-    case Window_Mouse_Moved_Event:
+    case Window_Mouse_Move_Event:
         window.previous_hover = window.hover
 
         window.mouse_hit = _hit_test_from_root(&window.root, e.position)
@@ -176,7 +182,7 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
             })
         }
 
-    case Window_Mouse_Pressed_Event:
+    case Window_Mouse_Press_Event:
         if window.hover != nil {
             send_event(window.hover, Mouse_Pressed_Event{
                 position = e.position,
@@ -184,7 +190,7 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
             })
         }
 
-    case Window_Mouse_Released_Event:
+    case Window_Mouse_Release_Event:
         if window.hover != nil {
             send_event(window.hover, Mouse_Released_Event{
                 position = e.position,
@@ -192,7 +198,7 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
             })
         }
 
-    case Window_Mouse_Scrolled_Event:
+    case Window_Mouse_Scroll_Event:
         if window.hover != nil {
             send_event(window.hover, Mouse_Scrolled_Event{
                 position = e.position,
@@ -200,14 +206,14 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
             })
         }
 
-    case Window_Key_Pressed_Event:
+    case Window_Key_Press_Event:
         if window.focus != nil {
             send_event(window.focus, Key_Pressed_Event{
                 key = e.key,
             })
         }
 
-    case Window_Key_Released_Event:
+    case Window_Key_Release_Event:
         if window.focus != nil {
             send_event(window.focus, Key_Released_Event{
                 key = e.key,

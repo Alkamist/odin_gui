@@ -56,56 +56,56 @@ Keyboard_Key :: enum {
 
 Draw_Event :: struct {}
 Update_Event :: struct {}
-Opened_Event :: struct {}
-Closed_Event :: struct {}
-Gained_Focus_Event :: struct {}
-Lost_Focus_Event :: struct {}
-Shown_Event :: struct {}
-Hidden_Event :: struct {}
+Open_Event :: struct {}
+Close_Event :: struct {}
+Gain_Focus_Event :: struct {}
+Lose_Focus_Event :: struct {}
+Show_Event :: struct {}
+Hide_Event :: struct {}
 
-Moved_Event :: struct {
+Move_Event :: struct {
     position: Vec2,
     delta: Vec2,
 }
 
-Resized_Event :: struct {
+Resize_Event :: struct {
     size: Vec2,
     delta: Vec2,
 }
 
-Mouse_Entered_Event :: struct {
+Mouse_Enter_Event :: struct {
     position: Vec2,
 }
 
-Mouse_Exited_Event :: struct {
+Mouse_Exit_Event :: struct {
     position: Vec2,
 }
 
-Mouse_Moved_Event :: struct {
+Mouse_Move_Event :: struct {
     position: Vec2,
     delta: Vec2,
 }
 
-Mouse_Scrolled_Event :: struct {
+Mouse_Scroll_Event :: struct {
     position: Vec2,
     amount: Vec2,
 }
 
-Mouse_Pressed_Event :: struct {
+Mouse_Press_Event :: struct {
     position: Vec2,
     button: Mouse_Button,
 }
 
-Mouse_Released_Event :: struct {
+Mouse_Release_Event :: struct {
     position: Vec2,
     button: Mouse_Button,
 }
 
-Key_Pressed_Event :: struct {
+Key_Press_Event :: struct {
     key: Keyboard_Key,
 }
 
-Key_Released_Event :: struct {
+Key_Release_Event :: struct {
     key: Keyboard_Key,
 }
 
