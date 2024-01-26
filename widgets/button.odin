@@ -13,19 +13,22 @@ Button_Pressed_Event :: struct {}
 Button_Released_Event :: struct {}
 Button_Clicked_Event :: struct {}
 
-create_button :: proc(
+init_button :: proc(
+    button: ^Button,
     position := Vec2{0, 0},
     size := Vec2{96, 32},
     color := Color{0.5, 0.5, 0.5, 1},
     mouse_button := gui.Mouse_Button.Left,
-) -> ^Button {
-    button := gui.create_widget(Button)
-    button.event_proc = button_event_proc
-    button.position = position
-    button.size = size
+    event_proc: proc(^gui.Widget, any) -> bool = button_event_proc,
+) {
+    gui.init_widget(
+        button,
+        position = position,
+        size = size,
+        event_proc = event_proc,
+    )
     button.color = color
     button.mouse_button = mouse_button
-    return button
 }
 
 destroy_button :: proc(button: ^Button) {

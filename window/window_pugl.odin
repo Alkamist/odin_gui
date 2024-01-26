@@ -54,7 +54,8 @@ update :: proc() {
     pugl.Update(_world, 0)
 }
 
-create :: proc(
+init :: proc(
+    window: ^Window,
     title := "",
     position := Vec2{0, 0},
     size := Vec2{400, 300},
@@ -67,8 +68,7 @@ create :: proc(
     double_buffer := true,
     child_kind := Child_Kind.None,
     parent_handle: Native_Handle = nil,
-) -> ^Window {
-    window := new(Window)
+) {
     window.title = title
     window.last_position = position
     window.last_size = size
@@ -81,12 +81,10 @@ create :: proc(
     window.double_buffer = double_buffer
     window.child_kind = child_kind
     window.parent_handle = parent_handle
-    return window
 }
 
 destroy :: proc(window: ^Window) {
     _force_close(window)
-    free(window)
 }
 
 open :: proc(window: ^Window) -> bool {

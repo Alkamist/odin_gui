@@ -5,9 +5,9 @@ import "core:mem"
 import "../../gui"
 import "../widgets"
 
-main_window: ^gui.Window
-test_button: ^widgets.Button
-test_button2: ^widgets.Button
+main_window: gui.Window
+test_button: widgets.Button
+test_button2: widgets.Button
 
 main :: proc() {
     when ODIN_DEBUG {
@@ -32,48 +32,56 @@ main :: proc() {
         }
     }
 
-    main_window = gui.create_window(position = {50, 50})
-    defer gui.destroy_window(main_window)
+    gui.init_window(&main_window,
+        position = {50, 50},
+    )
+    defer gui.destroy_window(&main_window)
 
-    test_button = widgets.create_button({50, 50}, {100, 100}, gui.rgb(255, 0, 0))
-    defer widgets.destroy_button(test_button)
-
-    test_button.event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
-        button := cast(^widgets.Button)widget
-        switch e in event {
-        case widgets.Button_Clicked_Event:
-            fmt.println("Clicked 1")
-        case gui.Mouse_Moved_Event:
-            if button.is_down {
-                button.position += e.delta
-                gui.redraw()
+    widgets.init_button(&test_button,
+        position = {50, 50},
+        size = {100, 100},
+        color = gui.rgb(255, 0, 0),
+        event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
+            button := cast(^widgets.Button)widget
+            switch e in event {
+            case widgets.Button_Clicked_Event:
+                fmt.println("Clicked 1")
+            case gui.Mouse_Moved_Event:
+                if button.is_down {
+                    button.position += e.delta
+                    gui.redraw()
+                }
             }
-        }
-        return widgets.button_event_proc(widget, event)
-    }
+            return widgets.button_event_proc(widget, event)
+        },
+    )
+    defer widgets.destroy_button(&test_button)
 
-    test_button2 = widgets.create_button({50, 50}, {100, 100}, gui.rgb(0, 255, 0))
-    defer widgets.destroy_button(test_button2)
-
-    test_button2.event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
-        button := cast(^widgets.Button)widget
-        switch e in event {
-        case widgets.Button_Clicked_Event:
-            fmt.println("Clicked 2")
-        case gui.Mouse_Moved_Event:
-            if button.is_down {
-                button.position += e.delta
-                gui.redraw()
+    widgets.init_button(&test_button2,
+        position = {50, 50},
+        size = {100, 100},
+        color = gui.rgb(0, 255, 0),
+        event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
+            button := cast(^widgets.Button)widget
+            switch e in event {
+            case widgets.Button_Clicked_Event:
+                fmt.println("Clicked 2")
+            case gui.Mouse_Moved_Event:
+                if button.is_down {
+                    button.position += e.delta
+                    gui.redraw()
+                }
             }
-        }
-        return widgets.button_event_proc(widget, event)
-    }
+            return widgets.button_event_proc(widget, event)
+        },
+    )
+    defer widgets.destroy_button(&test_button2)
 
-    gui.add_children(test_button, {test_button2})
-    gui.add_children(main_window.root, {test_button})
+    gui.add_children(&test_button, {&test_button2})
+    gui.add_children(&main_window.root, {&test_button})
 
-    gui.open_window(main_window)
-    for gui.window_is_open(main_window) {
+    gui.open_window(&main_window)
+    for gui.window_is_open(&main_window) {
         gui.update()
     }
 }

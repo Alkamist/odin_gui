@@ -10,8 +10,8 @@ Window_Child_Kind :: wnd.Child_Kind
 Native_Window_Handle :: wnd.Native_Handle
 
 Window :: struct {
-    root: ^Widget,
-    backend: ^wnd.Window,
+    backend: wnd.Window,
+    root: Widget,
     focus: ^Widget,
     mouse_hit: ^Widget,
     hover: ^Widget,
@@ -21,7 +21,9 @@ Window :: struct {
 
 update :: wnd.update
 
-create_window :: proc(
+// You must provide a stable pointer.
+init_window :: proc(
+    window: ^Window,
     title := "",
     position := Vec2{0, 0},
     size := Vec2{400, 300},
@@ -34,11 +36,10 @@ create_window :: proc(
     double_buffer := true,
     child_kind := Window_Child_Kind.None,
     parent_handle: Native_Window_Handle = nil,
-) -> ^Window {
-    window := new(Window)
-    window.root = create_widget(Widget)
-    window.root.size = size
-    window.backend = wnd.create(
+) {
+    init_widget(&window.root, size = size)
+    wnd.init(
+        &window.backend,
         title = title,
         position = position,
         size = size,
@@ -55,13 +56,11 @@ create_window :: proc(
     window.backend.user_data = window
     window.backend.event_proc = _window_event_proc
     _current_window = window
-    return window
 }
 
-destroy_window :: proc(window := _current_window) {
-    destroy_widget(window.root)
-    wnd.destroy(window.backend)
-    free(window)
+destroy_window :: proc(window: ^Window) {
+    destroy_widget(&window.root)
+    wnd.destroy(&window.backend)
 }
 
 current_window :: proc() -> ^Window {
@@ -69,73 +68,73 @@ current_window :: proc() -> ^Window {
 }
 
 open_window :: proc(window := _current_window) {
-    wnd.open(window.backend)
+    wnd.open(&window.backend)
 }
 
 close_window :: proc(window := _current_window) {
-    wnd.close(window.backend)
+    wnd.close(&window.backend)
 }
 
 redraw :: proc(window := _current_window) {
-    wnd.redraw(window.backend)
+    wnd.redraw(&window.backend)
 }
 
 native_window_handle :: proc(window := _current_window) -> Native_Window_Handle {
-    return wnd.native_handle(window.backend)
+    return wnd.native_handle(&window.backend)
 }
 
 activate_window_context :: proc(window := _current_window) {
-    wnd.activate_context(window.backend)
+    wnd.activate_context(&window.backend)
 }
 
 deactivate_window_context :: proc(window := _current_window) {
-    wnd.deactivate_context(window.backend)
+    wnd.deactivate_context(&window.backend)
 }
 
 window_is_open :: proc(window := _current_window) -> bool {
-    return wnd.is_open(window.backend)
+    return wnd.is_open(&window.backend)
 }
 
 window_is_visible :: proc(window := _current_window) -> bool {
-    return wnd.is_visible(window.backend)
+    return wnd.is_visible(&window.backend)
 }
 
 set_window_visibility :: proc(visibility: bool, window := _current_window) {
-    wnd.set_visibility(window.backend, visibility)
+    wnd.set_visibility(&window.backend, visibility)
 }
 
 window_position :: proc(window := _current_window) -> Vec2 {
-    return wnd.position(window.backend)
+    return wnd.position(&window.backend)
 }
 
 set_window_position :: proc(position: Vec2, window := _current_window) {
-    wnd.set_position(window.backend, position)
+    wnd.set_position(&window.backend, position)
 }
 
 window_size :: proc(window := _current_window) -> Vec2 {
-    return wnd.size(window.backend)
+    return wnd.size(&window.backend)
 }
 
 set_window_size :: proc(size: Vec2, window := _current_window) {
-    wnd.set_size(window.backend, size)
+    wnd.set_size(&window.backend, size)
 }
 
 content_scale :: proc(window := _current_window) -> f32 {
-    return wnd.content_scale(window.backend)
+    return wnd.content_scale(&window.backend)
 }
 
 global_mouse_position :: proc(window := _current_window) -> Vec2 {
-    return wnd.mouse_position(window.backend)
+    return wnd.mouse_position(&window.backend)
 }
 
 // set_cursor_style :: proc(style: Cursor_Style, window: ^Window) {}
 
 get_clipboard :: proc(window := _current_window) -> string {
-    return wnd.get_clipboard(window.backend)
+    return wnd.get_clipboard(&window.backend)
 }
 
 set_clipboard :: proc(data: string, window: ^Window) {
-    wnd.set_clipboard(window.backend, data)
+    wnd.set_clipboard(&window.backend, data)
 }
 
 
@@ -151,7 +150,7 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
     case Window_Mouse_Moved_Event:
         window.previous_hover = window.hover
 
-        window.mouse_hit = _hit_test_from_root(window.root, e.position)
+        window.mouse_hit = _hit_test_from_root(&window.root, e.position)
 
         if !window.hover_captured {
             window.hover = window.mouse_hit
@@ -223,5 +222,5 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
         }
     }
 
-    return send_event_recursively(window.root, event)
+    return send_event_recursively(&window.root, event)
 }

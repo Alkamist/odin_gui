@@ -10,13 +10,21 @@ Widget :: struct {
     event_proc: proc(^Widget, any) -> bool,
 }
 
-create_widget :: proc($T: typeid) -> ^T {
-    return new(T)
+init_widget :: proc(
+    widget: ^Widget,
+    position := Vec2{0, 0},
+    size := Vec2{0, 0},
+    event_proc: proc(^Widget, any) -> bool = nil,
+) {
+    widget.parent = nil
+    clear(&widget.children)
+    widget.position = position
+    widget.size = size
+    widget.event_proc = event_proc
 }
 
 destroy_widget :: proc(widget: ^Widget) {
     delete(widget.children)
-    free(widget)
 }
 
 is_root :: proc(widget: ^Widget) -> bool {
@@ -40,6 +48,7 @@ remove_child :: proc(widget: ^Widget, child: ^Widget) {
             break
         }
     }
+    child.parent = nil
 }
 
 send_event :: proc(widget: ^Widget, event: any) -> (was_consumed: bool) {
@@ -48,18 +57,6 @@ send_event :: proc(widget: ^Widget, event: any) -> (was_consumed: bool) {
     }
     return false
 }
-
-// send_event_recursively :: proc(widget: ^Widget, event: any) -> (was_consumed: bool) {
-//     if send_event(widget, event) {
-//         return true
-//     }
-//     for child in widget.children {
-//         if send_event_recursively(child, event) {
-//             return true
-//         }
-//     }
-//     return false
-// }
 
 send_event_recursively :: proc(widget: ^Widget, event: any) -> (was_consumed: bool) {
     if send_event(widget, event) {
@@ -104,7 +101,7 @@ widget_contains_vec2 :: proc(widget: ^Widget, point: Vec2) -> bool {
 }
 
 hit_test :: proc(position: Vec2) -> ^Widget {
-    return _hit_test_from_root(_current_window.root, position)
+    return _hit_test_from_root(&_current_window.root, position)
 }
 
 current_focus :: proc() -> ^Widget {
