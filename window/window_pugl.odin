@@ -44,6 +44,9 @@ Window :: struct {
     timer_id: uintptr,
     view: ^pugl.View,
     ctx: ^nvg.Context,
+
+    mouse_button_states: [Mouse_Button]bool,
+    key_states: [Keyboard_Key]bool,
 }
 
 update :: proc() {
@@ -83,6 +86,12 @@ init :: proc(
     window.double_buffer = double_buffer
     window.child_kind = child_kind
     window.parent_handle = parent_handle
+    for button in Mouse_Button {
+        window.mouse_button_states[button] = false
+    }
+    for key in Keyboard_Key {
+        window.key_states[key] = false
+    }
 }
 
 destroy :: proc(window: ^Window) {
@@ -283,6 +292,14 @@ set_clipboard :: proc(window: ^Window, data: string) {
     defer runtime.default_temp_allocator_temp_end(checkpoint)
     data_cstring := strings.clone_to_cstring(data, context.temp_allocator)
     pugl.SetClipboard(window.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1)
+}
+
+mouse_down :: proc(window: ^Window, button: Mouse_Button) -> bool {
+    return window.mouse_button_states[button]
+}
+
+key_down :: proc(window: ^Window, key: Keyboard_Key) -> bool {
+    return window.key_states[key]
 }
 
 
@@ -668,31 +685,46 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .BUTTON_PRESS:
         event := &event.button
         pugl.EnterContext(view)
+        button := _pugl_button_to_mouse_button(event.button)
+        window.mouse_button_states[button] = true
         send_event(window, Mouse_Press_Event{
             position = window.last_mouse_position,
-            button = _pugl_button_to_mouse_button(event.button),
+            button = button,
         })
 
     case .BUTTON_RELEASE:
         event := &event.button
         pugl.EnterContext(view)
+        button := _pugl_button_to_mouse_button(event.button)
+        window.mouse_button_states[button] = false
         send_event(window, Mouse_Release_Event{
             position = window.last_mouse_position,
-            button = _pugl_button_to_mouse_button(event.button),
+            button = button,
         })
 
     case .KEY_PRESS:
         event := &event.key
         pugl.EnterContext(view)
-        send_event(window, Key_Press_Event{
-            key = _pugl_key_event_to_keyboard_key(event),
-        })
+        key := _pugl_key_event_to_keyboard_key(event)
+        was_already_down := window.key_states[key]
+        window.key_states[key] = true
+        if was_already_down {
+            send_event(window, Key_Repeat_Event{
+                key = key,
+            })
+        } else {
+            send_event(window, Key_Press_Event{
+                key = key,
+            })
+        }
 
     case .KEY_RELEASE:
         event := &event.key
         pugl.EnterContext(view)
+        key := _pugl_key_event_to_keyboard_key(event)
+        window.key_states[key] = false
         send_event(window, Key_Release_Event{
-            key = _pugl_key_event_to_keyboard_key(event),
+            key = key,
         })
 
     case .TEXT:

@@ -136,8 +136,16 @@ get_clipboard :: proc(window := _current_window) -> string {
     return wnd.get_clipboard(&window.backend)
 }
 
-set_clipboard :: proc(data: string, window: ^Window) {
+set_clipboard :: proc(data: string, window := _current_window) {
     wnd.set_clipboard(&window.backend, data)
+}
+
+mouse_down :: proc(button: Mouse_Button, window := _current_window) -> bool {
+    return wnd.mouse_down(&window.backend, button)
+}
+
+key_down :: proc(key: Keyboard_Key, window := _current_window) -> bool {
+    return wnd.key_down(&window.backend, key)
 }
 
 
@@ -209,6 +217,13 @@ _window_event_proc :: proc(window: ^wnd.Window, event: any) -> bool {
     case Window_Key_Press_Event:
         if window.focus != nil {
             send_event(window.focus, Key_Press_Event{
+                key = e.key,
+            })
+        }
+
+    case Window_Key_Repeat_Event:
+        if window.focus != nil {
+            send_event(window.focus, Key_Repeat_Event{
                 key = e.key,
             })
         }

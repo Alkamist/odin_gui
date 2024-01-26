@@ -11,6 +11,7 @@ Slider :: struct {
     handle_length: f32,
     value_when_grabbed: f32,
     global_mouse_position_when_grabbed: Vec2,
+    precise_key: gui.Keyboard_Key,
 }
 
 Slider_Grab_Event :: struct {}
@@ -37,6 +38,7 @@ init_slider :: proc(
         size = size,
         event_proc = event_proc,
     )
+    slider.precise_key = .Left_Shift
     slider.handle_length = handle_length
     slider.min_value = min_value
     slider.max_value = max_value
@@ -105,7 +107,7 @@ slider_event_proc :: proc(widget: ^gui.Widget, event: any) -> bool {
 
     case gui.Mouse_Move_Event:
         if slider.is_grabbed {
-            sensitivity :: 1.0
+            sensitivity: f32 = gui.key_down(slider.precise_key) ? 0.15 : 1.0
             global_mouse_position := gui.global_mouse_position()
             grab_delta := global_mouse_position.x - slider.global_mouse_position_when_grabbed.x
             set_slider_value(
@@ -113,6 +115,18 @@ slider_event_proc :: proc(widget: ^gui.Widget, event: any) -> bool {
                 slider.value_when_grabbed + sensitivity * grab_delta * (slider.max_value - slider.min_value) / (slider.size.x - slider.handle_length),
             )
             gui.redraw()
+        }
+
+    case gui.Window_Key_Press_Event:
+        if e.key == slider.precise_key {
+            slider.value_when_grabbed = slider.value
+            slider.global_mouse_position_when_grabbed = gui.global_mouse_position()
+        }
+
+    case gui.Window_Key_Release_Event:
+        if e.key == slider.precise_key {
+            slider.value_when_grabbed = slider.value
+            slider.global_mouse_position_when_grabbed = gui.global_mouse_position()
         }
 
     case gui.Draw_Event:

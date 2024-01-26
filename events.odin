@@ -22,6 +22,7 @@ Window_Mouse_Scroll_Event :: window.Mouse_Scroll_Event
 Window_Mouse_Press_Event :: window.Mouse_Press_Event
 Window_Mouse_Release_Event :: window.Mouse_Release_Event
 Window_Key_Press_Event :: window.Key_Press_Event
+Window_Key_Repeat_Event :: window.Key_Repeat_Event
 Window_Key_Release_Event :: window.Key_Release_Event
 Window_Text_Event :: window.Text_Event
 
@@ -64,6 +65,10 @@ Mouse_Release_Event :: struct {
 }
 
 Key_Press_Event :: struct {
+    key: Keyboard_Key,
+}
+
+Key_Repeat_Event :: struct {
     key: Keyboard_Key,
 }
 

@@ -105,6 +105,10 @@ Key_Press_Event :: struct {
     key: Keyboard_Key,
 }
 
+Key_Repeat_Event :: struct {
+    key: Keyboard_Key,
+}
+
 Key_Release_Event :: struct {
     key: Keyboard_Key,
 }
