@@ -11,9 +11,10 @@ Root :: struct {
     backend: Backend,
 }
 
-init_root :: proc(root: ^Root) {
+init_root :: proc(root: ^Root, size: Vec2) {
     init_widget(root)
     root.root = root
+    root.size = size
     root.input = {}
     root.focus = nil
     root.mouse_hit = nil
@@ -43,7 +44,7 @@ root_event_proc :: proc(widget: ^Widget, event: any) {
         root.input.mouse.position = e.position
         root.previous_hover = root.hover
 
-        root.mouse_hit = recursive_hit_test(root, e.position)
+        root.mouse_hit = _recursive_hit_test(root, e.position)
 
         if !root.hover_captured {
             root.hover = root.mouse_hit

@@ -1,8 +1,11 @@
 package gui
 
+import "rect"
+
 @(thread_local) _current_widget: ^Widget
 
 Vec2 :: [2]f32
+Rect :: rect.Rect
 Color :: [4]f32
 
 Widget :: struct {
@@ -11,18 +14,25 @@ Widget :: struct {
     children: [dynamic]^Widget,
     position: Vec2,
     size: Vec2,
+    clip_children: bool,
     event_proc: proc(^Widget, any),
     draw_commands: [dynamic]Draw_Command,
+
+    // For rendering and hit detection
+    cached_global_position: Vec2,
+    cached_global_clip_rect: Rect,
 }
 
 init_widget :: proc(
     widget: ^Widget,
     position := Vec2{0, 0},
     size := Vec2{0, 0},
+    clip_children := false,
     event_proc: proc(^Widget, any) = nil,
 ) {
     widget.root = nil
     widget.parent = nil
+    widget.clip_children = clip_children
     clear(&widget.children)
     set_position(widget, position)
     set_size(widget, size)
@@ -138,24 +148,46 @@ release_focus :: proc(widget := _current_widget) {
 }
 
 hit_test :: proc(position: Vec2, widget := _current_widget) -> ^Widget {
-    return recursive_hit_test(widget.root, position)
+    return _recursive_hit_test(widget.root, position)
 }
 
-recursive_hit_test :: proc(widget: ^Widget, position: Vec2) -> ^Widget {
+
+
+_recursive_hit_test :: proc(widget: ^Widget, position: Vec2) -> ^Widget {
+    _update_cached_global_helpers(widget)
+
     #reverse for child in widget.children {
-        hit := recursive_hit_test(child, position - widget.position)
+        hit := _recursive_hit_test(child, position)
         if hit != nil {
             return hit
         }
     }
-    if widget_contains_vec2(widget, position) {
+
+    hit_box := rect.intersection(
+        widget.cached_global_clip_rect,
+        {widget.cached_global_position, widget.size},
+    )
+
+    if rect.contains(hit_box, position, include_borders = false) {
         return widget
     }
+
     return nil
 }
 
-widget_contains_vec2 :: proc(widget: ^Widget, point: Vec2) -> bool {
-    assert(widget.size.x >= 0 && widget.size.y >= 0)
-    return point.x >= widget.position.x && point.x <= widget.position.x + widget.size.x &&
-           point.y >= widget.position.y && point.y <= widget.position.y + widget.size.y
+_update_cached_global_helpers :: proc(widget: ^Widget) {
+    if widget.parent != nil {
+        widget.cached_global_position = widget.parent.cached_global_position + widget.position
+        if widget.clip_children {
+            widget.cached_global_clip_rect = rect.intersection(
+                widget.parent.cached_global_clip_rect,
+                {widget.cached_global_position, widget.size},
+            )
+        } else {
+            widget.cached_global_clip_rect = widget.parent.cached_global_clip_rect
+        }
+    } else {
+        widget.cached_global_position = widget.position
+        widget.cached_global_clip_rect = {widget.position, widget.size}
+    }
 }

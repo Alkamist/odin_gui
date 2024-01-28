@@ -41,7 +41,7 @@ main :: proc() {
     defer destroy_window(&window)
 
     widgets.init_button(&button1,
-        position = {50, 50},
+        position = {20, 20},
         event_proc = proc(widget: ^gui.Widget, event: any) {
             button := cast(^widgets.Button)widget
             switch e in event {
@@ -59,7 +59,7 @@ main :: proc() {
     defer widgets.destroy_button(&button1)
 
     widgets.init_button(&button2,
-        position = {50, 50},
+        position = {20, 20},
         event_proc = proc(widget: ^gui.Widget, event: any) {
             button := cast(^widgets.Button)widget
             switch e in event {
@@ -77,7 +77,7 @@ main :: proc() {
     defer widgets.destroy_button(&button2)
 
     widgets.init_slider(&slider,
-        position = {50, 50},
+        position = {20, 20},
     )
     defer widgets.destroy_slider(&slider)
 
@@ -85,7 +85,7 @@ main :: proc() {
     gui.add_children(&button1, {&button2})
     gui.add_children(&button2, {&slider})
 
-    gui.open(&window.root)
+    open_window(&window)
     for window_is_open(&window) {
         update()
     }

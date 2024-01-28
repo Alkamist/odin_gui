@@ -32,21 +32,16 @@ init_window :: proc(
         user_data = window,
         event_proc = window_event_proc,
     )
-    gui.init_root(&window.root)
+    gui.init_root(&window.root, size)
+
     window.background_color = background_color
     window.root.backend.user_data = window
-    window.root.backend.open = proc(backend: ^gui.Backend) {
-        window := cast(^Window)backend.user_data
-        wnd.open(&window.backend_window)
-    }
-    window.root.backend.close = proc(backend: ^gui.Backend) {
-        window := cast(^Window)backend.user_data
-        wnd.close(&window.backend_window)
-    }
+
     window.root.backend.redisplay = proc(backend: ^gui.Backend) {
         window := cast(^Window)backend.user_data
         wnd.display(&window.backend_window)
     }
+
     window.root.backend.render_draw_command = proc(backend: ^gui.Backend, command: gui.Draw_Command) {
         window := cast(^Window)backend.user_data
         ctx := window.nvg_ctx
@@ -56,6 +51,8 @@ init_window :: proc(
             nvg.Rect(ctx, c.position.x, c.position.y, c.size.x, c.size.y)
             nvg.FillColor(ctx, c.color)
             nvg.Fill(ctx)
+        case gui.Clip_Drawing_Command:
+            nvg.Scissor(ctx, c.position.x, c.position.y, c.size.x, c.size.y)
         }
     }
 }
@@ -63,6 +60,14 @@ init_window :: proc(
 destroy_window :: proc(window: ^Window) {
     gui.destroy_root(&window.root)
     wnd.destroy(&window.backend_window)
+}
+
+open_window :: proc(window: ^Window) {
+    wnd.open(&window.backend_window)
+}
+
+close_window :: proc(window: ^Window) {
+    wnd.close(&window.backend_window)
 }
 
 window_is_open :: proc(window: ^Window) -> bool {
@@ -99,7 +104,7 @@ window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
 
         nvg.BeginFrame(window.nvg_ctx, size.x, size.y, wnd.content_scale(backend_window))
 
-        gui.render_draw_commands(&window.root, window.root.position)
+        gui.render_draw_commands(&window.root)
 
         nvg.EndFrame(window.nvg_ctx)
 
