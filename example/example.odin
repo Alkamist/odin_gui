@@ -5,10 +5,10 @@ import "core:mem"
 import "../../gui"
 import "../widgets"
 
-main_window: gui.Window
-test_button: widgets.Button
-test_button2: widgets.Button
-test_slider: widgets.Slider
+window: Window
+button1: widgets.Button
+button2: widgets.Button
+slider: widgets.Slider
 
 main :: proc() {
     when ODIN_DEBUG {
@@ -33,70 +33,60 @@ main :: proc() {
         }
     }
 
-    gui.init_window(&main_window,
+    init_window(&window,
         position = {50, 50},
-        background_color = gui.rgb(71, 75, 82),
+        size = {400, 300},
+        background_color = {0.2, 0.2, 0.2, 1},
     )
-    defer gui.destroy_window(&main_window)
+    defer destroy_window(&window)
 
-    widgets.init_button(&test_button,
+    widgets.init_button(&button1,
         position = {50, 50},
-        size = {120, 32},
-        color = gui.rgb(70, 74, 81),
-        event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
+        event_proc = proc(widget: ^gui.Widget, event: any) {
             button := cast(^widgets.Button)widget
             switch e in event {
+            case gui.Mouse_Move_Event:
+                if button.is_down {
+                    gui.set_position(button, button.position + e.delta)
+                    gui.redraw()
+                }
             case widgets.Button_Click_Event:
                 fmt.println("Clicked 1")
-            case gui.Mouse_Move_Event:
-                if button.is_down {
-                    button.position += e.delta
-                    gui.redraw()
-                }
             }
-            return widgets.button_event_proc(widget, event)
+            widgets.button_event_proc(button, event)
         },
     )
-    defer widgets.destroy_button(&test_button)
+    defer widgets.destroy_button(&button1)
 
-    widgets.init_button(&test_button2,
+    widgets.init_button(&button2,
         position = {50, 50},
-        size = {120, 32},
-        color = gui.rgb(70, 74, 81),
-        event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
+        event_proc = proc(widget: ^gui.Widget, event: any) {
             button := cast(^widgets.Button)widget
             switch e in event {
-            case widgets.Button_Click_Event:
-                fmt.println("Clicked 2")
             case gui.Mouse_Move_Event:
                 if button.is_down {
-                    button.position += e.delta
+                    gui.set_position(button, button.position + e.delta)
                     gui.redraw()
                 }
+            case widgets.Button_Click_Event:
+                fmt.println("Clicked 2")
             }
-            return widgets.button_event_proc(widget, event)
+            widgets.button_event_proc(button, event)
         },
     )
-    defer widgets.destroy_button(&test_button2)
+    defer widgets.destroy_button(&button2)
 
-    widgets.init_slider(&test_slider,
-        position = {10, 200},
-        event_proc = proc(widget: ^gui.Widget, event: any) -> bool {
-            slider := cast(^widgets.Slider)widget
-            switch e in event {
-            case widgets.Slider_Value_Change_Event:
-                gui.set_position(&test_button2, test_button2.position + {e.delta * 200.0, 0})
-            }
-            return widgets.slider_event_proc(widget, event)
-        },
+    widgets.init_slider(&slider,
+        position = {50, 50},
     )
-    defer widgets.destroy_slider(&test_slider)
+    defer widgets.destroy_slider(&slider)
 
-    gui.add_children(&test_button, {&test_button2})
-    gui.add_children(&main_window.root, {&test_button, &test_slider})
+    gui.add_children(&window.root, {&button1})
+    gui.add_children(&button1, {&button2})
+    gui.add_children(&button2, {&slider})
 
-    gui.open_window(&main_window)
-    for gui.window_is_open(&main_window) {
-        gui.update()
+    gui.open(&window.root)
+    for window_is_open(&window) {
+        update()
     }
 }

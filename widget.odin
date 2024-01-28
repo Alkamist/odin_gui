@@ -1,21 +1,27 @@
 package gui
 
-import "window"
+@(thread_local) _current_widget: ^Widget
+
+Vec2 :: [2]f32
+Color :: [4]f32
 
 Widget :: struct {
+    root: ^Root,
     parent: ^Widget,
     children: [dynamic]^Widget,
     position: Vec2,
     size: Vec2,
-    event_proc: proc(^Widget, any) -> bool,
+    event_proc: proc(^Widget, any),
+    draw_commands: [dynamic]Draw_Command,
 }
 
 init_widget :: proc(
     widget: ^Widget,
     position := Vec2{0, 0},
     size := Vec2{0, 0},
-    event_proc: proc(^Widget, any) -> bool = nil,
+    event_proc: proc(^Widget, any) = nil,
 ) {
+    widget.root = nil
     widget.parent = nil
     clear(&widget.children)
     set_position(widget, position)
@@ -25,10 +31,22 @@ init_widget :: proc(
 
 destroy_widget :: proc(widget: ^Widget) {
     delete(widget.children)
+    delete(widget.draw_commands)
 }
 
-is_root :: proc(widget: ^Widget) -> bool {
-    return widget.parent == nil
+send_event :: proc(widget: ^Widget, event: any) {
+    _current_widget = widget
+    if widget.event_proc != nil {
+        widget->event_proc(event)
+    }
+    _current_widget = widget
+}
+
+send_event_recursively :: proc(widget: ^Widget, event: any) {
+    send_event(widget, event)
+    for child in widget.children {
+        send_event_recursively(child, event)
+    }
 }
 
 add_children :: proc(widget: ^Widget, children: []^Widget) {
@@ -37,6 +55,7 @@ add_children :: proc(widget: ^Widget, children: []^Widget) {
         if child.parent != nil {
             remove_child(child.parent, child)
         }
+        child.root = widget.root
         child.parent = widget
     }
 }
@@ -48,13 +67,14 @@ remove_child :: proc(widget: ^Widget, child: ^Widget) {
             break
         }
     }
+    child.root = nil
     child.parent = nil
 }
 
 set_position :: proc(widget: ^Widget, position: Vec2) {
     previous_position := widget.position
-    widget.position = position
-    if widget.position != previous_position {
+    if position != previous_position {
+        widget.position = position
         send_event(widget, Move_Event{
             position = widget.position,
             delta = widget.position - previous_position,
@@ -64,8 +84,8 @@ set_position :: proc(widget: ^Widget, position: Vec2) {
 
 set_size :: proc(widget: ^Widget, size: Vec2) {
     previous_size := widget.size
-    widget.size = size
-    if widget.size != previous_size {
+    if size != previous_size {
+        widget.size = size
         send_event(widget, Resize_Event{
             size = widget.size,
             delta = widget.size - previous_size,
@@ -73,92 +93,57 @@ set_size :: proc(widget: ^Widget, size: Vec2) {
     }
 }
 
-send_event :: proc(widget: ^Widget, event: any) -> (was_consumed: bool) {
-    if widget.event_proc != nil {
-        return widget->event_proc(event)
-    }
-    return false
+global_mouse_position :: proc(widget := _current_widget) -> Vec2 {
+    return widget.root.input.mouse.position
 }
 
-send_event_recursively :: proc(widget: ^Widget, event: any) -> (was_consumed: bool) {
-    if send_event(widget, event) {
-        return true
-    }
-    switch e in event {
-    case Draw_Event:
-        translate_path(widget.position)
-        defer translate_path(-widget.position)
-        for child in widget.children {
-            if send_event_recursively(child, event) {
-                return true
-            }
-        }
-    case:
-        for child in widget.children {
-            if send_event_recursively(child, event) {
-                return true
-            }
-        }
-    }
-    return false
+mouse_position :: proc(widget := _current_widget) -> Vec2 {
+    return widget.root.input.mouse.position - widget.position
 }
 
-global_position :: proc(widget: ^Widget) -> Vec2 {
-    if is_root(widget) {
-        return widget.position
-    }
-    return global_position(widget.parent) + widget.position
+mouse_down :: proc(button: Mouse_Button, widget := _current_widget) -> bool {
+    return widget.root.input.mouse.button_down[button]
 }
 
-bounds :: proc(widget: ^Widget) -> Rect {
-    return Rect{widget.position, widget.size}
+key_down :: proc(key: Keyboard_Key, widget := _current_widget) -> bool {
+    return widget.root.input.keyboard.key_down[key]
 }
 
-global_bounds :: proc(widget: ^Widget) -> Rect {
-    return Rect{global_position(widget), widget.size}
+current_focus :: proc(widget := _current_widget) -> ^Widget {
+    return widget.root.focus
 }
 
-widget_contains_vec2 :: proc(widget: ^Widget, point: Vec2) -> bool {
-    return contains(bounds(widget), point)
+current_mouse_hit :: proc(widget := _current_widget) -> ^Widget {
+    return widget.root.mouse_hit
 }
 
-hit_test :: proc(position: Vec2) -> ^Widget {
-    return _hit_test_from_root(&_current_window.root, position)
+current_hover :: proc(widget := _current_widget) -> ^Widget {
+    return widget.root.hover
 }
 
-current_focus :: proc() -> ^Widget {
-    return _current_window.focus
+capture_hover :: proc(widget := _current_widget) {
+    widget.root.hover_captured = true
 }
 
-current_mouse_hit :: proc() -> ^Widget {
-    return _current_window.mouse_hit
+release_hover :: proc(widget := _current_widget) {
+    widget.root.hover_captured = false
 }
 
-current_hover :: proc() -> ^Widget {
-    return _current_window.hover
+set_focus :: proc(focus: ^Widget, widget := _current_widget) {
+    widget.root.focus = focus
 }
 
-capture_hover :: proc() {
-    _current_window.hover_captured = true
+release_focus :: proc(widget := _current_widget) {
+    widget.root.focus = nil
 }
 
-release_hover :: proc() {
-    _current_window.hover_captured = false
+hit_test :: proc(position: Vec2, widget := _current_widget) -> ^Widget {
+    return recursive_hit_test(widget.root, position)
 }
 
-set_focus :: proc(widget: ^Widget) {
-    _current_window.focus = widget
-}
-
-release_focus :: proc() {
-    _current_window.focus = nil
-}
-
-
-
-_hit_test_from_root :: proc(widget: ^Widget, position: Vec2) -> ^Widget {
+recursive_hit_test :: proc(widget: ^Widget, position: Vec2) -> ^Widget {
     #reverse for child in widget.children {
-        hit := _hit_test_from_root(child, position - widget.position)
+        hit := recursive_hit_test(child, position - widget.position)
         if hit != nil {
             return hit
         }
@@ -167,4 +152,10 @@ _hit_test_from_root :: proc(widget: ^Widget, position: Vec2) -> ^Widget {
         return widget
     }
     return nil
+}
+
+widget_contains_vec2 :: proc(widget: ^Widget, point: Vec2) -> bool {
+    assert(widget.size.x >= 0 && widget.size.y >= 0)
+    return point.x >= widget.position.x && point.x <= widget.position.x + widget.size.x &&
+           point.y >= widget.position.y && point.y <= widget.position.y + widget.size.y
 }

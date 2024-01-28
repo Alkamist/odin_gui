@@ -54,7 +54,29 @@ Keyboard_Key :: enum {
     Pad_Decimal, Print_Screen,
 }
 
-Draw_Event :: struct {}
+Event :: union {
+    Display_Event,
+    Update_Event,
+    Open_Event ,
+    Close_Event,
+    Gain_Focus_Event ,
+    Lose_Focus_Event ,
+    Show_Event ,
+    Hide_Event ,
+    Move_Event,
+    Resize_Event,
+    Mouse_Enter_Event,
+    Mouse_Exit_Event,
+    Mouse_Move_Event,
+    Mouse_Scroll_Event,
+    Mouse_Press_Event,
+    Mouse_Release_Event,
+    Key_Press_Event,
+    Key_Release_Event,
+    Text_Event,
+}
+
+Display_Event :: struct {}
 Update_Event :: struct {}
 Open_Event :: struct {}
 Close_Event :: struct {}
@@ -105,10 +127,6 @@ Key_Press_Event :: struct {
     key: Keyboard_Key,
 }
 
-Key_Repeat_Event :: struct {
-    key: Keyboard_Key,
-}
-
 Key_Release_Event :: struct {
     key: Keyboard_Key,
 }
@@ -117,9 +135,8 @@ Text_Event :: struct {
     text: rune,
 }
 
-send_event :: proc(window: ^Window, event: $T) -> (was_consumed: bool) {
+send_event :: proc(window: ^Window, event: Event) {
     if window.event_proc != nil {
-        return window->event_proc(event)
+        window->event_proc(event)
     }
-    return false
 }

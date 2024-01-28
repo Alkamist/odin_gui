@@ -19,7 +19,7 @@ init_button :: proc(
     size := Vec2{96, 32},
     color := Color{0.5, 0.5, 0.5, 1},
     mouse_button := gui.Mouse_Button.Left,
-    event_proc: proc(^gui.Widget, any) -> bool = button_event_proc,
+    event_proc: proc(^gui.Widget, any) = button_event_proc,
 ) {
     gui.init_widget(
         button,
@@ -35,10 +35,13 @@ destroy_button :: proc(button: ^Button) {
     gui.destroy_widget(button)
 }
 
-button_event_proc :: proc(widget: ^gui.Widget, event: any) -> bool {
+button_event_proc :: proc(widget: ^gui.Widget, event: any) {
     button := cast(^Button)widget
 
     switch e in event {
+    case gui.Open_Event:
+        gui.redraw()
+
     case gui.Mouse_Enter_Event:
         gui.redraw()
 
@@ -66,33 +69,11 @@ button_event_proc :: proc(widget: ^gui.Widget, event: any) -> bool {
         gui.redraw()
 
     case gui.Draw_Event:
-        pixel := gui.pixel_distance()
-
-        // Shadow
-        drop_shadow(button.position, button.size, 4, 2, 0.2)
-
-        // Body
-        fill_rounded_rect(button.position, button.size, 4, button.color)
-        outline_rounded_rect(button.position, button.size, 4, {0, 0, 0, 0.4})
-        outline_rounded_rect(button.position + pixel, button.size - pixel * 2.0, 4, {1, 1, 1, 0.1})
-
-        // Gradient
-        gui.begin_path()
-        gui.path_rounded_rect(button.position, button.size, 4)
-        gui.fill_path_paint(gui.linear_gradient(
-            button.position + {0, button.size.y},
-            button.position,
-            {0, 0, 0, 0.2},
-            {0, 0, 0, 0},
-        ))
-
-        // Hover and press highlights
+        gui.draw_rect({0, 0}, button.size, {0.4, 0.4, 0.4, 1})
         if button.is_down {
-            fill_rounded_rect(button.position, button.size, 4, {0, 0, 0, 0.15})
+            gui.draw_rect({0, 0}, button.size, {0, 0, 0, 0.2})
         } else if gui.current_hover() == button {
-            fill_rounded_rect(button.position, button.size, 4, {1, 1, 1, 0.025})
+            gui.draw_rect({0, 0}, button.size, {1, 1, 1, 0.05})
         }
     }
-
-    return false
 }

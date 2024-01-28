@@ -11,7 +11,7 @@ Slider :: struct {
     handle_length: f32,
     value_when_grabbed: f32,
     global_mouse_position_when_grabbed: Vec2,
-    precise_key: gui.Keyboard_Key,
+    precision_key: gui.Keyboard_Key,
 }
 
 Slider_Grab_Event :: struct {}
@@ -30,7 +30,7 @@ init_slider :: proc(
     min_value: f32 = 0,
     max_value: f32 = 1,
     handle_length: f32 = 16,
-    event_proc: proc(^gui.Widget, any) -> bool = slider_event_proc,
+    event_proc: proc(^gui.Widget, any) = slider_event_proc,
 ) {
     gui.init_widget(
         slider,
@@ -38,7 +38,7 @@ init_slider :: proc(
         size = size,
         event_proc = event_proc,
     )
-    slider.precise_key = .Left_Shift
+    slider.precision_key = .Left_Shift
     slider.handle_length = handle_length
     slider.min_value = min_value
     slider.max_value = max_value
@@ -72,8 +72,8 @@ set_slider_max_value :: proc(slider: ^Slider, max_value: f32) {
 
 slider_handle_position :: proc(slider: ^Slider) -> Vec2 {
     return {
-        slider.position.x + (slider.size.x - slider.handle_length) * (slider.value - slider.min_value) / (slider.max_value - slider.min_value),
-        slider.position.y,
+        (slider.size.x - slider.handle_length) * (slider.value - slider.min_value) / (slider.max_value - slider.min_value),
+        0,
     }
 }
 
@@ -81,10 +81,13 @@ slider_handle_size :: proc(slider: ^Slider) -> Vec2 {
     return {slider.handle_length, slider.size.y}
 }
 
-slider_event_proc :: proc(widget: ^gui.Widget, event: any) -> bool {
+slider_event_proc :: proc(widget: ^gui.Widget, event: any) {
     slider := cast(^Slider)widget
 
     switch e in event {
+    case gui.Open_Event:
+        gui.redraw()
+
     case gui.Mouse_Enter_Event:
         gui.redraw()
 
@@ -96,18 +99,20 @@ slider_event_proc :: proc(widget: ^gui.Widget, event: any) -> bool {
         slider.value_when_grabbed = slider.value
         slider.global_mouse_position_when_grabbed = gui.global_mouse_position()
         gui.capture_hover()
+        gui.set_focus(slider)
         gui.send_event(slider, Slider_Grab_Event{})
         gui.redraw()
 
     case gui.Mouse_Release_Event:
         slider.is_grabbed = false
         gui.release_hover()
+        gui.release_focus()
         gui.send_event(slider, Slider_Release_Event{})
         gui.redraw()
 
     case gui.Mouse_Move_Event:
         if slider.is_grabbed {
-            sensitivity: f32 = gui.key_down(slider.precise_key) ? 0.15 : 1.0
+            sensitivity: f32 = gui.key_down(slider.precision_key) ? 0.15 : 1.0
             global_mouse_position := gui.global_mouse_position()
             grab_delta := global_mouse_position.x - slider.global_mouse_position_when_grabbed.x
             set_slider_value(
@@ -117,30 +122,29 @@ slider_event_proc :: proc(widget: ^gui.Widget, event: any) -> bool {
             gui.redraw()
         }
 
-    case gui.Window_Key_Press_Event:
-        if e.key == slider.precise_key {
+    case gui.Key_Press_Event:
+        if e.key == slider.precision_key {
             slider.value_when_grabbed = slider.value
             slider.global_mouse_position_when_grabbed = gui.global_mouse_position()
         }
 
-    case gui.Window_Key_Release_Event:
-        if e.key == slider.precise_key {
+    case gui.Key_Release_Event:
+        if e.key == slider.precision_key {
             slider.value_when_grabbed = slider.value
             slider.global_mouse_position_when_grabbed = gui.global_mouse_position()
         }
 
     case gui.Draw_Event:
-        gui.begin_path()
-        gui.path_rounded_rect(slider.position, slider.size, 3)
-        gui.fill_path(gui.rgb(31, 32, 34))
+        gui.draw_rect({0, 0}, slider.size, {0.05, 0.05, 0.05, 1})
 
         handle_position := slider_handle_position(slider)
         handle_size := slider_handle_size(slider)
 
-        gui.begin_path()
-        gui.path_rounded_rect(handle_position, handle_size, 3)
-        gui.fill_path(gui.lighten(gui.rgb(49, 51, 56), 0.3))
+        gui.draw_rect(handle_position, handle_size, {0.4, 0.4, 0.4, 1})
+        if slider.is_grabbed {
+            gui.draw_rect(handle_position, handle_size, {0, 0, 0, 0.2})
+        } else if gui.current_hover() == slider {
+            gui.draw_rect(handle_position, handle_size, {1, 1, 1, 0.05})
+        }
     }
-
-    return false
 }

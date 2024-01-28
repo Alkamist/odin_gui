@@ -2,17 +2,12 @@ package window
 
 import "core:c"
 import "core:fmt"
-import "core:math"
 import "core:strings"
 import "core:runtime"
 import "core:intrinsics"
 import utf8 "core:unicode/utf8"
-import gl "vendor:OpenGL"
-import nvg "vendor:nanovg"
-import nvg_gl "vendor:nanovg/gl"
 import "pugl"
 
-_open_gl_is_loaded: bool
 @(thread_local) _odin_context: runtime.Context
 @(thread_local) _world: ^pugl.World
 @(thread_local) _window_count: int
@@ -34,20 +29,16 @@ Window :: struct {
     last_size: Vec2,
     last_mouse_position: Vec2,
 
-    background_color: Color,
-
     user_data: rawptr,
-    event_proc: proc(^Window, any) -> bool,
+    event_proc: proc(^Window, Event),
 
     close_requested: bool,
 
     timer_id: uintptr,
     view: ^pugl.View,
-    ctx: ^nvg.Context,
-
-    mouse_button_states: [Mouse_Button]bool,
-    key_states: [Keyboard_Key]bool,
 }
+
+gl_set_proc_address :: pugl.gl_set_proc_address
 
 update :: proc() {
     _odin_context = context
@@ -64,7 +55,6 @@ init :: proc(
     size := Vec2{400, 300},
     min_size: Maybe(Vec2) = nil,
     max_size: Maybe(Vec2) = nil,
-    background_color := Color{0, 0, 0, 0},
     swap_interval := 0,
     dark_mode := true,
     is_visible := true,
@@ -72,13 +62,14 @@ init :: proc(
     double_buffer := true,
     child_kind := Child_Kind.None,
     parent_handle: Native_Handle = nil,
+    user_data: rawptr = nil,
+    event_proc: proc(^Window, Event) = nil,
 ) {
     window.title = title
     window.last_position = position
     window.last_size = size
     window.min_size = min_size
     window.max_size = max_size
-    window.background_color = background_color
     window.swap_interval = swap_interval
     window.dark_mode = dark_mode
     window.last_visibility = is_visible
@@ -86,12 +77,8 @@ init :: proc(
     window.double_buffer = double_buffer
     window.child_kind = child_kind
     window.parent_handle = parent_handle
-    for button in Mouse_Button {
-        window.mouse_button_states[button] = false
-    }
-    for key in Keyboard_Key {
-        window.key_states[key] = false
-    }
+    window.user_data = user_data
+    window.event_proc = event_proc
 }
 
 destroy :: proc(window: ^Window) {
@@ -175,12 +162,6 @@ open :: proc(window: ^Window) -> bool {
     _window_count += 1
 
     pugl.EnterContext(view)
-    if !_open_gl_is_loaded {
-        gl.load_up_to(3, 3, pugl.gl_set_proc_address)
-        _open_gl_is_loaded = true
-    }
-
-    window.ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
     send_event(window, Open_Event{})
 
     return true
@@ -196,7 +177,7 @@ close :: proc(window: ^Window) {
     window.close_requested = true
 }
 
-redraw :: proc(window: ^Window) {
+display :: proc(window: ^Window) {
     pugl.PostRedisplay(window.view)
 }
 
@@ -294,248 +275,11 @@ set_clipboard :: proc(window: ^Window, data: string) {
     pugl.SetClipboard(window.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1)
 }
 
-mouse_down :: proc(window: ^Window, button: Mouse_Button) -> bool {
-    return window.mouse_button_states[button]
-}
-
-key_down :: proc(window: ^Window, key: Keyboard_Key) -> bool {
-    return window.key_states[key]
-}
-
-
-//====================================================================================
-// Vector Graphics
-//====================================================================================
-
-
-Paint :: nvg.Paint
-
-Path_Winding :: enum {
-    Positive,
-    Negative,
-}
-
-Font :: struct {
-    name: string,
-    data: []byte,
-}
-
-Glyph :: struct {
-    rune_position: int,
-    left: f32,
-    right: f32,
-    draw_offset_x: f32,
-}
-
-solid_paint :: proc(color: Color) -> Paint {
-    paint: Paint
-    nvg.TransformIdentity(&paint.xform)
-    paint.radius = 0.0
-    paint.feather = 1.0
-    paint.innerColor = color
-    paint.outerColor = color
-    return paint
-}
-
-transform_identity :: proc(t: ^[6]f32) {
-    t[0] = 1.0
-    t[1] = 0.0
-    t[2] = 0.0
-    t[3] = 1.0
-    t[4] = 0.0
-    t[5] = 0.0
-}
-
-transform_rotate :: proc(t: ^[6]f32, angle: f32) {
-    cs := math.cos(angle)
-    sn := math.sin(angle)
-    t[0] = cs
-    t[1] = sn
-    t[2] = -sn
-    t[3] = cs
-    t[4] = 0.0
-    t[5] = 0.0
-}
-
-linear_gradient :: proc(start, finish: Vec2, inner_color, outer_color: Color) -> Paint {
-    large :: 1e5
-
-    dx, dy, d: f32
-
-    // Calculate transform aligned to the line
-    dx = finish.x - start.x
-    dy = finish.y - start.y
-    d = math.sqrt(dx * dx + dy * dy)
-
-    if d > 0.0001 {
-        dx /= d
-        dy /= d
-    } else {
-        dx = 0
-        dy = 1
-    }
-
-    paint: Paint
-
-    paint.xform[0] = dy
-    paint.xform[1] = -dx
-    paint.xform[2] = dx
-    paint.xform[3] = dy
-    paint.xform[4] = start.x - dx * large
-    paint.xform[5] = start.y - dy * large
-
-    paint.extent[0] = large
-    paint.extent[1] = large + d * 0.5
-
-    paint.radius = 0.0
-
-    paint.feather = max(1.0, d)
-
-    paint.innerColor = inner_color
-    paint.outerColor = outer_color
-
-    return paint
-}
-
-radial_gradient :: proc(center: Vec2, inner_radius, outer_radius: f32, inner_color, outer_color: Color) -> Paint {
-    radius := (inner_radius + outer_radius) * 0.5
-    feather := (outer_radius - inner_radius)
-
-    paint: Paint
-
-    transform_identity(&paint.xform)
-
-    paint.xform[4] = center.x
-    paint.xform[5] = center.y
-
-    paint.extent[0] = radius
-    paint.extent[1] = radius
-
-    paint.radius = radius
-
-    paint.feather = max(1.0, feather)
-
-    paint.innerColor = inner_color
-    paint.outerColor = outer_color
-
-    return paint
-}
-
-box_gradient :: proc(position, size: Vec2, radius, feather: f32, inner_color, outer_color: Color) -> Paint {
-    paint: Paint
-
-    transform_identity(&paint.xform)
-
-    paint.xform[4] = position.x + size.x * 0.5
-    paint.xform[5] = position.y + size.y * 0.5
-
-    paint.extent[0] = size.x * 0.5
-    paint.extent[1] = size.y * 0.5
-
-    paint.radius = radius
-
-    paint.feather = max(1.0, feather)
-
-    paint.innerColor = inner_color
-    paint.outerColor = outer_color
-
-    return paint
-}
-
-image_pattern :: proc(center, size: Vec2, angle: f32, image: int, alpha: f32) -> Paint {
-    paint: Paint
-
-    transform_rotate(&paint.xform, angle)
-
-    paint.xform[4] = center.x
-    paint.xform[5] = center.y
-
-    paint.extent[0] = size.x
-    paint.extent[1] = size.y
-
-    paint.image = image
-
-    paint.innerColor = {1, 1, 1, alpha}
-    paint.outerColor = {1, 1, 1, alpha}
-
-    return paint
-}
-
-begin_path :: proc(window: ^Window) {
-    nvg.BeginPath(window.ctx)
-}
-
-close_path :: proc(window: ^Window) {
-    nvg.ClosePath(window.ctx)
-}
-
-path_move_to :: proc(window: ^Window, position: Vec2) {
-    nvg.MoveTo(window.ctx, position.x, position.y)
-}
-
-path_line_to :: proc(window: ^Window, position: Vec2) {
-    nvg.LineTo(window.ctx, position.x, position.y)
-}
-
-path_arc_to :: proc(window: ^Window, p0, p1: Vec2, radius: f32) {
-    nvg.ArcTo(window.ctx, p0.x, p0.y, p1.x, p1.y, radius)
-}
-
-path_circle :: proc(window: ^Window, center: Vec2, radius: f32, winding: Path_Winding = .Positive) {
-    nvg.Circle(window.ctx, center.x, center.y, radius)
-    nvg.PathWinding(window.ctx, _path_winding_to_nvg_winding(winding))
-}
-
-path_rect :: proc(window: ^Window, position, size: Vec2, winding: Path_Winding = .Positive) {
-    nvg.Rect(window.ctx, position.x, position.y, size.x, size.y)
-    nvg.PathWinding(window.ctx, _path_winding_to_nvg_winding(winding))
-}
-
-path_rounded_rect_varying :: proc(window: ^Window, position, size: Vec2, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius: f32, winding: Path_Winding = .Positive) {
-    nvg.RoundedRectVarying(window.ctx, position.x, position.y, size.x, size.y, top_left_radius, top_right_radius, bottom_right_radius, bottom_left_radius)
-    nvg.PathWinding(window.ctx, _path_winding_to_nvg_winding(winding))
-}
-
-path_rounded_rect :: proc(window: ^Window, position, size: Vec2, radius: f32, winding: Path_Winding = .Positive) {
-    path_rounded_rect_varying(window, position, size, radius, radius, radius, radius, winding)
-}
-
-fill_path_paint :: proc(window: ^Window, paint: Paint) {
-    nvg.FillPaint(window.ctx, paint)
-    nvg.Fill(window.ctx)
-}
-
-fill_path :: proc(window: ^Window, color: Color) {
-    fill_path_paint(window, solid_paint(color))
-}
-
-stroke_path_paint :: proc(window: ^Window, paint: Paint, width := f32(1)) {
-    nvg.StrokeWidth(window.ctx, width)
-    nvg.StrokePaint(window.ctx, paint)
-    nvg.Stroke(window.ctx)
-}
-
-stroke_path :: proc(window: ^Window, color: Color, width := f32(1)) {
-    stroke_path_paint(window, solid_paint(color), width)
-}
-
-translate_path :: proc(window: ^Window, amount: Vec2) {
-    nvg.Translate(window.ctx, amount.x, amount.y)
-}
-
 
 //====================================================================================
 // Private
 //====================================================================================
 
-
-_path_winding_to_nvg_winding :: proc(winding: Path_Winding) -> nvg.Winding {
-    switch winding {
-    case .Negative: return .CW
-    case .Positive: return .CCW
-    }
-    return .CW
-}
 
 _generate_id :: proc "contextless" () -> u64 {
     @(static) id: u64
@@ -555,7 +299,6 @@ _force_close :: proc(window: ^Window) {
     window.last_visibility = pugl.GetVisible(view)
 
     send_event(window, Close_Event{})
-    nvg_gl.Destroy(window.ctx)
 
     pugl.Unrealize(view)
     pugl.FreeView(view)
@@ -577,18 +320,9 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
     #partial switch event.type {
     case .EXPOSE:
-        size := size(window)
-        gl.Viewport(0, 0, i32(size.x), i32(size.y))
-        c := window.background_color
-        gl.ClearColor(c.r, c.g, c.b, c.a)
-        gl.Clear(gl.COLOR_BUFFER_BIT)
-        nvg.BeginFrame(window.ctx, size.x, size.y, 1)
-        send_event(window, Draw_Event{})
-        nvg.EndFrame(window.ctx)
+        send_event(window, Display_Event{})
 
     case .UPDATE:
-        pugl.EnterContext(view)
-
         is_visible := pugl.GetVisible(view)
         if is_visible != window.last_visibility {
             if is_visible {
@@ -616,8 +350,6 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .CONFIGURE:
         event := event.configure
 
-        pugl.EnterContext(view)
-
         position := Vec2{f32(event.x), f32(event.y)}
         size := Vec2{f32(event.width), f32(event.height)}
 
@@ -641,8 +373,6 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .MOTION:
         event := event.motion
 
-        pugl.EnterContext(view)
-
         position := Vec2{f32(event.x), f32(event.y)}
 
         send_event(window, Mouse_Move_Event{
@@ -654,29 +384,24 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
     case .POINTER_IN:
         event := event.crossing
-        pugl.EnterContext(view)
         send_event(window, Mouse_Enter_Event{
             position = Vec2{f32(event.x), f32(event.y)},
         })
 
     case .POINTER_OUT:
         event := event.crossing
-        pugl.EnterContext(view)
         send_event(window, Mouse_Exit_Event{
             position = Vec2{f32(event.x), f32(event.y)},
         })
 
     case .FOCUS_IN:
-        pugl.EnterContext(view)
         send_event(window, Gain_Focus_Event{})
 
     case .FOCUS_OUT:
-        pugl.EnterContext(view)
         send_event(window, Lose_Focus_Event{})
 
     case .SCROLL:
         event := &event.scroll
-        pugl.EnterContext(view)
         send_event(window, Mouse_Scroll_Event{
             position = window.last_mouse_position,
             amount = {f32(event.dx), f32(event.dy)},
@@ -684,52 +409,32 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
     case .BUTTON_PRESS:
         event := &event.button
-        pugl.EnterContext(view)
-        button := _pugl_button_to_mouse_button(event.button)
-        window.mouse_button_states[button] = true
         send_event(window, Mouse_Press_Event{
             position = window.last_mouse_position,
-            button = button,
+            button = _pugl_button_to_mouse_button(event.button),
         })
 
     case .BUTTON_RELEASE:
         event := &event.button
-        pugl.EnterContext(view)
-        button := _pugl_button_to_mouse_button(event.button)
-        window.mouse_button_states[button] = false
         send_event(window, Mouse_Release_Event{
             position = window.last_mouse_position,
-            button = button,
+            button = _pugl_button_to_mouse_button(event.button),
         })
 
     case .KEY_PRESS:
         event := &event.key
-        pugl.EnterContext(view)
-        key := _pugl_key_event_to_keyboard_key(event)
-        was_already_down := window.key_states[key]
-        window.key_states[key] = true
-        if was_already_down {
-            send_event(window, Key_Repeat_Event{
-                key = key,
-            })
-        } else {
-            send_event(window, Key_Press_Event{
-                key = key,
-            })
-        }
+        send_event(window, Key_Press_Event{
+            key = _pugl_key_event_to_keyboard_key(event),
+        })
 
     case .KEY_RELEASE:
         event := &event.key
-        pugl.EnterContext(view)
-        key := _pugl_key_event_to_keyboard_key(event)
-        window.key_states[key] = false
         send_event(window, Key_Release_Event{
-            key = key,
+            key = _pugl_key_event_to_keyboard_key(event),
         })
 
     case .TEXT:
         event := &event.text
-        pugl.EnterContext(view)
 
         // Filter out backspace, enter, tab, and escape.
         skip := false
