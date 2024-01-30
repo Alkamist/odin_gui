@@ -45,11 +45,12 @@ destroy_widget :: proc(widget: ^Widget) {
 }
 
 send_event :: proc(widget: ^Widget, event: any) {
+    previous_widget := _current_widget
     _current_widget = widget
     if widget.event_proc != nil {
         widget->event_proc(event)
     }
-    _current_widget = widget
+    _current_widget = previous_widget
 }
 
 send_event_recursively :: proc(widget: ^Widget, event: any) {
@@ -93,6 +94,7 @@ set_position :: proc(widget: ^Widget, position: Vec2) {
 }
 
 set_size :: proc(widget: ^Widget, size: Vec2) {
+    size := _vec2_abs(size)
     previous_size := widget.size
     if size != previous_size {
         widget.size = size
@@ -152,6 +154,10 @@ hit_test :: proc(position: Vec2, widget := _current_widget) -> ^Widget {
 }
 
 
+
+_vec2_abs :: proc(v: Vec2) -> Vec2 {
+    return {abs(v.x), abs(v.y)}
+}
 
 _recursive_hit_test :: proc(widget: ^Widget, position: Vec2) -> ^Widget {
     _update_cached_global_helpers(widget)

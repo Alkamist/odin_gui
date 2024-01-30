@@ -42,6 +42,9 @@ button_event_proc :: proc(widget: ^gui.Widget, event: any) {
     case gui.Open_Event:
         gui.redraw()
 
+    case gui.Resize_Event:
+        gui.redraw()
+
     case gui.Mouse_Enter_Event:
         gui.redraw()
 
