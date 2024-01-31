@@ -44,3 +44,167 @@ Input_State :: struct {
     mouse: Mouse_State,
     keyboard: Keyboard_State,
 }
+
+input_open :: proc(root: ^Root) {
+    send_global_event(root, Open_Event{})
+}
+
+input_close :: proc(root: ^Root) {
+    send_global_event(root, Close_Event{})
+}
+
+input_update :: proc(root: ^Root) {
+    send_global_event(root, Update_Event{})
+}
+
+input_resize :: proc(root: ^Root, size: Vec2) {
+    if size == root.size {
+        return
+    }
+    send_global_event(root, Resize_Event{
+        size,
+        size - root.size,
+    })
+    set_size(size, root)
+}
+
+input_mouse_enter :: proc(root: ^Root, position: Vec2) {
+    send_global_event(root, Mouse_Enter_Event{
+        position = position,
+    })
+}
+
+input_mouse_exit :: proc(root: ^Root, position: Vec2) {
+    send_global_event(root, Mouse_Exit_Event{
+        position = position,
+    })
+}
+
+input_mouse_move :: proc(root: ^Root, position: Vec2) {
+    if position == root.input.mouse.position {
+        return
+    }
+
+    delta := position - root.input.mouse.position
+
+    root.input.mouse.position = position
+    root.previous_hover = root.hover
+
+    root.mouse_hit = _recursive_hit_test(root, position)
+
+    if !root.hover_captured {
+        root.hover = root.mouse_hit
+    }
+
+    send_global_event(root, Mouse_Move_Event{
+        position = position,
+        delta = delta,
+    })
+
+    if root.hover != root.previous_hover {
+        if root.previous_hover != nil {
+            send_event(root.previous_hover, Mouse_Exit_Event{
+                position = position,
+            })
+        }
+        if root.hover != nil {
+            send_event(root.hover, Mouse_Enter_Event{
+                position = position,
+            })
+        }
+    }
+
+    if root.hover != nil {
+        send_event(root.hover, Mouse_Move_Event{
+            position = position,
+            delta = delta,
+        })
+    }
+}
+
+input_mouse_press :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
+    root.input.mouse.button_down[button] = true
+
+    send_global_event(root, Mouse_Press_Event{
+        position = position,
+        button = button,
+    })
+
+    if root.hover != nil {
+        send_event(root.hover, Mouse_Press_Event{
+            position = position,
+            button = button,
+        })
+    }
+}
+
+
+input_mouse_release :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
+    root.input.mouse.button_down[button] = false
+
+    send_global_event(root, Mouse_Release_Event{
+        position = position,
+        button = button,
+    })
+
+    if root.hover != nil {
+        send_event(root.hover, Mouse_Release_Event{
+            position = position,
+            button = button,
+        })
+    }
+}
+
+input_mouse_scroll :: proc(root: ^Root, position: Vec2, amount: Vec2) {
+    send_global_event(root, Mouse_Scroll_Event{
+        position = position,
+        amount = amount,
+    })
+
+    if root.hover != nil {
+        send_event(root.hover, Mouse_Scroll_Event{
+            position = position,
+            amount = amount,
+        })
+    }
+}
+
+input_key_press :: proc(root: ^Root, key: Keyboard_Key) {
+    root.input.keyboard.key_down[key] = true
+
+    send_global_event(root, Key_Press_Event{
+        key = key,
+    })
+
+    if root.focus != nil {
+        send_event(root.focus, Key_Press_Event{
+            key = key,
+        })
+    }
+}
+
+input_key_release :: proc(root: ^Root, key: Keyboard_Key) {
+    root.input.keyboard.key_down[key] = false
+
+    send_global_event(root, Key_Release_Event{
+        key = key,
+    })
+
+    if root.focus != nil {
+        send_event(root.focus, Key_Release_Event{
+            key = key,
+        })
+    }
+}
+
+input_text :: proc(root: ^Root, text: rune) {
+    send_global_event(root, Text_Event{
+        text = text,
+    })
+
+    if root.focus != nil {
+        send_event(root.focus, Text_Event{
+            text = text,
+        })
+    }
+}

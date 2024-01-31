@@ -16,7 +16,7 @@ Widget :: struct {
     size: Vec2,
     is_hidden: bool,
     clip_children: bool,
-    event_proc: proc(^Widget, any),
+    event_proc: proc(widget, subject: ^Widget, event: any),
     draw_commands: [dynamic]Draw_Command,
 
     // For rendering and hit detection
@@ -30,7 +30,7 @@ init_widget :: proc(
     size := Vec2{0, 0},
     visibility := true,
     clip_children := false,
-    event_proc: proc(^Widget, any) = nil,
+    event_proc: proc(^Widget, ^Widget, any) = nil,
 ) {
     widget.root = nil
     widget.parent = nil
@@ -52,19 +52,26 @@ destroy_widget :: proc(widget: ^Widget) {
 }
 
 send_event :: proc(widget: ^Widget, event: any) {
-    previous_widget := _current_widget
-    _current_widget = widget
-    if widget.event_proc != nil {
-        widget->event_proc(event)
-    }
-    _current_widget = previous_widget
+    send_event_subject(widget, widget, event)
 }
 
-send_event_recursively :: proc(widget: ^Widget, event: any) {
-    send_event(widget, event)
-    for child in widget.children {
-        send_event_recursively(child, event)
+send_global_event :: proc(widget: ^Widget, event: any) {
+    send_event_subject(widget, nil, event)
+}
+
+send_event_subject :: proc(widget, subject: ^Widget, event: any) {
+    previous_widget := _current_widget
+    _current_widget = widget
+
+    if widget.event_proc != nil {
+        widget->event_proc(subject, event)
     }
+
+    for child in widget.children {
+        send_event_subject(child, subject, event)
+    }
+
+    _current_widget = previous_widget
 }
 
 add_children :: proc(widget: ^Widget, children: []^Widget) {
@@ -115,14 +122,14 @@ set_size :: proc(size: Vec2, widget := _current_widget) {
 show :: proc(widget := _current_widget) {
     if widget.is_hidden {
         widget.is_hidden = false
-        send_event_recursively(widget, Show_Event{})
+        send_event(widget, Show_Event{})
     }
 }
 
 hide :: proc(widget := _current_widget) {
     if !widget.is_hidden {
         widget.is_hidden = true
-        send_event_recursively(widget, Hide_Event{})
+        send_event(widget, Hide_Event{})
     }
 }
 

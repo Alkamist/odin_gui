@@ -40,36 +40,40 @@ main :: proc() {
     )
     defer destroy_window(&window)
 
-    window.root.event_proc = proc(widget: ^gui.Widget, event: any) {
-        switch e in event {
-        case gui.Resize_Event:
-            gui.set_size(e.size, &grid)
-        }
-        gui.root_event_proc(widget, event)
-    }
-
     gui.init_widget(&grid,
         size = {400, 300},
-        event_proc = proc(widget: ^gui.Widget, event: any) {
-            switch e in event {
-            case gui.Open_Event:
-                gui.layout_grid(widget.children[:],
-                    shape = {3, 3},
-                    size = widget.size,
-                    spacing = {5, 5},
-                    padding = {10, 10},
-                )
-                gui.redraw()
-            case gui.Resize_Event:
-                gui.layout_grid(widget.children[:],
-                    shape = {3, 3},
-                    size = widget.size,
-                    spacing = {5, 5},
-                    padding = {10, 10},
-                )
-                gui.redraw()
-            case gui.Draw_Event:
-                gui.draw_rect({0, 0}, widget.size, {0.4, 0, 0, 1})
+        event_proc = proc(widget, subject: ^gui.Widget, event: any) {
+            switch subject {
+            case nil:
+                switch e in event {
+                case gui.Open_Event:
+                    gui.layout_grid(widget.children[:],
+                        shape = {3, 3},
+                        size = widget.size,
+                        spacing = {5, 5},
+                        padding = {10, 10},
+                    )
+                    gui.redraw()
+                }
+
+            case widget.parent:
+                switch e in event {
+                case gui.Resize_Event:
+                    gui.set_size(widget.parent.size)
+                    gui.layout_grid(widget.children[:],
+                        shape = {3, 3},
+                        size = widget.size,
+                        spacing = {5, 5},
+                        padding = {10, 10},
+                    )
+                    gui.redraw()
+                }
+
+            case widget:
+                switch e in event {
+                case gui.Draw_Event:
+                    gui.draw_rect({0, 0}, widget.size, {0.4, 0, 0, 1})
+                }
             }
         },
     )
@@ -81,22 +85,35 @@ main :: proc() {
         widgets.init_button(&button,
             position = {f32(i * 20), f32(i * 20)},
             size = {32 + rand.float32() * 100, 32 + rand.float32() * 100},
-            event_proc = proc(widget: ^gui.Widget, event: any) {
+            event_proc = proc(widget, subject: ^gui.Widget, event: any) {
                 button := cast(^widgets.Button)widget
-                switch e in event {
-                case gui.Show_Event:
-                    fmt.println("Shown")
-                case gui.Hide_Event:
-                    fmt.println("Hidden")
-                case gui.Mouse_Move_Event:
-                    if button.is_down {
-                        gui.set_position(button.position + e.delta)
-                        gui.redraw()
+                widgets.button_event_proc(button, subject, event)
+
+                switch subject {
+                case nil:
+                    switch e in event {
+                    case gui.Mouse_Move_Event:
+                        if gui.mouse_down(.Right) {
+                            gui.set_position(button.position + e.delta)
+                            gui.redraw()
+                        }
                     }
-                case widgets.Button_Click_Event:
-                    fmt.println("Clicked")
+
+                case widget:
+                    switch e in event {
+                    case gui.Show_Event:
+                        fmt.println("Shown")
+                    case gui.Hide_Event:
+                        fmt.println("Hidden")
+                    case gui.Mouse_Move_Event:
+                        if button.is_down {
+                            gui.set_position(button.position + e.delta)
+                            gui.redraw()
+                        }
+                    case widgets.Button_Click_Event:
+                        fmt.println("Clicked")
+                    }
                 }
-                widgets.button_event_proc(button, event)
             },
         )
         gui.add_children(&grid, {&button})

@@ -85,11 +85,11 @@ window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
             open_gl_is_loaded = true
         }
         window.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
-        gui.send_event(&window.root, gui.Open_Event{})
+        gui.input_open(&window.root)
 
     case wnd.Close_Event:
         wnd.activate_context(backend_window)
-        gui.send_event(&window.root, gui.Close_Event{})
+        gui.input_close(&window.root)
         nvg_gl.Destroy(window.nvg_ctx)
 
     case wnd.Display_Event:
@@ -109,49 +109,36 @@ window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
         nvg.EndFrame(window.nvg_ctx)
 
     case wnd.Update_Event:
-        gui.send_event(&window.root, gui.Update_Event{})
+        gui.input_update(&window.root)
 
     case wnd.Resize_Event:
-        gui.send_event(&window.root, gui.Resize_Event{
-            size = e.size,
-        })
+        gui.input_resize(&window.root, e.size)
+
+    case wnd.Mouse_Enter_Event:
+        gui.input_mouse_enter(&window.root, e.position)
+
+    case wnd.Mouse_Exit_Event:
+        gui.input_mouse_exit(&window.root, e.position)
 
     case wnd.Mouse_Move_Event:
-        gui.send_event(&window.root, gui.Mouse_Move_Event{
-            position = e.position,
-            delta = e.delta,
-        })
+        gui.input_mouse_move(&window.root, e.position)
 
     case wnd.Mouse_Scroll_Event:
-        gui.send_event(&window.root, gui.Mouse_Scroll_Event{
-            amount = e.amount,
-        })
+        gui.input_mouse_scroll(&window.root, e.position, e.amount)
 
     case wnd.Mouse_Press_Event:
-        gui.send_event(&window.root, gui.Mouse_Press_Event{
-            position = e.position,
-            button = cast(gui.Mouse_Button)e.button,
-        })
+        gui.input_mouse_press(&window.root, e.position, cast(gui.Mouse_Button)e.button)
 
     case wnd.Mouse_Release_Event:
-        gui.send_event(&window.root, gui.Mouse_Release_Event{
-            position = e.position,
-            button = cast(gui.Mouse_Button)e.button,
-        })
+        gui.input_mouse_release(&window.root, e.position, cast(gui.Mouse_Button)e.button)
 
     case wnd.Key_Press_Event:
-        gui.send_event(&window.root, gui.Key_Press_Event{
-            key = cast(gui.Keyboard_Key)e.key,
-        })
+        gui.input_key_press(&window.root, cast(gui.Keyboard_Key)e.key)
 
     case wnd.Key_Release_Event:
-        gui.send_event(&window.root, gui.Key_Release_Event{
-            key = cast(gui.Keyboard_Key)e.key,
-        })
+        gui.input_key_release(&window.root, cast(gui.Keyboard_Key)e.key)
 
     case wnd.Text_Event:
-        gui.send_event(&window.root, gui.Text_Event{
-            text = e.text,
-        })
+        gui.input_text(&window.root, e.text)
     }
 }

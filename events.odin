@@ -1,9 +1,9 @@
 package gui
 
 Update_Event :: struct {}
+Draw_Event :: struct {}
 Open_Event :: struct {}
 Close_Event :: struct {}
-Draw_Event :: struct {}
 Show_Event :: struct {}
 Hide_Event :: struct {}
 
