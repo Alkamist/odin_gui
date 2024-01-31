@@ -8,7 +8,7 @@ Root :: struct {
     hover: ^Widget,
     previous_hover: ^Widget,
     hover_captured: bool,
-    backend: Backend,
+    needs_redisplay: bool,
 }
 
 init_root :: proc(root: ^Root, size: Vec2) {
@@ -21,6 +21,7 @@ init_root :: proc(root: ^Root, size: Vec2) {
     root.hover = nil
     root.previous_hover = nil
     root.hover_captured = false
+    root.needs_redisplay = false
     root.event_proc = nil
 }
 
