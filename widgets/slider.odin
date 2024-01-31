@@ -92,6 +92,18 @@ slider_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
         switch e in event {
         case gui.Open_Event: gui.redraw()
         case gui.Resize_Event: gui.redraw()
+
+        case gui.Key_Press_Event:
+            if slider.is_grabbed && e.key == slider.precision_key {
+                slider.value_when_grabbed = slider.value
+                slider.global_mouse_position_when_grabbed = gui.global_mouse_position()
+            }
+
+        case gui.Key_Release_Event:
+            if slider.is_grabbed && e.key == slider.precision_key {
+                slider.value_when_grabbed = slider.value
+                slider.global_mouse_position_when_grabbed = gui.global_mouse_position()
+            }
         }
 
     case widget:
@@ -127,18 +139,6 @@ slider_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
                     slider.value_when_grabbed + sensitivity * grab_delta * (slider.max_value - slider.min_value) / (slider.size.x - slider.handle_length),
                 )
                 gui.redraw()
-            }
-
-        case gui.Key_Press_Event:
-            if e.key == slider.precision_key {
-                slider.value_when_grabbed = slider.value
-                slider.global_mouse_position_when_grabbed = gui.global_mouse_position()
-            }
-
-        case gui.Key_Release_Event:
-            if e.key == slider.precision_key {
-                slider.value_when_grabbed = slider.value
-                slider.global_mouse_position_when_grabbed = gui.global_mouse_position()
             }
 
         case gui.Draw_Event:

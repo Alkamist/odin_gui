@@ -34,6 +34,9 @@ init_window :: proc(
     )
     gui.init_root(&window.root, size)
     window.background_color = background_color
+    window.root.backend.user_data = window
+    window.root.backend.redisplay = backend_redisplay
+    window.root.backend.render_draw_command = render_draw_command
 }
 
 destroy_window :: proc(window: ^Window) {
@@ -55,6 +58,7 @@ window_is_open :: proc(window: ^Window) -> bool {
 
 window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
     window := cast(^Window)backend_window.user_data
+    root := &window.root
 
     #partial switch e in event {
     case wnd.Open_Event:
@@ -64,12 +68,11 @@ window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
             open_gl_is_loaded = true
         }
         window.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
-        gui.input_open(&window.root)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_open(root)
 
     case wnd.Close_Event:
         wnd.activate_context(backend_window)
-        gui.input_close(&window.root)
+        gui.input_close(root)
         nvg_gl.Destroy(window.nvg_ctx)
 
     case wnd.Display_Event:
@@ -84,71 +87,52 @@ window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
 
         nvg.BeginFrame(window.nvg_ctx, size.x, size.y, wnd.content_scale(backend_window))
 
-        commands: [dynamic]gui.Draw_Command
-        defer delete(commands)
-
-        gui.collect_draw_commands(&commands, &window.root)
-
-        for command in commands {
-            render_draw_command(window, command)
-        }
+        gui.render_draw_commands(root)
 
         nvg.EndFrame(window.nvg_ctx)
 
     case wnd.Update_Event:
-        gui.input_update(&window.root)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_update(root)
 
     case wnd.Resize_Event:
-        gui.input_resize(&window.root, e.size)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_resize(root, e.size)
 
     case wnd.Mouse_Enter_Event:
-        gui.input_mouse_enter(&window.root, e.position)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_mouse_enter(root, e.position)
 
     case wnd.Mouse_Exit_Event:
-        gui.input_mouse_exit(&window.root, e.position)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_mouse_exit(root, e.position)
 
     case wnd.Mouse_Move_Event:
-        gui.input_mouse_move(&window.root, e.position)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_mouse_move(root, e.position)
 
     case wnd.Mouse_Scroll_Event:
-        gui.input_mouse_scroll(&window.root, e.position, e.amount)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_mouse_scroll(root, e.position, e.amount)
 
     case wnd.Mouse_Press_Event:
-        gui.input_mouse_press(&window.root, e.position, cast(gui.Mouse_Button)e.button)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_mouse_press(root, e.position, cast(gui.Mouse_Button)e.button)
 
     case wnd.Mouse_Release_Event:
-        gui.input_mouse_release(&window.root, e.position, cast(gui.Mouse_Button)e.button)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_mouse_release(root, e.position, cast(gui.Mouse_Button)e.button)
 
     case wnd.Key_Press_Event:
-        gui.input_key_press(&window.root, cast(gui.Keyboard_Key)e.key)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_key_press(root, cast(gui.Keyboard_Key)e.key)
 
     case wnd.Key_Release_Event:
-        gui.input_key_release(&window.root, cast(gui.Keyboard_Key)e.key)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_key_release(root, cast(gui.Keyboard_Key)e.key)
 
     case wnd.Text_Event:
-        gui.input_text(&window.root, e.text)
-        redisplay_window_if_necessary(window, &window.root)
+        gui.input_text(root, e.text)
     }
 }
 
-redisplay_window_if_necessary :: proc(window: ^Window, root: ^gui.Root) {
-    if root.needs_redisplay {
-        wnd.display(&window.backend_window)
-        root.needs_redisplay = false
-    }
+backend_redisplay :: proc(backend: ^gui.Backend) {
+    window := cast(^Window)backend.user_data
+    wnd.display(&window.backend_window)
 }
 
-render_draw_command :: proc(window: ^Window, command: gui.Draw_Command) {
+render_draw_command :: proc(backend: ^gui.Backend, command: gui.Draw_Command) {
+    window := cast(^Window)backend.user_data
     ctx := window.nvg_ctx
     switch c in command {
     case gui.Draw_Rect_Command:
