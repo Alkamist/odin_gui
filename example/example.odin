@@ -6,6 +6,8 @@ import "core:math/rand"
 import "../../gui"
 import "../widgets"
 
+consola := Font{"Consola", 13}
+
 window: Window
 grid: gui.Widget
 buttons: [8]widgets.Button
@@ -72,8 +74,13 @@ main :: proc() {
 
             case widget:
                 switch e in event {
+                case gui.Mouse_Scroll_Event:
+                    consola.size += e.amount.y
+                    gui.redraw()
+
                 case gui.Draw_Event:
                     gui.draw_rect({0, 0}, widget.size, {0.4, 0, 0, 1})
+                    gui.draw_text("Hello world.", {50, 50}, {1, 1, 1, 1}, &consola)
                 }
             }
         },

@@ -37,6 +37,14 @@ render_draw_commands :: proc(widget: ^Widget) {
                 c.color,
             })
 
+        case Draw_Text_Command:
+            _render_draw_command(widget, Draw_Text_Command{
+                c.text,
+                c.position + global_position,
+                c.color,
+                c.font,
+            })
+
         case Clip_Drawing_Command:
             intersected_clip_rect := rect.intersection(global_clip_rect, {global_position + c.position, c.size})
             _render_draw_command(widget, Clip_Drawing_Command{

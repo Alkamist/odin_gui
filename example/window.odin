@@ -1,13 +1,18 @@
 package main
 
 import "core:fmt"
-import wnd "../window"
 import gl "vendor:OpenGL"
 import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
+import wnd "../window"
 import "../../gui"
 
 open_gl_is_loaded: bool
+
+Font :: struct {
+    name: string,
+    size: f32,
+}
 
 Vec2 :: gui.Vec2
 Color :: gui.Color
@@ -36,7 +41,7 @@ init_window :: proc(
     window.background_color = background_color
     window.root.backend.user_data = window
     window.root.backend.redisplay = backend_redisplay
-    window.root.backend.render_draw_command = render_draw_command
+    window.root.backend.render_draw_command = backend_render_draw_command
 }
 
 destroy_window :: proc(window: ^Window) {
@@ -68,6 +73,9 @@ window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
             open_gl_is_loaded = true
         }
         window.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
+
+        load_font(window, "Consola", #load("consola.ttf"))
+
         gui.input_open(root)
 
     case wnd.Close_Event:
@@ -126,20 +134,36 @@ window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
     }
 }
 
+load_font :: proc(window: ^Window, name: string, font_data: []byte) {
+    if nvg.CreateFontMem(window.nvg_ctx, name, font_data, false) == -1 {
+        fmt.eprintf("Failed to load font: %v\n", name)
+        return
+    }
+}
+
 backend_redisplay :: proc(backend: ^gui.Backend) {
     window := cast(^Window)backend.user_data
     wnd.display(&window.backend_window)
 }
 
-render_draw_command :: proc(backend: ^gui.Backend, command: gui.Draw_Command) {
+backend_render_draw_command :: proc(backend: ^gui.Backend, command: gui.Draw_Command) {
     window := cast(^Window)backend.user_data
     ctx := window.nvg_ctx
+
     switch c in command {
     case gui.Draw_Rect_Command:
         nvg.BeginPath(ctx)
         nvg.Rect(ctx, c.position.x, c.position.y, c.size.x, c.size.y)
         nvg.FillColor(ctx, c.color)
         nvg.Fill(ctx)
+
+    case gui.Draw_Text_Command:
+        font := cast(^Font)c.font
+        nvg.FontFace(ctx, font.name)
+        nvg.FontSize(ctx, font.size)
+        nvg.FillColor(ctx, c.color)
+        nvg.Text(ctx, c.position.x, c.position.y, c.text)
+
     case gui.Clip_Drawing_Command:
         nvg.Scissor(ctx, c.position.x, c.position.y, c.size.x, c.size.y)
     }
