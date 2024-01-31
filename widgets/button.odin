@@ -47,11 +47,8 @@ button_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
 
     case widget:
         switch e in event {
-        case gui.Mouse_Enter_Event:
-            gui.redraw()
-
-        case gui.Mouse_Exit_Event:
-            gui.redraw()
+        case gui.Mouse_Enter_Event: gui.redraw()
+        case gui.Mouse_Exit_Event: gui.redraw()
 
         case gui.Mouse_Press_Event:
             if e.button == button.mouse_button {

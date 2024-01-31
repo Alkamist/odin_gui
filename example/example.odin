@@ -9,6 +9,7 @@ import "../widgets"
 window: Window
 grid: gui.Widget
 buttons: [8]widgets.Button
+slider: widgets.Slider
 
 main :: proc() {
     when ODIN_DEBUG {
@@ -121,6 +122,13 @@ main :: proc() {
     defer for &button, i in buttons {
         widgets.destroy_button(&button)
     }
+
+    widgets.init_slider(&slider,
+        position = {100, 100},
+    )
+    defer widgets.destroy_slider(&slider)
+
+    gui.add_children(&window.root, {&slider})
 
     open_window(&window)
     for window_is_open(&window) {
