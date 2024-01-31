@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:mem"
+import "core:math/rand"
 import "../../gui"
 import "../widgets"
 
@@ -52,18 +53,16 @@ main :: proc() {
         event_proc = proc(widget: ^gui.Widget, event: any) {
             switch e in event {
             case gui.Open_Event:
-                gui.layout_grid(
-                    widget.children[:],
-                    layout = {3, 3},
+                gui.layout_grid(widget.children[:],
+                    shape = {3, 3},
                     size = widget.size,
                     spacing = {5, 5},
                     padding = {10, 10},
                 )
                 gui.redraw()
             case gui.Resize_Event:
-                gui.layout_grid(
-                    widget.children[:],
-                    layout = {3, 3},
+                gui.layout_grid(widget.children[:],
+                    shape = {3, 3},
                     size = widget.size,
                     spacing = {5, 5},
                     padding = {10, 10},
@@ -81,6 +80,7 @@ main :: proc() {
     for &button, i in buttons {
         widgets.init_button(&button,
             position = {f32(i * 20), f32(i * 20)},
+            size = {32 + rand.float32() * 100, 32 + rand.float32() * 100},
             event_proc = proc(widget: ^gui.Widget, event: any) {
                 button := cast(^widgets.Button)widget
                 switch e in event {
