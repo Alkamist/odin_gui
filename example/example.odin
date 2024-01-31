@@ -43,7 +43,7 @@ main :: proc() {
     window.root.event_proc = proc(widget: ^gui.Widget, event: any) {
         switch e in event {
         case gui.Resize_Event:
-            gui.set_size(&grid, e.size)
+            gui.set_size(e.size, &grid)
         }
         gui.root_event_proc(widget, event)
     }
@@ -84,9 +84,13 @@ main :: proc() {
             event_proc = proc(widget: ^gui.Widget, event: any) {
                 button := cast(^widgets.Button)widget
                 switch e in event {
+                case gui.Show_Event:
+                    fmt.println("Shown")
+                case gui.Hide_Event:
+                    fmt.println("Hidden")
                 case gui.Mouse_Move_Event:
                     if button.is_down {
-                        gui.set_position(button, button.position + e.delta)
+                        gui.set_position(button.position + e.delta)
                         gui.redraw()
                     }
                 case widgets.Button_Click_Event:

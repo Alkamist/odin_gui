@@ -19,6 +19,10 @@ redraw :: proc(widget := _current_widget) {
 }
 
 render_draw_commands :: proc(widget: ^Widget) {
+    if widget.is_hidden {
+        return
+    }
+
     _update_cached_global_helpers(widget)
     global_position := widget.cached_global_position
     global_clip_rect := widget.cached_global_clip_rect

@@ -14,6 +14,7 @@ Widget :: struct {
     children: [dynamic]^Widget,
     position: Vec2,
     size: Vec2,
+    is_hidden: bool,
     clip_children: bool,
     event_proc: proc(^Widget, any),
     draw_commands: [dynamic]Draw_Command,
@@ -27,6 +28,7 @@ init_widget :: proc(
     widget: ^Widget,
     position := Vec2{0, 0},
     size := Vec2{0, 0},
+    visibility := true,
     clip_children := false,
     event_proc: proc(^Widget, any) = nil,
 ) {
@@ -34,8 +36,13 @@ init_widget :: proc(
     widget.parent = nil
     widget.clip_children = clip_children
     clear(&widget.children)
-    set_position(widget, position)
-    set_size(widget, size)
+    set_position(position, widget)
+    set_size(size, widget)
+    if visibility {
+        show(widget)
+    } else {
+        hide(widget)
+    }
     widget.event_proc = event_proc
 }
 
@@ -82,7 +89,7 @@ remove_child :: proc(widget: ^Widget, child: ^Widget) {
     child.parent = nil
 }
 
-set_position :: proc(widget: ^Widget, position: Vec2) {
+set_position :: proc(position: Vec2, widget := _current_widget) {
     previous_position := widget.position
     if position != previous_position {
         widget.position = position
@@ -93,7 +100,7 @@ set_position :: proc(widget: ^Widget, position: Vec2) {
     }
 }
 
-set_size :: proc(widget: ^Widget, size: Vec2) {
+set_size :: proc(size: Vec2, widget := _current_widget) {
     size := _vec2_abs(size)
     previous_size := widget.size
     if size != previous_size {
@@ -102,6 +109,20 @@ set_size :: proc(widget: ^Widget, size: Vec2) {
             size = widget.size,
             delta = widget.size - previous_size,
         })
+    }
+}
+
+show :: proc(widget := _current_widget) {
+    if widget.is_hidden {
+        widget.is_hidden = false
+        send_event_recursively(widget, Show_Event{})
+    }
+}
+
+hide :: proc(widget := _current_widget) {
+    if !widget.is_hidden {
+        widget.is_hidden = true
+        send_event_recursively(widget, Hide_Event{})
     }
 }
 
@@ -160,6 +181,10 @@ _vec2_abs :: proc(v: Vec2) -> Vec2 {
 }
 
 _recursive_hit_test :: proc(widget: ^Widget, position: Vec2) -> ^Widget {
+    if widget.is_hidden {
+        return nil
+    }
+
     _update_cached_global_helpers(widget)
 
     #reverse for child in widget.children {
