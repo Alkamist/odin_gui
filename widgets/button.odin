@@ -15,6 +15,7 @@ Button_Click_Event :: struct {}
 
 init_button :: proc(
     button: ^Button,
+    parent: ^gui.Widget,
     position := Vec2{0, 0},
     size := Vec2{96, 32},
     color := Color{0.5, 0.5, 0.5, 1},
@@ -23,6 +24,7 @@ init_button :: proc(
 ) {
     gui.init_widget(
         button,
+        parent,
         position = position,
         size = size,
         event_proc = event_proc,
@@ -37,7 +39,6 @@ destroy_button :: proc(button: ^Button) {
 
 button_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
     button := cast(^Button)widget
-
     switch subject {
     case nil:
         switch e in event {

@@ -25,6 +25,7 @@ Slider_Value_Change_Event :: struct {
 
 init_slider :: proc(
     slider: ^Slider,
+    parent: ^gui.Widget,
     position := Vec2{0, 0},
     size := Vec2{300, 24},
     value: f32 = 0,
@@ -36,6 +37,7 @@ init_slider :: proc(
 ) {
     gui.init_widget(
         slider,
+        parent,
         position = position,
         size = size,
         event_proc = event_proc,

@@ -1,21 +1,40 @@
 package gui
 
-import "core:fmt"
 import "rect"
+
+Backend_Error :: enum {
+    None,
+    Text_Error,
+}
 
 Backend :: struct {
     user_data: rawptr,
-    redisplay: proc(^Backend),
+    measure_text: proc(^Backend, string, Font) -> (f32, Backend_Error),
+    font_metrics: proc(^Backend, Font) -> (Font_Metrics, Backend_Error),
     render_draw_command: proc(^Backend, Draw_Command),
 }
 
 redraw :: proc(widget := _current_widget) {
+    assert(widget != nil)
+    assert(widget.root != nil)
     clear(&widget.draw_commands)
     clip_drawing({0, 0}, widget.size, widget)
     send_event(widget, Draw_Event{})
-    if widget.root.backend.redisplay != nil {
-        widget.root.backend->redisplay()
+    widget.root.needs_redisplay = true
+}
+
+measure_text :: proc(text: string, font: Font, widget := _current_widget) -> (f32, Backend_Error) {
+    if widget == nil || widget.root == nil || widget.root.backend.measure_text == nil {
+        return 0, .Text_Error
     }
+    return widget.root.backend->measure_text(text, font)
+}
+
+font_metrics :: proc(font: Font, widget := _current_widget) -> (Font_Metrics, Backend_Error) {
+    if widget == nil || widget.root == nil || widget.root.backend.font_metrics == nil {
+        return {}, .Text_Error
+    }
+    return widget.root.backend->font_metrics(font)
 }
 
 render_draw_commands :: proc(widget: ^Widget) {
@@ -25,7 +44,6 @@ render_draw_commands :: proc(widget: ^Widget) {
 
     _update_cached_global_helpers(widget)
     global_position := widget.cached_global_position
-    global_clip_rect := widget.cached_global_clip_rect
 
     for command in widget.draw_commands {
         switch c in command {
@@ -41,11 +59,15 @@ render_draw_commands :: proc(widget: ^Widget) {
             _render_draw_command(widget, Draw_Text_Command{
                 c.text,
                 c.position + global_position,
-                c.color,
                 c.font,
+                c.color,
             })
 
         case Clip_Drawing_Command:
+            global_clip_rect, ok := widget.cached_global_clip_rect.?
+            if !ok {
+                break
+            }
             intersected_clip_rect := rect.intersection(global_clip_rect, {global_position + c.position, c.size})
             _render_draw_command(widget, Clip_Drawing_Command{
                 intersected_clip_rect.position,
@@ -60,6 +82,8 @@ render_draw_commands :: proc(widget: ^Widget) {
 }
 
 _render_draw_command :: proc(widget: ^Widget, command: Draw_Command) {
+    assert(widget != nil)
+    assert(widget.root != nil)
     if widget.root.backend.render_draw_command != nil {
         widget.root.backend->render_draw_command(command)
     }

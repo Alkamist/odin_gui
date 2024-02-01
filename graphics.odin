@@ -4,6 +4,12 @@ import "rect"
 
 Font :: rawptr
 
+Font_Metrics :: struct {
+    ascender: f32,
+    descender: f32,
+    line_height: f32,
+}
+
 Draw_Rect_Command :: struct {
     position: Vec2,
     size: Vec2,
@@ -13,8 +19,8 @@ Draw_Rect_Command :: struct {
 Draw_Text_Command :: struct {
     text: string,
     position: Vec2,
-    color: Color,
     font: Font,
+    color: Color,
 }
 
 Clip_Drawing_Command :: struct {
@@ -29,13 +35,16 @@ Draw_Command :: union {
 }
 
 draw_rect :: proc(position, size: Vec2, color: Color, widget := _current_widget) {
+    assert(widget != nil)
     append(&widget.draw_commands, Draw_Rect_Command{position, size, color})
 }
 
-draw_text :: proc(text: string, position: Vec2, color: Color, font: Font, widget := _current_widget) {
-    append(&widget.draw_commands, Draw_Text_Command{text, position, color, font})
+draw_text :: proc(text: string, position: Vec2, font: Font, color: Color, widget := _current_widget) {
+    assert(widget != nil)
+    append(&widget.draw_commands, Draw_Text_Command{text, position, font, color})
 }
 
 clip_drawing :: proc(position, size: Vec2, widget := _current_widget) {
+    assert(widget != nil)
     append(&widget.draw_commands, Clip_Drawing_Command{position, size})
 }

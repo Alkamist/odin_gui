@@ -21,21 +21,24 @@ Widget :: struct {
 
     // For rendering and hit detection
     cached_global_position: Vec2,
-    cached_global_clip_rect: Rect,
+    cached_global_clip_rect: Maybe(Rect),
 }
 
 init_widget :: proc(
-    widget: ^Widget,
+    widget, parent: ^Widget,
     position := Vec2{0, 0},
     size := Vec2{0, 0},
     visibility := true,
     clip_children := false,
     event_proc: proc(^Widget, ^Widget, any) = nil,
 ) {
-    widget.root = nil
-    widget.parent = nil
-    widget.clip_children = clip_children
+    for child in widget.children {
+        _set_root(child, nil)
+    }
     clear(&widget.children)
+    widget.event_proc = event_proc
+    widget.clip_children = clip_children
+    _set_parent(widget, parent)
     set_position(position, widget)
     set_size(size, widget)
     if visibility {
@@ -43,7 +46,6 @@ init_widget :: proc(
     } else {
         hide(widget)
     }
-    widget.event_proc = event_proc
 }
 
 destroy_widget :: proc(widget: ^Widget) {
@@ -60,6 +62,8 @@ send_global_event :: proc(widget: ^Widget, event: any) {
 }
 
 send_event_subject :: proc(widget, subject: ^Widget, event: any) {
+    assert(widget != nil)
+
     previous_widget := _current_widget
     _current_widget = widget
 
@@ -74,29 +78,8 @@ send_event_subject :: proc(widget, subject: ^Widget, event: any) {
     _current_widget = previous_widget
 }
 
-add_children :: proc(widget: ^Widget, children: []^Widget) {
-    append(&widget.children, ..children)
-    for child in children {
-        if child.parent != nil {
-            remove_child(child.parent, child)
-        }
-        child.root = widget.root
-        child.parent = widget
-    }
-}
-
-remove_child :: proc(widget: ^Widget, child: ^Widget) {
-    for i in 0 ..< len(widget.children) {
-        if widget.children[i] == child {
-            unordered_remove(&widget.children, i)
-            break
-        }
-    }
-    child.root = nil
-    child.parent = nil
-}
-
 set_position :: proc(position: Vec2, widget := _current_widget) {
+    assert(widget != nil)
     previous_position := widget.position
     if position != previous_position {
         widget.position = position
@@ -108,6 +91,7 @@ set_position :: proc(position: Vec2, widget := _current_widget) {
 }
 
 set_size :: proc(size: Vec2, widget := _current_widget) {
+    assert(widget != nil)
     size := _vec2_abs(size)
     previous_size := widget.size
     if size != previous_size {
@@ -120,6 +104,7 @@ set_size :: proc(size: Vec2, widget := _current_widget) {
 }
 
 show :: proc(widget := _current_widget) {
+    assert(widget != nil)
     if widget.is_hidden {
         widget.is_hidden = false
         send_event(widget, Show_Event{})
@@ -127,6 +112,7 @@ show :: proc(widget := _current_widget) {
 }
 
 hide :: proc(widget := _current_widget) {
+    assert(widget != nil)
     if !widget.is_hidden {
         widget.is_hidden = true
         send_event(widget, Hide_Event{})
@@ -134,60 +120,113 @@ hide :: proc(widget := _current_widget) {
 }
 
 global_mouse_position :: proc(widget := _current_widget) -> Vec2 {
+    assert(widget != nil)
+    assert(widget.root != nil)
     return widget.root.input.mouse.position
 }
 
 mouse_position :: proc(widget := _current_widget) -> Vec2 {
+    assert(widget != nil)
+    assert(widget.root != nil)
     return widget.root.input.mouse.position - widget.position
 }
 
 mouse_down :: proc(button: Mouse_Button, widget := _current_widget) -> bool {
+    assert(widget != nil)
+    assert(widget.root != nil)
     return widget.root.input.mouse.button_down[button]
 }
 
 key_down :: proc(key: Keyboard_Key, widget := _current_widget) -> bool {
+    assert(widget != nil)
+    assert(widget.root != nil)
     return widget.root.input.keyboard.key_down[key]
 }
 
 current_focus :: proc(widget := _current_widget) -> ^Widget {
+    assert(widget != nil)
+    assert(widget.root != nil)
     return widget.root.focus
 }
 
 current_mouse_hit :: proc(widget := _current_widget) -> ^Widget {
+    assert(widget != nil)
+    assert(widget.root != nil)
     return widget.root.mouse_hit
 }
 
 current_hover :: proc(widget := _current_widget) -> ^Widget {
+    assert(widget != nil)
+    assert(widget.root != nil)
     return widget.root.hover
 }
 
 capture_hover :: proc(widget := _current_widget) {
+    assert(widget != nil)
+    assert(widget.root != nil)
     widget.root.hover_captured = true
 }
 
 release_hover :: proc(widget := _current_widget) {
+    assert(widget != nil)
+    assert(widget.root != nil)
     widget.root.hover_captured = false
 }
 
 set_focus :: proc(focus: ^Widget, widget := _current_widget) {
+    assert(widget != nil)
+    assert(widget.root != nil)
     widget.root.focus = focus
 }
 
 release_focus :: proc(widget := _current_widget) {
+    assert(widget != nil)
+    assert(widget.root != nil)
     widget.root.focus = nil
 }
 
 hit_test :: proc(position: Vec2, widget := _current_widget) -> ^Widget {
+    assert(widget != nil)
     return _recursive_hit_test(widget.root, position)
 }
 
 
+
+_set_root :: proc(widget: ^Widget, root: ^Root) {
+    widget.root = root
+    for child in widget.children {
+        _set_root(child, root)
+    }
+}
+
+_set_parent :: proc(widget, parent: ^Widget) {
+    // Remove from children of previous parent.
+    if previous_parent := widget.parent; previous_parent != nil {
+        for i in 0 ..< len(previous_parent.children) {
+            if previous_parent.children[i] == widget {
+                unordered_remove(&previous_parent.children, i)
+                break
+            }
+        }
+    }
+
+    widget.parent = parent
+
+    if widget.parent != nil {
+        _set_root(widget, parent.root)
+        append(&widget.parent.children, widget)
+    } else {
+        _set_root(widget, nil)
+    }
+}
 
 _vec2_abs :: proc(v: Vec2) -> Vec2 {
     return {abs(v.x), abs(v.y)}
 }
 
 _recursive_hit_test :: proc(widget: ^Widget, position: Vec2) -> ^Widget {
+    assert(widget != nil)
+
     if widget.is_hidden {
         return nil
     }
@@ -201,10 +240,10 @@ _recursive_hit_test :: proc(widget: ^Widget, position: Vec2) -> ^Widget {
         }
     }
 
-    hit_box := rect.intersection(
-        widget.cached_global_clip_rect,
-        {widget.cached_global_position, widget.size},
-    )
+    hit_box := Rect{widget.cached_global_position, widget.size}
+    if clip_rect, ok := widget.cached_global_clip_rect.?; ok {
+        hit_box = rect.intersection(hit_box, clip_rect)
+    }
 
     if rect.contains(hit_box, position, include_borders = false) {
         return widget
@@ -217,15 +256,23 @@ _update_cached_global_helpers :: proc(widget: ^Widget) {
     if widget.parent != nil {
         widget.cached_global_position = widget.parent.cached_global_position + widget.position
         if widget.clip_children {
-            widget.cached_global_clip_rect = rect.intersection(
-                widget.parent.cached_global_clip_rect,
-                {widget.cached_global_position, widget.size},
-            )
+            if parent_clip_rect, ok := widget.parent.cached_global_clip_rect.?; ok {
+                widget.cached_global_clip_rect = rect.intersection(
+                    parent_clip_rect,
+                    {widget.cached_global_position, widget.size},
+                )
+            } else {
+                widget.cached_global_clip_rect = Rect{widget.cached_global_position, widget.size}
+            }
         } else {
             widget.cached_global_clip_rect = widget.parent.cached_global_clip_rect
         }
     } else {
         widget.cached_global_position = widget.position
-        widget.cached_global_clip_rect = {widget.position, widget.size}
+        if widget.clip_children {
+            widget.cached_global_clip_rect = Rect{widget.position, widget.size}
+        } else {
+            widget.cached_global_clip_rect = nil
+        }
     }
 }

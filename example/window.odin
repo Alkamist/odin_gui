@@ -35,13 +35,14 @@ init_window :: proc(
         position = position,
         size = size,
         user_data = window,
-        event_proc = window_event_proc,
+        event_proc = _window_event_proc,
     )
     gui.init_root(&window.root, size)
     window.background_color = background_color
     window.root.backend.user_data = window
-    window.root.backend.redisplay = backend_redisplay
-    window.root.backend.render_draw_command = backend_render_draw_command
+    window.root.backend.measure_text = _backend_measure_text
+    window.root.backend.font_metrics = _backend_font_metrics
+    window.root.backend.render_draw_command = _backend_render_draw_command
 }
 
 destroy_window :: proc(window: ^Window) {
@@ -61,7 +62,9 @@ window_is_open :: proc(window: ^Window) -> bool {
     return wnd.is_open(&window.backend_window)
 }
 
-window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
+
+
+_window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
     window := cast(^Window)backend_window.user_data
     root := &window.root
 
@@ -74,9 +77,11 @@ window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
         }
         window.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
 
-        load_font(window, "Consola", #load("consola.ttf"))
+        _load_font(window, "Consola", #load("consola.ttf"))
 
         gui.input_open(root)
+
+        _redisplay_if_necessary(window)
 
     case wnd.Close_Event:
         wnd.activate_context(backend_window)
@@ -100,71 +105,123 @@ window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
         nvg.EndFrame(window.nvg_ctx)
 
     case wnd.Update_Event:
+        wnd.activate_context(backend_window)
         gui.input_update(root)
+        _redisplay_if_necessary(window)
 
     case wnd.Resize_Event:
+        wnd.activate_context(backend_window)
         gui.input_resize(root, e.size)
+        _redisplay_if_necessary(window)
 
     case wnd.Mouse_Enter_Event:
+        wnd.activate_context(backend_window)
         gui.input_mouse_enter(root, e.position)
+        _redisplay_if_necessary(window)
 
     case wnd.Mouse_Exit_Event:
+        wnd.activate_context(backend_window)
         gui.input_mouse_exit(root, e.position)
+        _redisplay_if_necessary(window)
 
     case wnd.Mouse_Move_Event:
+        wnd.activate_context(backend_window)
         gui.input_mouse_move(root, e.position)
+        _redisplay_if_necessary(window)
 
     case wnd.Mouse_Scroll_Event:
+        wnd.activate_context(backend_window)
         gui.input_mouse_scroll(root, e.position, e.amount)
+        _redisplay_if_necessary(window)
 
     case wnd.Mouse_Press_Event:
+        wnd.activate_context(backend_window)
         gui.input_mouse_press(root, e.position, cast(gui.Mouse_Button)e.button)
+        _redisplay_if_necessary(window)
 
     case wnd.Mouse_Release_Event:
+        wnd.activate_context(backend_window)
         gui.input_mouse_release(root, e.position, cast(gui.Mouse_Button)e.button)
+        _redisplay_if_necessary(window)
 
     case wnd.Key_Press_Event:
+        wnd.activate_context(backend_window)
         gui.input_key_press(root, cast(gui.Keyboard_Key)e.key)
+        _redisplay_if_necessary(window)
 
     case wnd.Key_Release_Event:
+        wnd.activate_context(backend_window)
         gui.input_key_release(root, cast(gui.Keyboard_Key)e.key)
+        _redisplay_if_necessary(window)
 
     case wnd.Text_Event:
+        wnd.activate_context(backend_window)
         gui.input_text(root, e.text)
+        _redisplay_if_necessary(window)
     }
 }
 
-load_font :: proc(window: ^Window, name: string, font_data: []byte) {
+_load_font :: proc(window: ^Window, name: string, font_data: []byte) {
     if nvg.CreateFontMem(window.nvg_ctx, name, font_data, false) == -1 {
         fmt.eprintf("Failed to load font: %v\n", name)
         return
     }
 }
 
-backend_redisplay :: proc(backend: ^gui.Backend) {
-    window := cast(^Window)backend.user_data
-    wnd.display(&window.backend_window)
+_redisplay_if_necessary :: proc(window: ^Window) {
+    if window.root.needs_redisplay {
+        wnd.display(&window.backend_window)
+        window.root.needs_redisplay = false
+    }
 }
 
-backend_render_draw_command :: proc(backend: ^gui.Backend, command: gui.Draw_Command) {
+_backend_measure_text :: proc(backend: ^gui.Backend, text: string, font: gui.Font) -> (f32, gui.Backend_Error) {
+    window := cast(^Window)backend.user_data
+    if window == nil do return 0, .Text_Error
+    ctx := window.nvg_ctx
+    if ctx == nil do return 0, .Text_Error
+    font := cast(^Font)font
+    bounds: [4]f32
+    nvg.TextAlign(ctx, .LEFT, .TOP)
+    nvg.FontFace(ctx, font.name)
+    nvg.FontSize(ctx, font.size)
+    nvg.TextBounds(ctx, 0, 0, text, &bounds)
+    return bounds[2] - bounds[0], nil
+}
+
+_backend_font_metrics :: proc(backend: ^gui.Backend, font: gui.Font) -> (gui.Font_Metrics, gui.Backend_Error) {
+    window := cast(^Window)backend.user_data
+    if window == nil do return {}, .Text_Error
+    ctx := window.nvg_ctx
+    if ctx == nil do return {}, .Text_Error
+    font := cast(^Font)font
+    nvg.FontFace(ctx, font.name)
+    nvg.FontSize(ctx, font.size)
+    metrics: gui.Font_Metrics
+    metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(window.nvg_ctx)
+    return metrics, nil
+}
+
+_backend_render_draw_command :: proc(backend: ^gui.Backend, command: gui.Draw_Command) {
     window := cast(^Window)backend.user_data
     ctx := window.nvg_ctx
 
     switch c in command {
     case gui.Draw_Rect_Command:
         nvg.BeginPath(ctx)
-        nvg.Rect(ctx, c.position.x, c.position.y, c.size.x, c.size.y)
+        nvg.Rect(ctx, c.position.x, c.position.y, max(0, c.size.x), max(0, c.size.y))
         nvg.FillColor(ctx, c.color)
         nvg.Fill(ctx)
 
     case gui.Draw_Text_Command:
         font := cast(^Font)c.font
+        nvg.TextAlign(ctx, .LEFT, .TOP)
         nvg.FontFace(ctx, font.name)
         nvg.FontSize(ctx, font.size)
         nvg.FillColor(ctx, c.color)
         nvg.Text(ctx, c.position.x, c.position.y, c.text)
 
     case gui.Clip_Drawing_Command:
-        nvg.Scissor(ctx, c.position.x, c.position.y, c.size.x, c.size.y)
+        nvg.Scissor(ctx, c.position.x, c.position.y, max(0, c.size.x), max(0, c.size.y))
     }
 }
