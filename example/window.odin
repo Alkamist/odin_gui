@@ -175,31 +175,31 @@ _redisplay_if_necessary :: proc(window: ^Window) {
     }
 }
 
-_backend_measure_text :: proc(backend: ^gui.Backend, text: string, font: gui.Font) -> (f32, gui.Backend_Error) {
+_backend_measure_text :: proc(backend: ^gui.Backend, text: string, font: gui.Font) -> f32 {
     window := cast(^Window)backend.user_data
-    if window == nil do return 0, .Text_Error
+    assert(window != nil)
     ctx := window.nvg_ctx
-    if ctx == nil do return 0, .Text_Error
+    assert(ctx != nil)
     font := cast(^Font)font
     bounds: [4]f32
     nvg.TextAlign(ctx, .LEFT, .TOP)
     nvg.FontFace(ctx, font.name)
     nvg.FontSize(ctx, font.size)
     nvg.TextBounds(ctx, 0, 0, text, &bounds)
-    return bounds[2] - bounds[0], nil
+    return bounds[2] - bounds[0]
 }
 
-_backend_font_metrics :: proc(backend: ^gui.Backend, font: gui.Font) -> (gui.Font_Metrics, gui.Backend_Error) {
+_backend_font_metrics :: proc(backend: ^gui.Backend, font: gui.Font) -> gui.Font_Metrics {
     window := cast(^Window)backend.user_data
-    if window == nil do return {}, .Text_Error
+    assert(window != nil)
     ctx := window.nvg_ctx
-    if ctx == nil do return {}, .Text_Error
+    assert(ctx != nil)
     font := cast(^Font)font
     nvg.FontFace(ctx, font.name)
     nvg.FontSize(ctx, font.size)
     metrics: gui.Font_Metrics
     metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(window.nvg_ctx)
-    return metrics, nil
+    return metrics
 }
 
 _backend_render_draw_command :: proc(backend: ^gui.Backend, command: gui.Draw_Command) {

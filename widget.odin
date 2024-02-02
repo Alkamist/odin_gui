@@ -1,5 +1,6 @@
 package gui
 
+import "core:mem"
 import "rect"
 
 @(thread_local) _current_widget: ^Widget
@@ -31,11 +32,13 @@ init_widget :: proc(
     visibility := true,
     clip_children := false,
     event_proc: proc(^Widget, ^Widget, any) = nil,
-) {
+    allocator := context.allocator,
+) -> (res: ^Widget, err: mem.Allocator_Error) #optional_allocator_error {
     for child in widget.children {
         _set_root(child, nil)
     }
-    clear(&widget.children)
+    widget.children = make([dynamic]^Widget, allocator) or_return
+    widget.draw_commands = make([dynamic]Draw_Command, allocator) or_return
     widget.event_proc = event_proc
     widget.clip_children = clip_children
     _set_parent(widget, parent)
@@ -46,6 +49,7 @@ init_widget :: proc(
     } else {
         hide(widget)
     }
+    return widget, nil
 }
 
 destroy_widget :: proc(widget: ^Widget) {

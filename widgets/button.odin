@@ -1,5 +1,6 @@
 package widgets
 
+import "core:mem"
 import "../../gui"
 
 Button :: struct {
@@ -21,16 +22,19 @@ init_button :: proc(
     color := Color{0.5, 0.5, 0.5, 1},
     mouse_button := gui.Mouse_Button.Left,
     event_proc: proc(^gui.Widget, ^gui.Widget, any) = button_event_proc,
-) {
+    allocator := context.allocator,
+) -> (res: ^Button, err: mem.Allocator_Error) #optional_allocator_error {
     gui.init_widget(
         button,
         parent,
         position = position,
         size = size,
         event_proc = event_proc,
-    )
+        allocator = allocator,
+    ) or_return
     button.color = color
     button.mouse_button = mouse_button
+    return button, nil
 }
 
 destroy_button :: proc(button: ^Button) {

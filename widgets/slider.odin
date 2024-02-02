@@ -1,5 +1,6 @@
 package widgets
 
+import "core:mem"
 import "../../gui"
 
 Slider :: struct {
@@ -34,20 +35,23 @@ init_slider :: proc(
     handle_length: f32 = 16,
     mouse_button := gui.Mouse_Button.Left,
     event_proc: proc(^gui.Widget, ^gui.Widget, any) = slider_event_proc,
-) {
+    allocator := context.allocator,
+) -> (res: ^Slider, err: mem.Allocator_Error) #optional_allocator_error {
     gui.init_widget(
         slider,
         parent,
         position = position,
         size = size,
         event_proc = event_proc,
-    )
+        allocator = allocator,
+    ) or_return
     slider.precision_key = .Left_Shift
     slider.handle_length = handle_length
     slider.min_value = min_value
     slider.max_value = max_value
     slider.mouse_button = mouse_button
     set_slider_value(slider, value)
+    return slider, nil
 }
 
 destroy_slider :: proc(slider: ^Slider) {

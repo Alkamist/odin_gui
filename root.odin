@@ -1,5 +1,7 @@
 package gui
 
+import "core:mem"
+
 Root :: struct {
     using widget: Widget,
     input: Input_State,
@@ -12,8 +14,12 @@ Root :: struct {
     backend: Backend,
 }
 
-init_root :: proc(root: ^Root, size: Vec2) {
-    init_widget(root, nil, position = {0, 0}, size = size)
+init_root :: proc(
+    root: ^Root,
+    size: Vec2,
+    allocator := context.allocator,
+) -> (res: ^Root, err: mem.Allocator_Error) #optional_allocator_error {
+    init_widget(root, nil, position = {0, 0}, size = size, allocator = allocator) or_return
     root.root = root
     root.input = {}
     root.focus = nil
@@ -23,6 +29,7 @@ init_root :: proc(root: ^Root, size: Vec2) {
     root.hover_captured = false
     root.needs_redisplay = false
     root.event_proc = nil
+    return root, nil
 }
 
 destroy_root :: proc(root: ^Root) {

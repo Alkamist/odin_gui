@@ -2,16 +2,11 @@ package gui
 
 import "rect"
 
-Backend_Error :: enum {
-    None,
-    Text_Error,
-}
-
 Backend :: struct {
     user_data: rawptr,
-    measure_text: proc(^Backend, string, Font) -> (f32, Backend_Error),
-    font_metrics: proc(^Backend, Font) -> (Font_Metrics, Backend_Error),
-    render_draw_command: proc(^Backend, Draw_Command),
+    measure_text: proc(backend: ^Backend, text: string, font: Font) -> f32,
+    font_metrics: proc(backend: ^Backend, font: Font) -> Font_Metrics,
+    render_draw_command: proc(backend: ^Backend, command: Draw_Command),
 }
 
 redraw :: proc(widget := _current_widget) {
@@ -23,17 +18,17 @@ redraw :: proc(widget := _current_widget) {
     widget.root.needs_redisplay = true
 }
 
-measure_text :: proc(text: string, font: Font, widget := _current_widget) -> (f32, Backend_Error) {
-    if widget == nil || widget.root == nil || widget.root.backend.measure_text == nil {
-        return 0, .Text_Error
-    }
+measure_text :: proc(text: string, font: Font, widget := _current_widget) -> f32 {
+    assert(widget != nil)
+    assert(widget.root != nil)
+    assert(widget.root.backend.measure_text != nil)
     return widget.root.backend->measure_text(text, font)
 }
 
-font_metrics :: proc(font: Font, widget := _current_widget) -> (Font_Metrics, Backend_Error) {
-    if widget == nil || widget.root == nil || widget.root.backend.font_metrics == nil {
-        return {}, .Text_Error
-    }
+font_metrics :: proc(font: Font, widget := _current_widget) -> Font_Metrics {
+    assert(widget != nil)
+    assert(widget.root != nil)
+    assert(widget.root.backend.font_metrics != nil)
     return widget.root.backend->font_metrics(font)
 }
 
