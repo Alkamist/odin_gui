@@ -1,6 +1,7 @@
 package main
 
 import "core:fmt"
+import "core:runtime"
 import gl "vendor:OpenGL"
 import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
@@ -40,6 +41,8 @@ init_window :: proc(
     gui.init_root(&window.root, size)
     window.background_color = background_color
     window.root.backend.user_data = window
+    window.root.backend.get_clipboard = _backend_get_clipboard
+    window.root.backend.set_clipboard = _backend_set_clipboard
     window.root.backend.measure_text = _backend_measure_text
     window.root.backend.font_metrics = _backend_font_metrics
     window.root.backend.render_draw_command = _backend_render_draw_command
@@ -175,31 +178,71 @@ _redisplay_if_necessary :: proc(window: ^Window) {
     }
 }
 
-_backend_measure_text :: proc(backend: ^gui.Backend, text: string, font: gui.Font) -> f32 {
+_backend_measure_text :: proc(backend: ^gui.Backend, glyphs: ^[dynamic]gui.Text_Glyph, text: string, font: gui.Font) {
     window := cast(^Window)backend.user_data
     assert(window != nil)
+
     ctx := window.nvg_ctx
     assert(ctx != nil)
+
     font := cast(^Font)font
-    bounds: [4]f32
+
+    clear(glyphs)
+
+    if len(text) == 0 {
+        return
+    }
+
     nvg.TextAlign(ctx, .LEFT, .TOP)
     nvg.FontFace(ctx, font.name)
     nvg.FontSize(ctx, font.size)
-    nvg.TextBounds(ctx, 0, 0, text, &bounds)
-    return bounds[2] - bounds[0]
+
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text))
+    defer delete(nvg_positions)
+
+    temp_slice := nvg_positions[:]
+    position_count := nvg.TextGlyphPositions(ctx, 0, 0, text, &temp_slice)
+
+    resize(glyphs, position_count)
+
+    for i in 0 ..< position_count {
+        glyphs[i] = gui.Text_Glyph{
+            rune_index = nvg_positions[i].str,
+            position = nvg_positions[i].minx,
+            width = nvg_positions[i].maxx - nvg_positions[i].minx,
+            kerning = (nvg_positions[i].x - nvg_positions[i].minx),
+        }
+    }
 }
 
 _backend_font_metrics :: proc(backend: ^gui.Backend, font: gui.Font) -> gui.Font_Metrics {
     window := cast(^Window)backend.user_data
     assert(window != nil)
+
     ctx := window.nvg_ctx
     assert(ctx != nil)
+
     font := cast(^Font)font
+
     nvg.FontFace(ctx, font.name)
     nvg.FontSize(ctx, font.size)
+
     metrics: gui.Font_Metrics
     metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(window.nvg_ctx)
+
     return metrics
+}
+
+_backend_get_clipboard :: proc(backend: ^gui.Backend) -> (data: string, ok: bool) {
+    window := cast(^Window)backend.user_data
+    assert(window != nil)
+    return wnd.get_clipboard(&window.backend_window)
+}
+
+_backend_set_clipboard :: proc(backend: ^gui.Backend, data: string)-> (ok: bool) {
+    window := cast(^Window)backend.user_data
+    assert(window != nil)
+    return wnd.set_clipboard(&window.backend_window, data)
 }
 
 _backend_render_draw_command :: proc(backend: ^gui.Backend, command: gui.Draw_Command) {

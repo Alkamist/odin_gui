@@ -1,22 +1,20 @@
 package widgets
 
+import "core:fmt"
 import "core:mem"
+import "core:runtime"
+import "core:text/edit"
 import "core:strings"
 import "../../gui"
 
-Text_Span :: struct {
-    start: int,
-    length: int,
-    color: Color,
-    starts_new_line: bool,
-}
+Text_Edit_Command :: edit.Command
 
 Text :: struct {
     using widget: gui.Widget,
     builder: strings.Builder,
-    default_color: Color,
+    color: Color,
     font: gui.Font,
-    spans: [dynamic]Text_Span,
+    edit_state: edit.State,
 }
 
 init_text :: proc(
@@ -25,7 +23,7 @@ init_text :: proc(
     position := Vec2{0, 0},
     size := Vec2{0, 0},
     str := "",
-    default_color := Color{1, 1, 1, 1},
+    color := Color{1, 1, 1, 1},
     font: gui.Font = nil,
     event_proc: proc(^gui.Widget, ^gui.Widget, any) = text_event_proc,
     allocator := context.allocator,
@@ -41,32 +39,79 @@ init_text :: proc(
     strings.builder_init(&text.builder, allocator = allocator)
     strings.write_string(&text.builder, str)
     text.font = font
-    text.default_color = default_color
-    text.spans = make([dynamic]Text_Span, allocator) or_return
+    text.color = color
+    edit.init(&text.edit_state, allocator, allocator)
+    edit.setup_once(&text.edit_state, &text.builder)
+    text.edit_state.selection = {0, 0}
+    text.edit_state.clipboard_user_data = text
+    text.edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
+        return gui.get_clipboard(cast(^Text)user_data)
+    }
+    text.edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
+        return gui.set_clipboard(data, cast(^Text)user_data)
+    }
     return text, nil
 }
 
 destroy_text :: proc(text: ^Text) {
     strings.builder_destroy(&text.builder)
-    delete(text.spans)
+    edit.destroy(&text.edit_state)
     gui.destroy_widget(text)
 }
 
-text_span_string :: proc(text: ^Text, start, length: int) -> string {
-    return string(text.builder.buf[start:][:length])
+input_text :: proc(text: ^Text, str: string) {
+    edit.input_text(&text.edit_state, str)
+    gui.redraw(text)
 }
 
-append_span :: proc(text: ^Text, start, length: int, color: Color, starts_new_line := false) {
-    append(&text.spans, Text_Span{
-        start = start,
-        length = length,
-        color = color,
-        starts_new_line = starts_new_line,
-    })
+input_runes :: proc(text: ^Text, runes: []rune) {
+    edit.input_runes(&text.edit_state, runes)
+    gui.redraw(text)
+}
+
+input_rune :: proc(text: ^Text, r: rune) {
+    edit.input_rune(&text.edit_state, r)
+    gui.redraw(text)
+}
+
+insert_text :: proc(text: ^Text, at: int, str: string) {
+    edit.insert(&text.edit_state, at, str)
+    gui.redraw(text)
+}
+
+remove_text_range :: proc(text: ^Text, lo, hi: int) {
+    edit.remove(&text.edit_state, lo, hi)
+    gui.redraw(text)
+}
+
+text_has_selection :: proc(text: ^Text) -> bool {
+    return edit.has_selection(&text.edit_state)
+}
+
+sorted_text_selection :: proc(text: ^Text) -> (lo, hi: int) {
+    return edit.sorted_selection(&text.edit_state)
+}
+
+delete_text_selection :: proc(text: ^Text) {
+    edit.selection_delete(&text.edit_state)
+    gui.redraw(text)
+}
+
+edit_text :: proc(text: ^Text, command: Text_Edit_Command) {
+    edit.perform_command(&text.edit_state, command)
+    gui.redraw(text)
 }
 
 text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
     text := cast(^Text)widget
+
+    // Release focus if any other widget is clicked.
+    if subject != widget {
+        switch e in event {
+        case gui.Mouse_Press_Event:
+            if gui.current_focus() == widget do gui.release_focus()
+        }
+    }
 
     switch subject {
     case nil:
@@ -76,26 +121,163 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
 
     case widget:
         switch e in event {
+        case gui.Update_Event:
+            edit.update_time(&text.edit_state)
+
+        case gui.Mouse_Press_Event:
+            gui.set_focus(widget)
+
+        case gui.Text_Event:
+            input_rune(text, e.text)
+
+        case gui.Key_Press_Event:
+            ctrl := gui.key_down(.Left_Control) || gui.key_down(.Right_Control)
+            shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
+
+            #partial switch e.key {
+            case .Escape:
+                gui.release_focus()
+
+            case .Home:
+                switch {
+                case ctrl && shift: edit_text(text, .Select_Start)
+                case shift: edit_text(text, .Select_Line_Start)
+                case ctrl: edit_text(text, .Start)
+                case: edit_text(text, .Line_Start)
+                }
+
+            case .End:
+                switch {
+                case ctrl && shift: edit_text(text, .Select_End)
+                case shift: edit_text(text, .Select_Line_End)
+                case ctrl: edit_text(text, .End)
+                case: edit_text(text, .Line_End)
+                }
+
+            case .Backspace:
+                switch {
+                case ctrl: edit_text(text, .Delete_Word_Left)
+                case: edit_text(text, .Backspace)
+                }
+
+            case .Delete:
+                switch {
+                case ctrl: edit_text(text, .Delete_Word_Right)
+                case: edit_text(text, .Delete)
+                }
+
+            case .Left_Arrow:
+                switch {
+                case ctrl && shift: edit_text(text, .Select_Word_Left)
+                case shift: edit_text(text, .Select_Left)
+                case ctrl: edit_text(text, .Word_Left)
+                case: edit_text(text, .Left)
+                }
+
+            case .Right_Arrow:
+                switch {
+                case ctrl && shift: edit_text(text, .Select_Word_Right)
+                case shift: edit_text(text, .Select_Right)
+                case ctrl: edit_text(text, .Word_Right)
+                case: edit_text(text, .Right)
+                }
+
+            case .Up_Arrow:
+                switch {
+                case shift: edit_text(text, .Select_Up)
+                case: edit_text(text, .Up)
+                }
+
+            case .Down_Arrow:
+                switch {
+                case shift: edit_text(text, .Select_Down)
+                case: edit_text(text, .Down)
+                }
+
+            case .Enter, .Pad_Enter:
+                edit_text(text, .New_Line)
+
+            case .A:
+                if ctrl do edit_text(text, .Select_All)
+
+            case .C:
+                if ctrl do edit_text(text, .Copy)
+
+            case .V:
+                if ctrl do edit_text(text, .Paste)
+
+            case .X:
+                if ctrl do edit_text(text, .Cut)
+
+            case .Y:
+                if ctrl do edit_text(text, .Redo)
+
+            case .Z:
+                if ctrl do edit_text(text, .Undo)
+            }
+
         case gui.Draw_Event:
             gui.draw_rect({0, 0}, text.size, {0.4, 0, 0, 1})
-            // width := gui.measure_text(text.data, text.font)
-            // metrics := gui.font_metrics(text.font)
-            // gui.draw_rect({0, 0}, {width, metrics.line_height}, {0, 0.4, 0, 1})
 
-            _update_text_spans_using_lines(text)
+            // metrics := gui.font_metrics(text.font)
+            // position: Vec2
+
+            // str := strings.to_string(text.builder)
+
+            // for line in strings.split_lines_iterator(&str) {
+            //     glyphs: [dynamic]gui.Text_Glyph
+            //     defer delete(glyphs)
+
+            //     gui.measure_text(&glyphs, line, text.font)
+
+            //     // for glyph in glyphs {
+            //     //     gui.draw_rect(position + {glyph.position, 0}, {glyph.width, metrics.line_height}, {0, 1, 0, 0.5})
+            //     // }
+
+            //     gui.draw_text(line, position, text.font, text.color)
+
+            //     position.y += metrics.line_height
+            // }
 
             metrics := gui.font_metrics(text.font)
             position: Vec2
 
-            for span in text.spans {
-                if span.starts_new_line {
-                    position.x = 0
+            n := len(text.builder.buf)
+            i := 0
+            line_start := 0
+
+            for i < n {
+                c := text.builder.buf[i]
+
+                if c == '\n' || i == n - 1 {
+                    line_length := i - line_start
+                    if line_length > 0 {
+                        line_str := string(text.builder.buf[line_start:][:line_length])
+
+                        line_glyphs: [dynamic]gui.Text_Glyph
+                        defer delete(line_glyphs)
+
+                        gui.measure_text(&line_glyphs, line_str, text.font)
+
+                        // line_selection: Maybe([2]f32)
+
+                        for glyph in line_glyphs {
+                            if _rune_index_selected(text, line_start + glyph.rune_index) {
+                                gui.draw_rect(position + {glyph.position, 0}, {glyph.width, metrics.line_height}, {0, 1, 0, 0.5})
+                            }
+                        }
+
+                        gui.draw_text(line_str, position, text.font, text.color)
+                    }
+
+                    i += 1
+                    line_start = i
                     position.y += metrics.line_height
+
+                    continue
                 }
-                str := text_span_string(text, span.start, span.length)
-                if len(str) == 0 do continue
-                gui.draw_text(str, position, text.font, span.color)
-                position.x += gui.measure_text(str, text.font)
+
+                i += 1
             }
         }
     }
@@ -103,40 +285,7 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
 
 
 
-_update_text_spans_using_lines :: proc(text: ^Text) {
-    clear(&text.spans)
-
-    n := len(text.builder.buf)
-    i := 0
-    start := 0
-    next_starts_new_line := false
-
-    for i < n {
-        c := text.builder.buf[i]
-
-        if c == '\r' {
-            append_span(text, start, i - start, text.default_color, next_starts_new_line)
-            next_starts_new_line = false
-            i += 1
-            start = i
-            continue
-        }
-
-        if c == '\n' {
-            length := i - start
-            if length > 0 {
-                append_span(text, start, length, text.default_color, next_starts_new_line)
-            }
-            i += 1
-            start = i
-            next_starts_new_line = true
-            continue
-        }
-
-        i += 1
-    }
-
-    if start < n {
-        append_span(text, start, i - start, text.default_color, next_starts_new_line)
-    }
+_rune_index_selected :: proc(text: ^Text, index: int) -> bool {
+    low, high := sorted_text_selection(text)
+    return index >= low && index <= high
 }

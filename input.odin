@@ -55,6 +55,7 @@ input_close :: proc(root: ^Root) {
 
 input_update :: proc(root: ^Root) {
     send_global_event(root, Update_Event{})
+    _recursive_update(root)
 }
 
 input_resize :: proc(root: ^Root, size: Vec2) {
@@ -137,7 +138,6 @@ input_mouse_press :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
         })
     }
 }
-
 
 input_mouse_release :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
     root.input.mouse.button_down[button] = false

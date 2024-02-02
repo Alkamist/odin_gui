@@ -147,6 +147,20 @@ key_down :: proc(key: Keyboard_Key, widget := _current_widget) -> bool {
     return widget.root.input.keyboard.key_down[key]
 }
 
+get_clipboard :: proc(widget := _current_widget) -> (data: string, ok: bool) {
+    assert(widget != nil)
+    assert(widget.root != nil)
+    assert(widget.root.backend.get_clipboard != nil)
+    return widget.root.backend->get_clipboard()
+}
+
+set_clipboard :: proc(data: string, widget := _current_widget) -> (ok: bool) {
+    assert(widget != nil)
+    assert(widget.root != nil)
+    assert(widget.root.backend.set_clipboard != nil)
+    return widget.root.backend->set_clipboard(data)
+}
+
 current_focus :: proc(widget := _current_widget) -> ^Widget {
     assert(widget != nil)
     assert(widget.root != nil)
@@ -195,6 +209,13 @@ hit_test :: proc(position: Vec2, widget := _current_widget) -> ^Widget {
 }
 
 
+
+_recursive_update :: proc(widget: ^Widget) {
+    send_event(widget, Update_Event{})
+    for child in widget.children {
+        _recursive_update(child)
+    }
+}
 
 _set_root :: proc(widget: ^Widget, root: ^Root) {
     widget.root = root

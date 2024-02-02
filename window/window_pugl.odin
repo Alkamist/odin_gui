@@ -85,13 +85,10 @@ destroy :: proc(window: ^Window) {
     _force_close(window)
 }
 
-open :: proc(window: ^Window) -> bool {
+open :: proc(window: ^Window, allocator := context.allocator) -> bool {
     if window.is_open {
         return false
     }
-
-    checkpoint := runtime.default_temp_allocator_temp_begin()
-    defer runtime.default_temp_allocator_temp_end(checkpoint)
 
     if _window_count == 0 {
         when ODIN_BUILD_MODE == .Dynamic {
@@ -101,7 +98,9 @@ open :: proc(window: ^Window) -> bool {
         }
         _world = pugl.NewWorld(world_type, {})
 
-        world_id := fmt.tprint("WindowThread", _generate_id())
+        world_id := fmt.aprint("WindowThread", _generate_id(), allocator)
+        defer delete(world_id)
+
         pugl.SetWorldString(_world, .CLASS_NAME, strings.clone_to_cstring(world_id, context.temp_allocator))
     }
 
@@ -262,17 +261,23 @@ set_cursor_style :: proc(window: ^Window, style: Cursor_Style) {
     pugl.SetCursor(window.view, _cursor_style_to_pugl_cursor(style))
 }
 
-get_clipboard :: proc(window: ^Window) -> string {
+get_clipboard :: proc(window: ^Window) -> (data: string, ok: bool) {
     length: uint
     clipboard_cstring := cast(cstring)pugl.GetClipboard(window.view, 0, &length)
-    return string(clipboard_cstring)
+    if clipboard_cstring == nil {
+        return "", false
+    }
+    return string(clipboard_cstring), true
 }
 
-set_clipboard :: proc(window: ^Window, data: string) {
-    checkpoint := runtime.default_temp_allocator_temp_begin()
-    defer runtime.default_temp_allocator_temp_end(checkpoint)
-    data_cstring := strings.clone_to_cstring(data, context.temp_allocator)
-    pugl.SetClipboard(window.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1)
+set_clipboard :: proc(window: ^Window, data: string, allocator := context.allocator) -> (ok: bool) {
+    data_cstring, err := strings.clone_to_cstring(data, allocator)
+    defer delete(data_cstring)
+    if err != nil do return false
+    if pugl.SetClipboard(window.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1) != .SUCCESS {
+        return false
+    }
+    return true
 }
 
 
@@ -436,10 +441,10 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .TEXT:
         event := &event.text
 
-        // Filter out backspace, enter, tab, and escape.
+        // Filter out unnecessary characters.
         skip := false
         switch event.character {
-        case 8, 9, 13, 27: skip = true
+        case 0..<32: skip = true
         }
 
         if !skip {

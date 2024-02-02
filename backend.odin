@@ -4,7 +4,9 @@ import "rect"
 
 Backend :: struct {
     user_data: rawptr,
-    measure_text: proc(backend: ^Backend, text: string, font: Font) -> f32,
+    get_clipboard: proc(backend: ^Backend) -> (data: string, ok: bool),
+    set_clipboard: proc(backend: ^Backend, data: string) -> (ok: bool),
+    measure_text: proc(backend: ^Backend, glyphs: ^[dynamic]Text_Glyph, text: string, font: Font),
     font_metrics: proc(backend: ^Backend, font: Font) -> Font_Metrics,
     render_draw_command: proc(backend: ^Backend, command: Draw_Command),
 }
@@ -18,11 +20,11 @@ redraw :: proc(widget := _current_widget) {
     widget.root.needs_redisplay = true
 }
 
-measure_text :: proc(text: string, font: Font, widget := _current_widget) -> f32 {
+measure_text :: proc(glyphs: ^[dynamic]Text_Glyph, text: string, font: Font, widget := _current_widget) {
     assert(widget != nil)
     assert(widget.root != nil)
     assert(widget.root.backend.measure_text != nil)
-    return widget.root.backend->measure_text(text, font)
+    widget.root.backend->measure_text(glyphs, text, font)
 }
 
 font_metrics :: proc(font: Font, widget := _current_widget) -> Font_Metrics {

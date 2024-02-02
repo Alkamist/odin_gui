@@ -10,6 +10,13 @@ Font_Metrics :: struct {
     line_height: f32,
 }
 
+Text_Glyph :: struct {
+    rune_index: int,
+    position: f32,
+    width: f32,
+    kerning: f32,
+}
+
 Draw_Rect_Command :: struct {
     position: Vec2,
     size: Vec2,
