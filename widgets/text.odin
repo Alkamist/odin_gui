@@ -154,6 +154,12 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
                 case: edit_text(text, .Line_End)
                 }
 
+            case .Insert:
+                switch {
+                case ctrl: edit_text(text, .Copy)
+                case shift: edit_text(text, .Paste)
+                }
+
             case .Backspace:
                 switch {
                 case ctrl: edit_text(text, .Delete_Word_Left)
@@ -163,6 +169,7 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
             case .Delete:
                 switch {
                 case ctrl: edit_text(text, .Delete_Word_Right)
+                case shift: edit_text(text, .Cut)
                 case: edit_text(text, .Delete)
                 }
 
@@ -219,26 +226,6 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
         case gui.Draw_Event:
             gui.draw_rect({0, 0}, text.size, {0.4, 0, 0, 1})
 
-            // metrics := gui.font_metrics(text.font)
-            // position: Vec2
-
-            // str := strings.to_string(text.builder)
-
-            // for line in strings.split_lines_iterator(&str) {
-            //     glyphs: [dynamic]gui.Text_Glyph
-            //     defer delete(glyphs)
-
-            //     gui.measure_text(&glyphs, line, text.font)
-
-            //     // for glyph in glyphs {
-            //     //     gui.draw_rect(position + {glyph.position, 0}, {glyph.width, metrics.line_height}, {0, 1, 0, 0.5})
-            //     // }
-
-            //     gui.draw_text(line, position, text.font, text.color)
-
-            //     position.y += metrics.line_height
-            // }
-
             metrics := gui.font_metrics(text.font)
             position: Vec2
 
@@ -247,9 +234,7 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
             line_start := 0
 
             for i < n {
-                c := text.builder.buf[i]
-
-                if c == '\n' || i == n - 1 {
+                if text.builder.buf[i] == '\n' || i == n - 1 {
                     line_length := i - line_start
                     if line_length > 0 {
                         line_str := string(text.builder.buf[line_start:][:line_length])
@@ -261,8 +246,10 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
 
                         // line_selection: Maybe([2]f32)
 
+                        low, high := sorted_text_selection(text)
                         for glyph in line_glyphs {
-                            if _rune_index_selected(text, line_start + glyph.rune_index) {
+                            index := line_start + glyph.rune_index
+                            if index >= low && index <= high {
                                 gui.draw_rect(position + {glyph.position, 0}, {glyph.width, metrics.line_height}, {0, 1, 0, 0.5})
                             }
                         }
@@ -281,11 +268,4 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
             }
         }
     }
-}
-
-
-
-_rune_index_selected :: proc(text: ^Text, index: int) -> bool {
-    low, high := sorted_text_selection(text)
-    return index >= low && index <= high
 }
