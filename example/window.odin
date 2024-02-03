@@ -208,7 +208,7 @@ _backend_measure_text :: proc(backend: ^gui.Backend, glyphs: ^[dynamic]gui.Text_
     for i in 0 ..< position_count {
         glyphs[i] = gui.Text_Glyph{
             rune_index = nvg_positions[i].str,
-            position = nvg_positions[i].minx,
+            position = nvg_positions[i].x,
             width = nvg_positions[i].maxx - nvg_positions[i].minx,
             kerning = (nvg_positions[i].x - nvg_positions[i].minx),
         }

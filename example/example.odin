@@ -86,7 +86,7 @@ main :: proc() {
     //                         gui.redraw()
     //                     }
     //                 case widgets.Button_Click_Event:
-    //                     fmt.println("Clicked")
+    //                     fmt.println(gui.clip_rect())
     //                 }
     //             }
     //         },
@@ -113,8 +113,10 @@ main :: proc() {
     // )
     // defer widgets.destroy_slider(&slider)
 
-    widgets.init_text(&text, &window.root, {50, 50}, {100, 100}, SAMPLE_TEXT, font = &consola)
+    widgets.init_text(&text, &window.root, {50, 50}, {100, 100}, "Hello\nHello", font = &consola)
     defer widgets.destroy_text(&text)
+
+    // text.clip_children = true
 
     open_window(&window)
     for window_is_open(&window) {

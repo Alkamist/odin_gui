@@ -9,12 +9,18 @@ import "../../gui"
 
 Text_Edit_Command :: edit.Command
 
+Text_Line :: struct {
+    start: int,
+    length: int,
+}
+
 Text :: struct {
     using widget: gui.Widget,
     builder: strings.Builder,
     color: Color,
     font: gui.Font,
     edit_state: edit.State,
+    lines: [dynamic]Text_Line,
 }
 
 init_text :: proc(
@@ -36,6 +42,7 @@ init_text :: proc(
         event_proc = event_proc,
         allocator = allocator,
     ) or_return
+    text.lines = make([dynamic]Text_Line, allocator = allocator)
     strings.builder_init(&text.builder, allocator = allocator)
     strings.write_string(&text.builder, str)
     text.font = font
@@ -54,6 +61,7 @@ init_text :: proc(
 }
 
 destroy_text :: proc(text: ^Text) {
+    delete(text.lines)
     strings.builder_destroy(&text.builder)
     edit.destroy(&text.edit_state)
     gui.destroy_widget(text)
@@ -131,176 +139,182 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
             input_rune(text, e.text)
 
         case gui.Key_Press_Event:
-            ctrl := gui.key_down(.Left_Control) || gui.key_down(.Right_Control)
-            shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
-
-            #partial switch e.key {
-            case .Escape:
-                gui.release_focus()
-
-            case .Home:
-                switch {
-                case ctrl && shift: edit_text(text, .Select_Start)
-                case shift: edit_text(text, .Select_Line_Start)
-                case ctrl: edit_text(text, .Start)
-                case: edit_text(text, .Line_Start)
-                }
-
-            case .End:
-                switch {
-                case ctrl && shift: edit_text(text, .Select_End)
-                case shift: edit_text(text, .Select_Line_End)
-                case ctrl: edit_text(text, .End)
-                case: edit_text(text, .Line_End)
-                }
-
-            case .Insert:
-                switch {
-                case ctrl: edit_text(text, .Copy)
-                case shift: edit_text(text, .Paste)
-                }
-
-            case .Backspace:
-                switch {
-                case ctrl: edit_text(text, .Delete_Word_Left)
-                case: edit_text(text, .Backspace)
-                }
-
-            case .Delete:
-                switch {
-                case ctrl: edit_text(text, .Delete_Word_Right)
-                case shift: edit_text(text, .Cut)
-                case: edit_text(text, .Delete)
-                }
-
-            case .Left_Arrow:
-                switch {
-                case ctrl && shift: edit_text(text, .Select_Word_Left)
-                case shift: edit_text(text, .Select_Left)
-                case ctrl: edit_text(text, .Word_Left)
-                case: edit_text(text, .Left)
-                }
-
-            case .Right_Arrow:
-                switch {
-                case ctrl && shift: edit_text(text, .Select_Word_Right)
-                case shift: edit_text(text, .Select_Right)
-                case ctrl: edit_text(text, .Word_Right)
-                case: edit_text(text, .Right)
-                }
-
-            case .Up_Arrow:
-                switch {
-                case shift: edit_text(text, .Select_Up)
-                case: edit_text(text, .Up)
-                }
-
-            case .Down_Arrow:
-                switch {
-                case shift: edit_text(text, .Select_Down)
-                case: edit_text(text, .Down)
-                }
-
-            case .Enter, .Pad_Enter:
-                edit_text(text, .New_Line)
-
-            case .A:
-                if ctrl do edit_text(text, .Select_All)
-
-            case .C:
-                if ctrl do edit_text(text, .Copy)
-
-            case .V:
-                if ctrl do edit_text(text, .Paste)
-
-            case .X:
-                if ctrl do edit_text(text, .Cut)
-
-            case .Y:
-                if ctrl do edit_text(text, .Redo)
-
-            case .Z:
-                if ctrl do edit_text(text, .Undo)
-            }
+            _handle_text_edit_keybinds(text, e.key)
 
         case gui.Draw_Event:
-            gui.draw_rect({0, 0}, text.size, {0.4, 0, 0, 1})
+            _handle_text_render(text)
+        }
+    }
+}
 
-            low, high := sorted_text_selection(text)
-            metrics := gui.font_metrics(text.font)
-            y := f32(0)
 
-            n := len(text.builder.buf)
-            i := 0
-            line_start := 0
 
-            for i <= n {
-                if i == n || text.builder.buf[i] == '\n' {
-                    line_length := i - line_start + 1
-                    if line_length > 0 {
-                        line_glyphs: [dynamic]gui.Text_Glyph
-                        defer delete(line_glyphs)
+_update_text_lines :: proc(text: ^Text) {
+    clear(&text.lines)
+    n := len(text.builder.buf)
+    i := 0
+    line_start := 0
+    for i <= n {
+        if i == n || text.builder.buf[i] == '\n' {
+            line_length := i - line_start if i == n else i - line_start + 1
+            append(&text.lines, Text_Line{
+                start = line_start,
+                length = line_length,
+            })
+            i += 1
+            line_start = i
+            continue
+        }
+        i += 1
+    }
+}
 
-                        if i == n {
-                            gui.measure_text(&line_glyphs, string(text.builder.buf[line_start:][:line_length - 1]), text.font)
-                        } else {
-                            gui.measure_text(&line_glyphs, string(text.builder.buf[line_start:][:line_length]), text.font)
-                        }
+_handle_text_render :: proc(text: ^Text) {
+    CARET_WIDTH :: 2
+    CARET_COLOR :: Color{0, 1, 0, 1}
 
-                        selection_this_line := false
-                        left := f32(0)
-                        right := f32(0)
+    gui.draw_rect({0, 0}, text.size, {0.4, 0, 0, 1})
+    _update_text_lines(text)
 
-                        for glyph in line_glyphs {
-                            index := line_start + glyph.rune_index
-                            if index >= low && index <= high {
-                                left = glyph.position
-                                selection_this_line = true
-                                break
-                            }
-                        }
+    metrics := gui.font_metrics(text.font)
 
-                        #reverse for glyph in line_glyphs {
-                            index := line_start + glyph.rune_index
-                            if index >= low && index <= high {
-                                if index == high {
-                                    right = glyph.position
-                                } else {
-                                    right = glyph.position + glyph.width
-                                }
-                                selection_this_line = true
-                                break
-                            }
-                        }
+    head := text.edit_state.selection[0]
+    tail := text.edit_state.selection[1]
+    low, high := sorted_text_selection(text)
+    range_is_selected := high > low
 
-                        if selection_this_line {
-                            width := right - left
-                            if width == 0 {
-                                gui.draw_rect({left, y}, {2, metrics.line_height}, {0, 0.5, 0, 1})
-                            } else {
-                                gui.draw_rect({left, y}, {width, metrics.line_height}, {0, 0.5, 0, 1})
-                            }
-                        }
+    n := len(text.builder.buf)
+    line_count := len(text.lines)
 
-                        // for glyph in line_glyphs {
-                        //     index := line_start + glyph.rune_index
-                        //     if index >= low && index <= high {
-                        //         gui.draw_rect({glyph.position, 0}, {glyph.width, metrics.line_height}, {0, 1, 0, 0.5})
-                        //     }
-                        // }
+    caret_set := false
+    caret_position: Vec2
 
-                        gui.draw_text(string(text.builder.buf[line_start:][:line_length - 1]), {0, y}, text.font, text.color)
-                    }
+    for line, i in text.lines {
+        start := line.start
+        finish := start + line.length
+        line_str := string(text.builder.buf[start:][:line.length])
+        line_y := metrics.line_height * f32(i)
+        line_end := f32(0)
 
-                    i += 1
-                    line_start = i
-                    y += metrics.line_height
+        glyphs: [dynamic]gui.Text_Glyph
+        defer delete(glyphs)
+        gui.measure_text(&glyphs, line_str, text.font)
 
-                    continue
-                }
+        // Left and right of the selection.
+        left, right: Maybe(f32)
 
-                i += 1
+        for glyph in glyphs {
+            index := start + glyph.rune_index
+            if index == head {
+                caret_set = true
+                caret_position = {glyph.position, line_y}
             }
+
+            // Figure out the bounds of the selection if it exists.
+            if range_is_selected {
+                if left == nil && index >= low do left = glyph.position
+                if index >= low && index < high do right = glyph.position + glyph.width
+            }
+
+            line_end = glyph.position + glyph.width
+        }
+
+        // Draw the selection.
+        left_, left_exists := left.?
+        right_, right_exists := right.?
+        if left_exists && right_exists {
+            gui.draw_rect({left_, line_y}, {right_ - left_, metrics.line_height}, {0, 1, 0, 0.5})
+        }
+
+        // If the line ends with '\n', trim it off and don't draw it.
+        draw_length := line.length
+        if line.length > 0 && line_str[line.length - 1] == '\n' do draw_length -= 1
+        gui.draw_text(line_str[:draw_length], {0, line_y}, text.font, text.color)
+
+        // Set the caret to the end of the text if necessary.
+        if !caret_set && i == line_count - 1 {
+            caret_position = {line_end, line_y}
+        }
+    }
+
+    gui.draw_rect(caret_position, {CARET_WIDTH, metrics.line_height}, CARET_COLOR)
+}
+
+_handle_text_edit_keybinds :: proc(text: ^Text, key: gui.Keyboard_Key) {
+    ctrl := gui.key_down(.Left_Control) || gui.key_down(.Right_Control)
+    shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
+
+    #partial switch key {
+    case .Escape: gui.release_focus()
+    case .Enter, .Pad_Enter: edit_text(text, .New_Line)
+    case .A: if ctrl do edit_text(text, .Select_All)
+    case .C: if ctrl do edit_text(text, .Copy)
+    case .V: if ctrl do edit_text(text, .Paste)
+    case .X: if ctrl do edit_text(text, .Cut)
+    case .Y: if ctrl do edit_text(text, .Redo)
+    case .Z: if ctrl do edit_text(text, .Undo)
+
+    case .Home:
+        switch {
+        case ctrl && shift: edit_text(text, .Select_Start)
+        case shift: edit_text(text, .Select_Line_Start)
+        case ctrl: edit_text(text, .Start)
+        case: edit_text(text, .Line_Start)
+        }
+
+    case .End:
+        switch {
+        case ctrl && shift: edit_text(text, .Select_End)
+        case shift: edit_text(text, .Select_Line_End)
+        case ctrl: edit_text(text, .End)
+        case: edit_text(text, .Line_End)
+        }
+
+    case .Insert:
+        switch {
+        case ctrl: edit_text(text, .Copy)
+        case shift: edit_text(text, .Paste)
+        }
+
+    case .Backspace:
+        switch {
+        case ctrl: edit_text(text, .Delete_Word_Left)
+        case: edit_text(text, .Backspace)
+        }
+
+    case .Delete:
+        switch {
+        case ctrl: edit_text(text, .Delete_Word_Right)
+        case shift: edit_text(text, .Cut)
+        case: edit_text(text, .Delete)
+        }
+
+    case .Left_Arrow:
+        switch {
+        case ctrl && shift: edit_text(text, .Select_Word_Left)
+        case shift: edit_text(text, .Select_Left)
+        case ctrl: edit_text(text, .Word_Left)
+        case: edit_text(text, .Left)
+        }
+
+    case .Right_Arrow:
+        switch {
+        case ctrl && shift: edit_text(text, .Select_Word_Right)
+        case shift: edit_text(text, .Select_Right)
+        case ctrl: edit_text(text, .Word_Right)
+        case: edit_text(text, .Right)
+        }
+
+    case .Up_Arrow:
+        switch {
+        case shift: edit_text(text, .Select_Up)
+        case: edit_text(text, .Up)
+        }
+
+    case .Down_Arrow:
+        switch {
+        case shift: edit_text(text, .Select_Down)
+        case: edit_text(text, .Down)
         }
     }
 }

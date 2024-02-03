@@ -161,6 +161,32 @@ set_clipboard :: proc(data: string, widget := _current_widget) -> (ok: bool) {
     return widget.root.backend->set_clipboard(data)
 }
 
+clip_rect :: proc(widget := _current_widget) -> Maybe(Rect) {
+    widget_rect := Rect{{0, 0}, widget.size}
+    if widget.parent == nil {
+        if widget.clip_children {
+            return widget_rect
+        } else {
+            return nil
+        }
+    } else {
+        if parent_clip_rect, ok := clip_rect(widget.parent).?; ok {
+            parent_clip_rect.position -= widget.position
+            if widget.clip_children {
+                return rect.intersection(parent_clip_rect, widget_rect)
+            } else {
+                return parent_clip_rect
+            }
+        } else {
+            if widget.clip_children {
+                return widget_rect
+            } else {
+                return nil
+            }
+        }
+    }
+}
+
 current_focus :: proc(widget := _current_widget) -> ^Widget {
     assert(widget != nil)
     assert(widget.root != nil)
