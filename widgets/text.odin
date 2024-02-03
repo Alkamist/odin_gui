@@ -7,6 +7,12 @@ import "core:text/edit"
 import "core:strings"
 import "../../gui"
 
+// Todo:
+// Single, double, triple, and quadruple clicks.
+// Mouse cursor changing.
+// Glyph measuring allocation.
+// Figure out the problem with line starts/ends.
+
 Text_Edit_Command :: edit.Command
 
 Text_Line :: struct {
@@ -242,11 +248,12 @@ _update_text_lines :: proc(text: ^Text) {
     }
 }
 
-_handle_text_render :: proc(text: ^Text, allocator := context.allocator) {
+_handle_text_render :: proc(text: ^Text) {
     CARET_WIDTH :: 2
     CARET_COLOR :: Color{0, 1, 0, 1}
 
     gui.draw_rect({0, 0}, text.size, {0.4, 0, 0, 1})
+    gui.clip_drawing({0, 0}, text.size)
     _update_text_lines(text)
 
     metrics := gui.font_metrics(text.font)
@@ -266,7 +273,7 @@ _handle_text_render :: proc(text: ^Text, allocator := context.allocator) {
         line_y := metrics.line_height * f32(i)
         line_end := f32(0)
 
-        glyphs := make([dynamic]gui.Text_Glyph, allocator)
+        glyphs: [dynamic]gui.Text_Glyph
         defer delete(glyphs)
         gui.measure_text(&glyphs, line_str, text.font)
 

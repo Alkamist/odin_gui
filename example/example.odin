@@ -60,60 +60,60 @@ main :: proc() {
     )
     defer destroy_window(&window)
 
-    // for &button, i in buttons {
-    //     widgets.init_button(&button, &window.root,
-    //         position = {f32(i * 20), f32(i * 20)},
-    //         size = {32 + rand.float32() * 100, 32 + rand.float32() * 100},
-    //         event_proc = proc(widget, subject: ^gui.Widget, event: any) {
-    //             button := cast(^widgets.Button)widget
-    //             widgets.button_event_proc(button, subject, event)
+    for &button, i in buttons {
+        widgets.init_button(&button, &window.root,
+            position = {f32(i * 20), f32(i * 20)},
+            size = {32 + rand.float32() * 100, 32 + rand.float32() * 100},
+            event_proc = proc(widget, subject: ^gui.Widget, event: any) {
+                button := cast(^widgets.Button)widget
+                widgets.button_event_proc(button, subject, event)
 
-    //             switch subject {
-    //             case nil:
-    //                 switch e in event {
-    //                 case gui.Mouse_Move_Event:
-    //                     if gui.mouse_down(.Right) {
-    //                         gui.set_position(button.position + e.delta)
-    //                         gui.redraw()
-    //                     }
-    //                 }
+                switch subject {
+                case nil:
+                    switch e in event {
+                    case gui.Mouse_Move_Event:
+                        if gui.mouse_down(.Right) {
+                            gui.set_position(button.position + e.delta)
+                            gui.redraw()
+                        }
+                    }
 
-    //             case widget:
-    //                 switch e in event {
-    //                 case gui.Mouse_Move_Event:
-    //                     if button.is_down {
-    //                         gui.set_position(button.position + e.delta)
-    //                         gui.redraw()
-    //                     }
-    //                 case widgets.Button_Click_Event:
-    //                     fmt.println(gui.clip_rect())
-    //                 }
-    //             }
-    //         },
-    //     )
-    // }
-    // defer for &button in buttons {
-    //     widgets.destroy_button(&button)
-    // }
+                case widget:
+                    switch e in event {
+                    case gui.Mouse_Move_Event:
+                        if button.is_down {
+                            gui.set_position(button.position + e.delta)
+                            gui.redraw()
+                        }
+                    case widgets.Button_Click_Event:
+                        fmt.println("Clicked")
+                    }
+                }
+            },
+        )
+    }
+    defer for &button in buttons {
+        widgets.destroy_button(&button)
+    }
 
-    // widgets.init_slider(&slider, &window.root,
-    //     position = {100, 100},
-    //     // event_proc = proc(widget, subject: ^gui.Widget, event: any) {
-    //     //     slider := cast(^widgets.Slider)widget
-    //     //     widgets.slider_event_proc(widget, subject, event)
-    //     //     switch subject {
-    //     //     case widget:
-    //     //         switch e in event {
-    //     //         case widgets.Slider_Value_Change_Event:
-    //     //             consola.size = slider.value * 64
-    //     //             gui.redraw(&text)
-    //     //         }
-    //     //     }
-    //     // },
-    // )
-    // defer widgets.destroy_slider(&slider)
+    widgets.init_slider(&slider, &window.root,
+        position = {100, 100},
+        // event_proc = proc(widget, subject: ^gui.Widget, event: any) {
+        //     slider := cast(^widgets.Slider)widget
+        //     widgets.slider_event_proc(widget, subject, event)
+        //     switch subject {
+        //     case widget:
+        //         switch e in event {
+        //         case widgets.Slider_Value_Change_Event:
+        //             consola.size = slider.value * 64
+        //             gui.redraw(&text)
+        //         }
+        //     }
+        // },
+    )
+    defer widgets.destroy_slider(&slider)
 
-    widgets.init_text(&text, &window.root, {50, 50}, {100, 100}, "Hello\nHello world", font = &consola)
+    widgets.init_text(&text, &window.root, {50, 50}, {100, 100}, SAMPLE_TEXT, font = &consola)
     defer widgets.destroy_text(&text)
 
     // text.clip_children = true

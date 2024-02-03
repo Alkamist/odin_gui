@@ -61,15 +61,15 @@ render_draw_commands :: proc(widget: ^Widget) {
             })
 
         case Clip_Drawing_Command:
-            global_clip_rect, ok := widget.cached_global_clip_rect.?
-            if !ok {
-                break
+            if global_clip_rect, ok := widget.cached_global_clip_rect.?; ok {
+                intersected_clip_rect := rect.intersection(global_clip_rect, {global_position + c.position, c.size})
+                _render_draw_command(widget, Clip_Drawing_Command{
+                    intersected_clip_rect.position,
+                    intersected_clip_rect.size,
+                })
+            } else {
+                _render_draw_command(widget, Clip_Drawing_Command{global_position + c.position, c.size})
             }
-            intersected_clip_rect := rect.intersection(global_clip_rect, {global_position + c.position, c.size})
-            _render_draw_command(widget, Clip_Drawing_Command{
-                intersected_clip_rect.position,
-                intersected_clip_rect.size,
-            })
         }
     }
 
