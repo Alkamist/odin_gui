@@ -226,40 +226,75 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
         case gui.Draw_Event:
             gui.draw_rect({0, 0}, text.size, {0.4, 0, 0, 1})
 
+            low, high := sorted_text_selection(text)
             metrics := gui.font_metrics(text.font)
-            position: Vec2
+            y := f32(0)
 
             n := len(text.builder.buf)
             i := 0
             line_start := 0
 
-            for i < n {
-                if text.builder.buf[i] == '\n' || i == n - 1 {
-                    line_length := i - line_start
+            for i <= n {
+                if i == n || text.builder.buf[i] == '\n' {
+                    line_length := i - line_start + 1
                     if line_length > 0 {
-                        line_str := string(text.builder.buf[line_start:][:line_length])
-
                         line_glyphs: [dynamic]gui.Text_Glyph
                         defer delete(line_glyphs)
 
-                        gui.measure_text(&line_glyphs, line_str, text.font)
+                        if i == n {
+                            gui.measure_text(&line_glyphs, string(text.builder.buf[line_start:][:line_length - 1]), text.font)
+                        } else {
+                            gui.measure_text(&line_glyphs, string(text.builder.buf[line_start:][:line_length]), text.font)
+                        }
 
-                        // line_selection: Maybe([2]f32)
+                        selection_this_line := false
+                        left := f32(0)
+                        right := f32(0)
 
-                        low, high := sorted_text_selection(text)
                         for glyph in line_glyphs {
                             index := line_start + glyph.rune_index
                             if index >= low && index <= high {
-                                gui.draw_rect(position + {glyph.position, 0}, {glyph.width, metrics.line_height}, {0, 1, 0, 0.5})
+                                left = glyph.position
+                                selection_this_line = true
+                                break
                             }
                         }
 
-                        gui.draw_text(line_str, position, text.font, text.color)
+                        #reverse for glyph in line_glyphs {
+                            index := line_start + glyph.rune_index
+                            if index >= low && index <= high {
+                                if index == high {
+                                    right = glyph.position
+                                } else {
+                                    right = glyph.position + glyph.width
+                                }
+                                selection_this_line = true
+                                break
+                            }
+                        }
+
+                        if selection_this_line {
+                            width := right - left
+                            if width == 0 {
+                                gui.draw_rect({left, y}, {2, metrics.line_height}, {0, 0.5, 0, 1})
+                            } else {
+                                gui.draw_rect({left, y}, {width, metrics.line_height}, {0, 0.5, 0, 1})
+                            }
+                        }
+
+                        // for glyph in line_glyphs {
+                        //     index := line_start + glyph.rune_index
+                        //     if index >= low && index <= high {
+                        //         gui.draw_rect({glyph.position, 0}, {glyph.width, metrics.line_height}, {0, 1, 0, 0.5})
+                        //     }
+                        // }
+
+                        gui.draw_text(string(text.builder.buf[line_start:][:line_length - 1]), {0, y}, text.font, text.color)
                     }
 
                     i += 1
                     line_start = i
-                    position.y += metrics.line_height
+                    y += metrics.line_height
 
                     continue
                 }
