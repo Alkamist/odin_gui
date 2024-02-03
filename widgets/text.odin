@@ -19,6 +19,7 @@ Text :: struct {
     builder: strings.Builder,
     color: Color,
     font: gui.Font,
+    is_drag_selecting: bool,
     edit_state: edit.State,
     lines: [dynamic]Text_Line,
 }
@@ -42,6 +43,7 @@ init_text :: proc(
         event_proc = event_proc,
         allocator = allocator,
     ) or_return
+    text.is_drag_selecting = false
     text.lines = make([dynamic]Text_Line, allocator = allocator)
     strings.builder_init(&text.builder, allocator = allocator)
     strings.write_string(&text.builder, str)
@@ -110,6 +112,68 @@ edit_text :: proc(text: ^Text, command: Text_Edit_Command) {
     gui.redraw(text)
 }
 
+start_drag_selection :: proc(text: ^Text, position: Vec2, only_head := false) {
+    gui.set_focus(text)
+    index := rune_index_at_position(text, position)
+    text.is_drag_selecting = true
+    text.edit_state.selection[0] = index
+    if !only_head do text.edit_state.selection[1] = index
+    gui.redraw()
+}
+
+move_drag_selection :: proc(text: ^Text, position: Vec2) {
+    if !text.is_drag_selecting do return
+    text.edit_state.selection[0] = rune_index_at_position(text, position)
+    gui.redraw()
+}
+
+end_drag_selection :: proc(text: ^Text) {
+    if !text.is_drag_selecting do return
+    text.is_drag_selecting = false
+    gui.redraw()
+}
+
+rune_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
+    _update_text_lines(text)
+    metrics := gui.font_metrics(text.font)
+
+    if position.x < 0 || position.y < 0 {
+        return 0
+    }
+
+    for line, i in text.lines {
+        line_y := metrics.line_height * f32(i)
+        if position.y < line_y || position.y > line_y + metrics.line_height {
+            continue
+        }
+
+        line_str := string(text.builder.buf[line.start:][:line.length])
+
+        glyphs: [dynamic]gui.Text_Glyph
+        defer delete(glyphs)
+        gui.measure_text(&glyphs, line_str, text.font)
+
+        for glyph in glyphs {
+            left := glyph.position
+            right := glyph.position + glyph.width
+            if position.x >= left && position.x < right {
+                return line.start + glyph.rune_index
+            }
+        }
+
+        // If this point is reached then the position is to the right
+        // of all of the glyphs in the line.
+        if line.length > 0 && line_str[line.length - 1] == '\n' {
+            // Put the cursor before the '\n' if there is one.
+            return line.start + line.length - 1
+        } else {
+            return line.start + line.length
+        }
+    }
+
+    return len(text.builder.buf)
+}
+
 text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
     text := cast(^Text)widget
 
@@ -133,7 +197,16 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
             edit.update_time(&text.edit_state)
 
         case gui.Mouse_Press_Event:
-            gui.set_focus(widget)
+            gui.capture_hover()
+            shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
+            start_drag_selection(text, e.position, only_head = shift)
+
+        case gui.Mouse_Release_Event:
+            end_drag_selection(text)
+            gui.release_hover()
+
+        case gui.Mouse_Move_Event:
+            move_drag_selection(text, e.position)
 
         case gui.Text_Event:
             input_rune(text, e.text)
@@ -169,7 +242,7 @@ _update_text_lines :: proc(text: ^Text) {
     }
 }
 
-_handle_text_render :: proc(text: ^Text) {
+_handle_text_render :: proc(text: ^Text, allocator := context.allocator) {
     CARET_WIDTH :: 2
     CARET_COLOR :: Color{0, 1, 0, 1}
 
@@ -179,11 +252,9 @@ _handle_text_render :: proc(text: ^Text) {
     metrics := gui.font_metrics(text.font)
 
     head := text.edit_state.selection[0]
-    tail := text.edit_state.selection[1]
     low, high := sorted_text_selection(text)
     range_is_selected := high > low
 
-    n := len(text.builder.buf)
     line_count := len(text.lines)
 
     caret_set := false
@@ -191,12 +262,11 @@ _handle_text_render :: proc(text: ^Text) {
 
     for line, i in text.lines {
         start := line.start
-        finish := start + line.length
         line_str := string(text.builder.buf[start:][:line.length])
         line_y := metrics.line_height * f32(i)
         line_end := f32(0)
 
-        glyphs: [dynamic]gui.Text_Glyph
+        glyphs := make([dynamic]gui.Text_Glyph, allocator)
         defer delete(glyphs)
         gui.measure_text(&glyphs, line_str, text.font)
 

@@ -105,19 +105,19 @@ input_mouse_move :: proc(root: ^Root, position: Vec2) {
     if root.hover != root.previous_hover {
         if root.previous_hover != nil {
             send_event(root.previous_hover, Mouse_Exit_Event{
-                position = position,
+                position = mouse_position(root.previous_hover),
             })
         }
         if root.hover != nil {
             send_event(root.hover, Mouse_Enter_Event{
-                position = position,
+                position = mouse_position(root.hover),
             })
         }
     }
 
     if root.hover != nil {
         send_event(root.hover, Mouse_Move_Event{
-            position = position,
+            position = mouse_position(root.hover),
             delta = delta,
         })
     }
@@ -133,7 +133,7 @@ input_mouse_press :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
 
     if root.hover != nil {
         send_event(root.hover, Mouse_Press_Event{
-            position = position,
+            position = mouse_position(root.hover),
             button = button,
         })
     }

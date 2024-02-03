@@ -129,10 +129,19 @@ global_mouse_position :: proc(widget := _current_widget) -> Vec2 {
     return widget.root.input.mouse.position
 }
 
+global_position :: proc(widget := _current_widget) -> Vec2 {
+    assert(widget != nil)
+    if widget.parent == nil {
+        return widget.position
+    } else {
+        return global_position(widget.parent) + widget.position
+    }
+}
+
 mouse_position :: proc(widget := _current_widget) -> Vec2 {
     assert(widget != nil)
     assert(widget.root != nil)
-    return widget.root.input.mouse.position - widget.position
+    return widget.root.input.mouse.position - global_position(widget)
 }
 
 mouse_down :: proc(button: Mouse_Button, widget := _current_widget) -> bool {
