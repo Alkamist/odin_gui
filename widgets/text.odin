@@ -282,23 +282,27 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
         case gui.Mouse_Exit_Event:
             gui.set_cursor_style(.Arrow)
 
-        case gui.Mouse_Press_Event:
-            gui.capture_hover()
-            #partial switch e.button {
-            case .Left, .Middle:
-                shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
-                start_drag_selection(text, e.position, only_head = shift)
-            }
-
         case gui.Mouse_Repeat_Event:
-            switch e.repeats {
-            case 1: // Double click
+            gui.capture_hover()
+
+            switch e.press_count {
+            case 1: // Single click
+                #partial switch e.button {
+                case .Left, .Middle:
+                    shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
+                    start_drag_selection(text, e.position, only_head = shift)
+                }
+
+            case 2: // Double click
+                edit_text(text, .Word_Right)
                 edit_text(text, .Word_Left)
                 edit_text(text, .Select_Word_Right)
-            case 2: // Triple click
+
+            case 3: // Triple click
                 edit_text(text, .Line_Start)
                 edit_text(text, .Select_Line_End)
-            case 3: // Quadruple click
+
+            case 4: // Quadruple click
                 edit_text(text, .Start)
                 edit_text(text, .Select_End)
             }

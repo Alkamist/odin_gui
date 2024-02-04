@@ -17,7 +17,7 @@ Root :: struct {
     mouse_repeat_duration: Duration,
     mouse_repeat_movement_tolerance: f32,
     mouse_repeat_start_position: Vec2,
-    mouse_repeats: int,
+    mouse_repeat_press_count: int,
     mouse_repeat_tick: Tick,
 
     backend: Backend,

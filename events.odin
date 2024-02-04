@@ -43,7 +43,7 @@ Mouse_Press_Event :: struct {
 Mouse_Repeat_Event :: struct {
     position: Vec2,
     button: Mouse_Button,
-    repeats: int,
+    press_count: int,
 }
 
 Mouse_Release_Event :: struct {
