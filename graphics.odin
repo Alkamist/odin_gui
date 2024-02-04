@@ -41,6 +41,18 @@ Draw_Command :: union {
     Clip_Drawing_Command,
 }
 
+content_scale :: proc(widget := _current_widget) -> Vec2 {
+    assert(widget != nil)
+    assert(widget.root != nil)
+    return widget.root.content_scale
+}
+
+pixel_size :: proc(widget := _current_widget) -> Vec2 {
+    assert(widget != nil)
+    assert(widget.root != nil)
+    return 1.0 / widget.root.content_scale
+}
+
 draw_rect :: proc(position, size: Vec2, color: Color, widget := _current_widget) {
     assert(widget != nil)
     append(&widget.draw_commands, Draw_Rect_Command{position, size, color})

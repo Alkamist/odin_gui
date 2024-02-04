@@ -2,6 +2,7 @@ package widgets
 
 import "core:fmt"
 import "core:mem"
+import "core:math"
 import "core:runtime"
 import "core:text/edit"
 import "core:strings"
@@ -9,9 +10,9 @@ import "../../gui"
 
 // Todo:
 // Single, double, triple, and quadruple clicks.
-// Mouse cursor changing.
-// Glyph measuring allocation.
 // Figure out the problem with line starts/ends.
+// Handle carriage returns?
+// Single line mode?
 
 Text_Edit_Command :: edit.Command
 
@@ -75,6 +76,12 @@ destroy_text :: proc(text: ^Text) {
     gui.destroy_widget(text)
 }
 
+line_height :: proc(text: ^Text) -> f32 {
+    pixel_height := gui.pixel_size(text).y
+    metrics, _ := gui.font_metrics(text.font)
+    return math.ceil(metrics.line_height / pixel_height) * pixel_height
+}
+
 input_text :: proc(text: ^Text, str: string) {
     edit.input_text(&text.edit_state, str)
     gui.redraw(text)
@@ -124,39 +131,41 @@ start_drag_selection :: proc(text: ^Text, position: Vec2, only_head := false) {
     text.is_drag_selecting = true
     text.edit_state.selection[0] = index
     if !only_head do text.edit_state.selection[1] = index
-    gui.redraw()
+    gui.redraw(text)
 }
 
 move_drag_selection :: proc(text: ^Text, position: Vec2) {
     if !text.is_drag_selecting do return
     text.edit_state.selection[0] = rune_index_at_position(text, position)
-    gui.redraw()
+    gui.redraw(text)
 }
 
 end_drag_selection :: proc(text: ^Text) {
     if !text.is_drag_selecting do return
     text.is_drag_selecting = false
-    gui.redraw()
+    gui.redraw(text)
 }
 
 rune_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
+    checkpoint := runtime.default_temp_allocator_temp_begin()
+    defer runtime.default_temp_allocator_temp_end(checkpoint)
+
     _update_text_lines(text)
-    metrics := gui.font_metrics(text.font)
+    line_height := line_height(text)
 
     if position.x < 0 || position.y < 0 {
         return 0
     }
 
     for line, i in text.lines {
-        line_y := metrics.line_height * f32(i)
-        if position.y < line_y || position.y > line_y + metrics.line_height {
+        line_y := line_height * f32(i)
+        if position.y < line_y || position.y > line_y + line_height {
             continue
         }
 
         line_str := string(text.builder.buf[line.start:][:line.length])
 
-        glyphs: [dynamic]gui.Text_Glyph
-        defer delete(glyphs)
+        glyphs := make([dynamic]gui.Text_Glyph, context.temp_allocator)
         gui.measure_text(&glyphs, line_str, text.font)
 
         for glyph in glyphs {
@@ -201,6 +210,12 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
         switch e in event {
         case gui.Update_Event:
             edit.update_time(&text.edit_state)
+
+        case gui.Mouse_Enter_Event:
+            gui.set_cursor_style(.I_Beam)
+
+        case gui.Mouse_Exit_Event:
+            gui.set_cursor_style(.Arrow)
 
         case gui.Mouse_Press_Event:
             gui.capture_hover()
@@ -249,6 +264,9 @@ _update_text_lines :: proc(text: ^Text) {
 }
 
 _handle_text_render :: proc(text: ^Text) {
+    checkpoint := runtime.default_temp_allocator_temp_begin()
+    defer runtime.default_temp_allocator_temp_end(checkpoint)
+
     CARET_WIDTH :: 2
     CARET_COLOR :: Color{0, 1, 0, 1}
 
@@ -256,7 +274,7 @@ _handle_text_render :: proc(text: ^Text) {
     gui.clip_drawing({0, 0}, text.size)
     _update_text_lines(text)
 
-    metrics := gui.font_metrics(text.font)
+    line_height := line_height(text)
 
     head := text.edit_state.selection[0]
     low, high := sorted_text_selection(text)
@@ -270,11 +288,10 @@ _handle_text_render :: proc(text: ^Text) {
     for line, i in text.lines {
         start := line.start
         line_str := string(text.builder.buf[start:][:line.length])
-        line_y := metrics.line_height * f32(i)
+        line_y := line_height * f32(i)
         line_end := f32(0)
 
-        glyphs: [dynamic]gui.Text_Glyph
-        defer delete(glyphs)
+        glyphs := make([dynamic]gui.Text_Glyph, context.temp_allocator)
         gui.measure_text(&glyphs, line_str, text.font)
 
         // Left and right of the selection.
@@ -300,7 +317,7 @@ _handle_text_render :: proc(text: ^Text) {
         left_, left_exists := left.?
         right_, right_exists := right.?
         if left_exists && right_exists {
-            gui.draw_rect({left_, line_y}, {right_ - left_, metrics.line_height}, {0, 1, 0, 0.5})
+            gui.draw_rect({left_, line_y}, {right_ - left_, line_height}, {0, 1, 0, 0.5})
         }
 
         // If the line ends with '\n', trim it off and don't draw it.
@@ -314,7 +331,7 @@ _handle_text_render :: proc(text: ^Text) {
         }
     }
 
-    gui.draw_rect(caret_position, {CARET_WIDTH, metrics.line_height}, CARET_COLOR)
+    gui.draw_rect(caret_position, {CARET_WIDTH, line_height}, CARET_COLOR)
 }
 
 _handle_text_edit_keybinds :: proc(text: ^Text, key: gui.Keyboard_Key) {

@@ -41,6 +41,7 @@ init_window :: proc(
     gui.init_root(&window.root, size)
     window.background_color = background_color
     window.root.backend.user_data = window
+    window.root.backend.set_cursor_style = _backend_set_cursor_style
     window.root.backend.get_clipboard = _backend_get_clipboard
     window.root.backend.set_clipboard = _backend_set_clipboard
     window.root.backend.measure_text = _backend_measure_text
@@ -83,16 +84,19 @@ _window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
         _load_font(window, "Consola", #load("consola.ttf"))
 
         gui.input_open(root)
+        _update_content_scale(window)
 
         _redisplay_if_necessary(window)
 
     case wnd.Close_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_close(root)
         nvg_gl.Destroy(window.nvg_ctx)
 
     case wnd.Display_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
 
         size := wnd.size(backend_window)
         c := window.background_color
@@ -109,59 +113,75 @@ _window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
 
     case wnd.Update_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_update(root)
         _redisplay_if_necessary(window)
 
     case wnd.Resize_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_resize(root, e.size)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Enter_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_mouse_enter(root, e.position)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Exit_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_mouse_exit(root, e.position)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Move_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_mouse_move(root, e.position)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Scroll_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_mouse_scroll(root, e.position, e.amount)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Press_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_mouse_press(root, e.position, cast(gui.Mouse_Button)e.button)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Release_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_mouse_release(root, e.position, cast(gui.Mouse_Button)e.button)
         _redisplay_if_necessary(window)
 
     case wnd.Key_Press_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_key_press(root, cast(gui.Keyboard_Key)e.key)
         _redisplay_if_necessary(window)
 
     case wnd.Key_Release_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_key_release(root, cast(gui.Keyboard_Key)e.key)
         _redisplay_if_necessary(window)
 
     case wnd.Text_Event:
         wnd.activate_context(backend_window)
+        _update_content_scale(window)
         gui.input_text(root, e.text)
         _redisplay_if_necessary(window)
     }
+}
+
+_update_content_scale :: proc(window: ^Window) {
+    scale := wnd.content_scale(&window.backend_window)
+    gui.input_content_scale(&window.root, {scale, scale})
 }
 
 _load_font :: proc(window: ^Window, name: string, font_data: []byte) {
@@ -178,7 +198,14 @@ _redisplay_if_necessary :: proc(window: ^Window) {
     }
 }
 
-_backend_measure_text :: proc(backend: ^gui.Backend, glyphs: ^[dynamic]gui.Text_Glyph, text: string, font: gui.Font) {
+_backend_set_cursor_style :: proc(backend: ^gui.Backend, style: gui.Cursor_Style) -> (ok: bool) {
+    window := cast(^Window)backend.user_data
+    assert(window != nil)
+    wnd.set_cursor_style(&window.backend_window, cast(wnd.Cursor_Style)style)
+    return true
+}
+
+_backend_measure_text :: proc(backend: ^gui.Backend, glyphs: ^[dynamic]gui.Text_Glyph, text: string, font: gui.Font) -> (ok: bool) {
     window := cast(^Window)backend.user_data
     assert(window != nil)
 
@@ -197,8 +224,7 @@ _backend_measure_text :: proc(backend: ^gui.Backend, glyphs: ^[dynamic]gui.Text_
     nvg.FontFace(ctx, font.name)
     nvg.FontSize(ctx, font.size)
 
-    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text))
-    defer delete(nvg_positions)
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), context.temp_allocator)
 
     temp_slice := nvg_positions[:]
     position_count := nvg.TextGlyphPositions(ctx, 0, 0, text, &temp_slice)
@@ -213,9 +239,11 @@ _backend_measure_text :: proc(backend: ^gui.Backend, glyphs: ^[dynamic]gui.Text_
             kerning = (nvg_positions[i].x - nvg_positions[i].minx),
         }
     }
+
+    return true
 }
 
-_backend_font_metrics :: proc(backend: ^gui.Backend, font: gui.Font) -> gui.Font_Metrics {
+_backend_font_metrics :: proc(backend: ^gui.Backend, font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
     window := cast(^Window)backend.user_data
     assert(window != nil)
 
@@ -227,10 +255,9 @@ _backend_font_metrics :: proc(backend: ^gui.Backend, font: gui.Font) -> gui.Font
     nvg.FontFace(ctx, font.name)
     nvg.FontSize(ctx, font.size)
 
-    metrics: gui.Font_Metrics
     metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(window.nvg_ctx)
 
-    return metrics
+    return metrics, true
 }
 
 _backend_get_clipboard :: proc(backend: ^gui.Backend) -> (data: string, ok: bool) {

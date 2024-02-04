@@ -121,5 +121,6 @@ main :: proc() {
     open_window(&window)
     for window_is_open(&window) {
         update()
+        free_all(context.temp_allocator)
     }
 }

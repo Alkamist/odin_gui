@@ -85,7 +85,7 @@ destroy :: proc(window: ^Window) {
     _force_close(window)
 }
 
-open :: proc(window: ^Window, allocator := context.allocator) -> bool {
+open :: proc(window: ^Window) -> bool {
     if window.is_open {
         return false
     }
@@ -98,10 +98,10 @@ open :: proc(window: ^Window, allocator := context.allocator) -> bool {
         }
         _world = pugl.NewWorld(world_type, {})
 
-        world_id := fmt.aprint("WindowThread", _generate_id(), allocator)
-        defer delete(world_id)
-
+        checkpoint := runtime.default_temp_allocator_temp_begin()
+        world_id := fmt.tprint("WindowThread", _generate_id())
         pugl.SetWorldString(_world, .CLASS_NAME, strings.clone_to_cstring(world_id, context.temp_allocator))
+        runtime.default_temp_allocator_temp_end(checkpoint)
     }
 
     if window.parent_handle != nil && window.child_kind == .None {

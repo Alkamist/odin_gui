@@ -1,5 +1,17 @@
 package gui
 
+Cursor_Style :: enum {
+    Arrow,
+    I_Beam,
+    Crosshair,
+    Hand,
+    Resize_Left_Right,
+    Resize_Top_Bottom,
+    Resize_Top_Left_Bottom_Right,
+    Resize_Top_Right_Bottom_Left,
+    Scroll,
+}
+
 Mouse_Button :: enum {
     Unknown,
     Left, Middle, Right,
@@ -142,6 +154,9 @@ input_mouse_press :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
 input_mouse_release :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
     root.input.mouse.button_down[button] = false
 
+    root.previous_hover = root.hover
+    root.mouse_hit = _recursive_hit_test(root, position)
+
     send_global_event(root, Mouse_Release_Event{
         position = position,
         button = button,
@@ -149,9 +164,26 @@ input_mouse_release :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
 
     if root.hover != nil {
         send_event(root.hover, Mouse_Release_Event{
-            position = position,
+            position = mouse_position(root.hover),
             button = button,
         })
+    }
+
+    if !root.hover_captured {
+        root.hover = root.mouse_hit
+    }
+
+    if root.hover != root.previous_hover {
+        if root.previous_hover != nil {
+            send_event(root.previous_hover, Mouse_Exit_Event{
+                position = mouse_position(root.previous_hover),
+            })
+        }
+        if root.hover != nil {
+            send_event(root.hover, Mouse_Enter_Event{
+                position = mouse_position(root.hover),
+            })
+        }
     }
 }
 
@@ -205,6 +237,17 @@ input_text :: proc(root: ^Root, text: rune) {
     if root.focus != nil {
         send_event(root.focus, Text_Event{
             text = text,
+        })
+    }
+}
+
+input_content_scale :: proc(root: ^Root, scale: Vec2) {
+    previous_content_scale := root.content_scale
+    if scale != previous_content_scale {
+        root.content_scale = scale
+        send_global_event(root, Content_Scale_Event{
+            scale = scale,
+            delta = scale - previous_content_scale,
         })
     }
 }

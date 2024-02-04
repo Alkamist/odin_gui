@@ -56,3 +56,8 @@ Key_Release_Event :: struct {
 Text_Event :: struct {
     text: rune,
 }
+
+Content_Scale_Event :: struct {
+    scale: Vec2,
+    delta: Vec2,
+}

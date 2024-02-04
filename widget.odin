@@ -156,20 +156,6 @@ key_down :: proc(key: Keyboard_Key, widget := _current_widget) -> bool {
     return widget.root.input.keyboard.key_down[key]
 }
 
-get_clipboard :: proc(widget := _current_widget) -> (data: string, ok: bool) {
-    assert(widget != nil)
-    assert(widget.root != nil)
-    assert(widget.root.backend.get_clipboard != nil)
-    return widget.root.backend->get_clipboard()
-}
-
-set_clipboard :: proc(data: string, widget := _current_widget) -> (ok: bool) {
-    assert(widget != nil)
-    assert(widget.root != nil)
-    assert(widget.root.backend.set_clipboard != nil)
-    return widget.root.backend->set_clipboard(data)
-}
-
 clip_rect :: proc(widget := _current_widget) -> Maybe(Rect) {
     widget_rect := Rect{{0, 0}, widget.size}
     if widget.parent == nil {

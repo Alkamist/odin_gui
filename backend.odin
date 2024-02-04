@@ -4,10 +4,11 @@ import "rect"
 
 Backend :: struct {
     user_data: rawptr,
+    set_cursor_style: proc(backend: ^Backend, style: Cursor_Style) -> (ok: bool),
     get_clipboard: proc(backend: ^Backend) -> (data: string, ok: bool),
     set_clipboard: proc(backend: ^Backend, data: string) -> (ok: bool),
-    measure_text: proc(backend: ^Backend, glyphs: ^[dynamic]Text_Glyph, text: string, font: Font),
-    font_metrics: proc(backend: ^Backend, font: Font) -> Font_Metrics,
+    measure_text: proc(backend: ^Backend, glyphs: ^[dynamic]Text_Glyph, text: string, font: Font) -> (ok: bool),
+    font_metrics: proc(backend: ^Backend, font: Font) -> (metrics: Font_Metrics, ok: bool),
     render_draw_command: proc(backend: ^Backend, command: Draw_Command),
 }
 
@@ -20,17 +21,38 @@ redraw :: proc(widget := _current_widget) {
     widget.root.needs_redisplay = true
 }
 
-measure_text :: proc(glyphs: ^[dynamic]Text_Glyph, text: string, font: Font, widget := _current_widget) {
+set_cursor_style :: proc(style: Cursor_Style, widget := _current_widget) -> (ok: bool) {
     assert(widget != nil)
     assert(widget.root != nil)
-    assert(widget.root.backend.measure_text != nil)
-    widget.root.backend->measure_text(glyphs, text, font)
+    if widget.root.backend.set_cursor_style == nil do return false
+    return widget.root.backend->set_cursor_style(style)
 }
 
-font_metrics :: proc(font: Font, widget := _current_widget) -> Font_Metrics {
+get_clipboard :: proc(widget := _current_widget) -> (data: string, ok: bool) {
     assert(widget != nil)
     assert(widget.root != nil)
-    assert(widget.root.backend.font_metrics != nil)
+    if widget.root.backend.get_clipboard == nil do return "", false
+    return widget.root.backend->get_clipboard()
+}
+
+set_clipboard :: proc(data: string, widget := _current_widget) -> (ok: bool) {
+    assert(widget != nil)
+    assert(widget.root != nil)
+    if widget.root.backend.set_clipboard == nil do return false
+    return widget.root.backend->set_clipboard(data)
+}
+
+measure_text :: proc(glyphs: ^[dynamic]Text_Glyph, text: string, font: Font, widget := _current_widget) -> (ok: bool) {
+    assert(widget != nil)
+    assert(widget.root != nil)
+    if widget.root.backend.measure_text == nil do return false
+    return widget.root.backend->measure_text(glyphs, text, font)
+}
+
+font_metrics :: proc(font: Font, widget := _current_widget) -> (metrics: Font_Metrics, ok: bool) {
+    assert(widget != nil)
+    assert(widget.root != nil)
+    if widget.root.backend.font_metrics == nil do return {}, false
     return widget.root.backend->font_metrics(font)
 }
 

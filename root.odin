@@ -5,6 +5,7 @@ import "core:mem"
 Root :: struct {
     using widget: Widget,
     input: Input_State,
+    content_scale: Vec2,
     focus: ^Widget,
     mouse_hit: ^Widget,
     hover: ^Widget,
@@ -17,11 +18,13 @@ Root :: struct {
 init_root :: proc(
     root: ^Root,
     size: Vec2,
+    content_scale := Vec2{1, 1},
     allocator := context.allocator,
 ) -> (res: ^Root, err: mem.Allocator_Error) #optional_allocator_error {
     init_widget(root, nil, position = {0, 0}, size = size, allocator = allocator) or_return
     root.root = root
     root.input = {}
+    root.content_scale = content_scale
     root.focus = nil
     root.mouse_hit = nil
     root.hover = nil
