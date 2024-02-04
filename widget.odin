@@ -1,6 +1,7 @@
 package gui
 
 import "core:mem"
+import "core:time"
 import "rect"
 
 @(thread_local) _current_widget: ^Widget
@@ -231,10 +232,10 @@ hit_test :: proc(position: Vec2, widget := _current_widget) -> ^Widget {
 
 
 
-_recursive_update :: proc(widget: ^Widget) {
-    send_event(widget, Update_Event{})
+_recursive_update :: proc(widget: ^Widget, event: Update_Event) {
+    send_event(widget, event)
     for child in widget.children {
-        _recursive_update(child)
+        _recursive_update(child, event)
     }
 }
 

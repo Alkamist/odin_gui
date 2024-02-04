@@ -1,9 +1,11 @@
 package gui
 
 import "core:mem"
+import "core:time"
 
 Root :: struct {
     using widget: Widget,
+    tick: time.Tick,
     input: Input_State,
     content_scale: Vec2,
     focus: ^Widget,
@@ -18,13 +20,14 @@ Root :: struct {
 init_root :: proc(
     root: ^Root,
     size: Vec2,
-    content_scale := Vec2{1, 1},
+    tick: time.Tick,
     allocator := context.allocator,
 ) -> (res: ^Root, err: mem.Allocator_Error) #optional_allocator_error {
     init_widget(root, nil, position = {0, 0}, size = size, allocator = allocator) or_return
     root.root = root
+    root.tick = tick
     root.input = {}
-    root.content_scale = content_scale
+    root.content_scale = Vec2{1, 1}
     root.focus = nil
     root.mouse_hit = nil
     root.hover = nil

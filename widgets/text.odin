@@ -9,7 +9,7 @@ import "core:strings"
 import "../../gui"
 
 // Todo:
-// Single, double, triple, and quadruple clicks.
+// Double, triple, and quadruple clicks.
 // Handle carriage returns?
 // Single line mode?
 
@@ -270,7 +270,12 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
     case widget:
         switch e in event {
         case gui.Update_Event:
-            edit.update_time(&text.edit_state)
+            // Manually update the edit state time with the
+            // time passed in from the update event.
+            text.edit_state.current_time = e.tick
+            if text.edit_state.undo_timeout <= 0 {
+                text.edit_state.undo_timeout = edit.DEFAULT_UNDO_TIMEOUT
+            }
 
         case gui.Mouse_Enter_Event:
             gui.set_cursor_style(.I_Beam)

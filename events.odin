@@ -1,6 +1,12 @@
 package gui
 
-Update_Event :: struct {}
+import "core:time"
+
+Update_Event :: struct {
+    tick: time.Tick,
+    delta: time.Duration,
+}
+
 Draw_Event :: struct {}
 Open_Event :: struct {}
 Close_Event :: struct {}
