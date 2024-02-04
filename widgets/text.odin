@@ -10,9 +10,13 @@ import "../../gui"
 
 // Todo:
 // Single, double, triple, and quadruple clicks.
-// Figure out the problem with line starts/ends.
 // Handle carriage returns?
 // Single line mode?
+
+POSITIONAL_SELECTION_HORIZONTAL_BIAS :: 3 // Bias positional selection to the right a little for feel.
+CARET_WIDTH :: 2
+CARET_COLOR :: Color{0.7, .9, 1, 1}
+SELECTION_COLOR :: Color{0, .4, 0.8, 0.7}
 
 Text_Edit_Command :: edit.Command
 
@@ -121,6 +125,11 @@ delete_text_selection :: proc(text: ^Text) {
 }
 
 edit_text :: proc(text: ^Text, command: Text_Edit_Command) {
+    #partial switch command {
+    case .Line_Start, .Line_End: _update_edit_state_line_start_and_end(text)
+    case .Up, .Select_Up: _update_edit_state_up_index(text)
+    case .Down, .Select_Down: _update_edit_state_down_index(text)
+    }
     edit.perform_command(&text.edit_state, command)
     gui.redraw(text)
 }
@@ -146,20 +155,40 @@ end_drag_selection :: proc(text: ^Text) {
     gui.redraw(text)
 }
 
+line_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
+    _update_text_lines(text)
+    line_height := line_height(text)
+
+    if position.y < 0 {
+        return 0
+    }
+
+    for line, i in text.lines {
+        if _position_is_on_line(position.y, line_height * f32(i), line_height) {
+            return i
+        }
+    }
+
+    return len(text.lines) - 1
+}
+
 rune_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
+    position := position
+    position.x += POSITIONAL_SELECTION_HORIZONTAL_BIAS
+
     checkpoint := runtime.default_temp_allocator_temp_begin()
     defer runtime.default_temp_allocator_temp_end(checkpoint)
 
     _update_text_lines(text)
     line_height := line_height(text)
 
-    if position.x < 0 || position.y < 0 {
+    if position.y < 0 {
         return 0
     }
 
     for line, i in text.lines {
         line_y := line_height * f32(i)
-        if position.y < line_y || position.y > line_y + line_height {
+        if !_position_is_on_line(position.y, line_y, line_height) {
             continue
         }
 
@@ -168,7 +197,7 @@ rune_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
         glyphs := make([dynamic]gui.Text_Glyph, context.temp_allocator)
         gui.measure_text(&glyphs, line_str, text.font)
 
-        for glyph in glyphs {
+        #reverse for glyph in glyphs {
             left := glyph.position
             right := glyph.position + glyph.width
             if position.x >= left && position.x < right {
@@ -187,6 +216,38 @@ rune_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
     }
 
     return len(text.builder.buf)
+}
+
+position_of_rune_index :: proc(text: ^Text, rune_index: int) -> Vec2 {
+    line_count := len(text.lines)
+    line_height := line_height(text)
+
+    for line, i in text.lines {
+        if rune_index < line.start {
+            continue
+        }
+
+        start := line.start
+        line_str := string(text.builder.buf[start:][:line.length])
+        line_y := line_height * f32(i)
+        line_end := f32(0)
+
+        glyphs := make([dynamic]gui.Text_Glyph, context.temp_allocator)
+        gui.measure_text(&glyphs, line_str, text.font)
+
+        for glyph in glyphs {
+            if rune_index == start + glyph.rune_index {
+                return {glyph.position, line_y}
+            }
+            line_end = glyph.position + glyph.width
+        }
+
+        if i == line_count - 1 {
+            return {line_end, line_y}
+        }
+    }
+
+    return {0, 0}
 }
 
 text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
@@ -219,8 +280,11 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
 
         case gui.Mouse_Press_Event:
             gui.capture_hover()
-            shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
-            start_drag_selection(text, e.position, only_head = shift)
+            #partial switch e.button {
+            case .Left, .Middle:
+                shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
+                start_drag_selection(text, e.position, only_head = shift)
+            }
 
         case gui.Mouse_Release_Event:
             end_drag_selection(text)
@@ -242,6 +306,40 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
 }
 
 
+
+_position_is_on_line :: proc(position: Vec2, line_y, line_height: f32) -> bool {
+    return position.y >= line_y && position.y < line_y + line_height
+}
+
+_update_edit_state_up_index :: proc(text: ^Text) {
+    head := text.edit_state.selection[0]
+    edit_position := position_of_rune_index(text, head)
+    up_position := edit_position - {0, line_height(text)}
+    text.edit_state.up_index = rune_index_at_position(text, up_position)
+}
+
+_update_edit_state_down_index :: proc(text: ^Text) {
+    head := text.edit_state.selection[0]
+    edit_position := position_of_rune_index(text, head)
+    down_position := edit_position + {0, line_height(text)}
+    text.edit_state.down_index = rune_index_at_position(text, down_position)
+}
+
+_update_edit_state_line_start_and_end :: proc(text: ^Text) {
+    head := text.edit_state.selection[0]
+    for line in text.lines {
+        if head >= line.start && head <= line.start + line.length {
+            text.edit_state.line_start = line.start
+
+            // If the line ends with '\n' it needs to be handled differently.
+            if line.length > 0 && text.builder.buf[line.start + line.length - 1] == '\n' {
+                text.edit_state.line_end = line.start + line.length - 1
+            } else {
+                text.edit_state.line_end = line.start + line.length
+            }
+        }
+    }
+}
 
 _update_text_lines :: proc(text: ^Text) {
     clear(&text.lines)
@@ -267,10 +365,6 @@ _handle_text_render :: proc(text: ^Text) {
     checkpoint := runtime.default_temp_allocator_temp_begin()
     defer runtime.default_temp_allocator_temp_end(checkpoint)
 
-    CARET_WIDTH :: 2
-    CARET_COLOR :: Color{0, 1, 0, 1}
-
-    gui.draw_rect({0, 0}, text.size, {0.4, 0, 0, 1})
     gui.clip_drawing({0, 0}, text.size)
     _update_text_lines(text)
 
@@ -317,7 +411,7 @@ _handle_text_render :: proc(text: ^Text) {
         left_, left_exists := left.?
         right_, right_exists := right.?
         if left_exists && right_exists {
-            gui.draw_rect({left_, line_y}, {right_ - left_, line_height}, {0, 1, 0, 0.5})
+            gui.draw_rect({left_, line_y}, {right_ - left_, line_height}, SELECTION_COLOR)
         }
 
         // If the line ends with '\n', trim it off and don't draw it.
