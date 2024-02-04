@@ -182,7 +182,7 @@ line_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
     }
 
     for line, i in text.lines {
-        if _position_is_on_line(position.y, line_height * f32(i), line_height) {
+        if _y_is_on_line(position.y, line_height * f32(i), line_height) {
             return i
         }
     }
@@ -204,9 +204,18 @@ rune_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
         return 0
     }
 
+    if position.x <= 0 {
+        for line, i in text.lines {
+            if _y_is_on_line(position.y, line_height * f32(i), line_height) {
+                return line.start
+            }
+        }
+        return len(text.lines) - 1
+    }
+
     for line, i in text.lines {
         line_y := line_height * f32(i)
-        if !_position_is_on_line(position.y, line_y, line_height) {
+        if !_y_is_on_line(position.y, line_y, line_height) {
             continue
         }
 
@@ -357,8 +366,8 @@ _remove_carriage_returns :: proc(str: string, allocator := context.allocator) ->
     return strings.remove(str, "\r", -1, allocator)
 }
 
-_position_is_on_line :: proc(position: Vec2, line_y, line_height: f32) -> bool {
-    return position.y >= line_y && position.y < line_y + line_height
+_y_is_on_line :: proc(y, line_y, line_height: f32) -> bool {
+    return y >= line_y && y < line_y + line_height
 }
 
 _update_edit_state_up_index :: proc(text: ^Text) {
