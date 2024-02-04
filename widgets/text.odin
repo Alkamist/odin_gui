@@ -298,6 +298,8 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
         }
 
     case widget:
+        _handle_text_editing(text, event)
+
         switch e in event {
         case gui.Update_Event:
             // Manually update the edit state time with the
@@ -306,53 +308,6 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
             if text.edit_state.undo_timeout <= 0 {
                 text.edit_state.undo_timeout = edit.DEFAULT_UNDO_TIMEOUT
             }
-
-        case gui.Mouse_Enter_Event:
-            gui.set_cursor_style(.I_Beam)
-
-        case gui.Mouse_Exit_Event:
-            gui.set_cursor_style(.Arrow)
-
-        case gui.Mouse_Repeat_Event:
-            gui.capture_hover()
-
-            switch e.press_count {
-            case 1: // Single click
-                #partial switch e.button {
-                case .Left, .Middle:
-                    shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
-                    start_drag_selection(text, e.position, only_head = shift)
-                }
-
-            case 2: // Double click
-                edit_text(text, .Word_Right)
-                edit_text(text, .Word_Left)
-                edit_text(text, .Select_Word_Right)
-
-            case 3: // Triple click
-                edit_text(text, .Line_Start)
-                edit_text(text, .Select_Line_End)
-
-            case 4: // Quadruple click
-                edit_text(text, .Start)
-                edit_text(text, .Select_End)
-            }
-
-        case gui.Mouse_Release_Event:
-            end_drag_selection(text)
-            gui.release_hover()
-
-        case gui.Mouse_Move_Event:
-            move_drag_selection(text, e.position)
-
-        case gui.Text_Event:
-            input_rune(text, e.text)
-
-        case gui.Key_Press_Event:
-            _handle_text_edit_keybinds(text, e.key)
-
-        case gui.Key_Repeat_Event:
-            _handle_text_edit_keybinds(text, e.key)
 
         case gui.Draw_Event:
             _handle_text_render(text)
@@ -485,6 +440,57 @@ _handle_text_render :: proc(text: ^Text) {
     }
 
     gui.draw_rect(caret_position, {CARET_WIDTH, line_height}, CARET_COLOR)
+}
+
+_handle_text_editing :: proc(text: ^Text, event: any) {
+    switch e in event {
+    case gui.Mouse_Enter_Event:
+        gui.set_cursor_style(.I_Beam)
+
+    case gui.Mouse_Exit_Event:
+        gui.set_cursor_style(.Arrow)
+
+    case gui.Mouse_Repeat_Event:
+        gui.capture_hover()
+
+        switch e.press_count {
+        case 1: // Single click
+            #partial switch e.button {
+            case .Left, .Middle:
+                shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
+                start_drag_selection(text, e.position, only_head = shift)
+            }
+
+        case 2: // Double click
+            edit_text(text, .Word_Right)
+            edit_text(text, .Word_Left)
+            edit_text(text, .Select_Word_Right)
+
+        case 3: // Triple click
+            edit_text(text, .Line_Start)
+            edit_text(text, .Select_Line_End)
+
+        case 4: // Quadruple click
+            edit_text(text, .Start)
+            edit_text(text, .Select_End)
+        }
+
+    case gui.Mouse_Release_Event:
+        end_drag_selection(text)
+        gui.release_hover()
+
+    case gui.Mouse_Move_Event:
+        move_drag_selection(text, e.position)
+
+    case gui.Text_Event:
+        input_rune(text, e.text)
+
+    case gui.Key_Press_Event:
+        _handle_text_edit_keybinds(text, e.key)
+
+    case gui.Key_Repeat_Event:
+        _handle_text_edit_keybinds(text, e.key)
+    }
 }
 
 _handle_text_edit_keybinds :: proc(text: ^Text, key: gui.Keyboard_Key) {
