@@ -1,7 +1,6 @@
 package gui
 
-import "core:mem"
-import "core:time"
+import "base:runtime"
 import "rect"
 
 @(thread_local) _current_widget: ^Widget
@@ -34,7 +33,7 @@ init_widget :: proc(
     clip_children := false,
     event_proc: proc(^Widget, ^Widget, any) = nil,
     allocator := context.allocator,
-) -> (res: ^Widget, err: mem.Allocator_Error) #optional_allocator_error {
+) -> (res: ^Widget, err: runtime.Allocator_Error) #optional_allocator_error {
     for child in widget.children {
         _set_root(child, nil)
     }

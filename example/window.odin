@@ -39,9 +39,10 @@ init_window :: proc(
         user_data = window,
         event_proc = _window_event_proc,
     )
-    gui.init_root(&window.root, size, tick = time.tick_now())
+    gui.init_root(&window.root, size)
     window.background_color = background_color
     window.root.backend.user_data = window
+    window.root.backend.get_tick = _backend_get_tick
     window.root.backend.set_cursor_style = _backend_set_cursor_style
     window.root.backend.get_clipboard = _backend_get_clipboard
     window.root.backend.set_clipboard = _backend_set_clipboard
@@ -115,7 +116,7 @@ _window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
     case wnd.Update_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_update(root, time.tick_now())
+        gui.input_update(root)
         _redisplay_if_necessary(window)
 
     case wnd.Resize_Event:
@@ -197,6 +198,10 @@ _redisplay_if_necessary :: proc(window: ^Window) {
         wnd.display(&window.backend_window)
         window.root.needs_redisplay = false
     }
+}
+
+_backend_get_tick :: proc(backend: ^gui.Backend) -> (tick: time.Tick, ok: bool) {
+    return time.tick_now(), true
 }
 
 _backend_set_cursor_style :: proc(backend: ^gui.Backend, style: gui.Cursor_Style) -> (ok: bool) {

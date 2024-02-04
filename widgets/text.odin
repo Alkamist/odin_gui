@@ -12,6 +12,7 @@ import "../../gui"
 // Double, triple, and quadruple clicks.
 // Handle carriage returns?
 // Single line mode?
+// Text edit events.
 
 POSITIONAL_SELECTION_HORIZONTAL_BIAS :: 3 // Bias positional selection to the right a little for feel.
 CARET_WIDTH :: 2
@@ -271,8 +272,9 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
         switch e in event {
         case gui.Update_Event:
             // Manually update the edit state time with the
-            // time passed in from the update event.
-            text.edit_state.current_time = e.tick
+            // time provided by the backend.
+            tick, _ := gui.get_tick()
+            text.edit_state.current_time = tick
             if text.edit_state.undo_timeout <= 0 {
                 text.edit_state.undo_timeout = edit.DEFAULT_UNDO_TIMEOUT
             }

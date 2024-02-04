@@ -1,9 +1,11 @@
 package gui
 
+import "core:time"
 import "rect"
 
 Backend :: struct {
     user_data: rawptr,
+    get_tick: proc(backend: ^Backend) -> (tick: time.Tick, ok: bool),
     set_cursor_style: proc(backend: ^Backend, style: Cursor_Style) -> (ok: bool),
     get_clipboard: proc(backend: ^Backend) -> (data: string, ok: bool),
     set_clipboard: proc(backend: ^Backend, data: string) -> (ok: bool),
@@ -19,6 +21,13 @@ redraw :: proc(widget := _current_widget) {
     clip_drawing({0, 0}, widget.size, widget)
     send_event(widget, Draw_Event{})
     widget.root.needs_redisplay = true
+}
+
+get_tick :: proc(widget := _current_widget) -> (tick: time.Tick, ok: bool) {
+    assert(widget != nil)
+    assert(widget.root != nil)
+    if widget.root.backend.get_tick == nil do return {}, false
+    return widget.root.backend->get_tick()
 }
 
 set_cursor_style :: proc(style: Cursor_Style, widget := _current_widget) -> (ok: bool) {

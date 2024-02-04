@@ -67,15 +67,9 @@ input_close :: proc(root: ^Root) {
     send_global_event(root, Close_Event{})
 }
 
-input_update :: proc(root: ^Root, tick: time.Tick) {
-    previous_time := root.tick
-    root.tick = tick
-    event := Update_Event{
-        tick = tick,
-        delta = time.tick_diff(previous_time, tick),
-    }
-    send_global_event(root, event)
-    _recursive_update(root, event)
+input_update :: proc(root: ^Root) {
+    send_global_event(root, Update_Event{})
+    _recursive_update(root, Update_Event{})
 }
 
 input_resize :: proc(root: ^Root, size: Vec2) {
