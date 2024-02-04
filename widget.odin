@@ -21,6 +21,7 @@ Widget :: struct {
     draw_commands: [dynamic]Draw_Command,
 
     // For rendering and hit detection
+    cached_relative_mouse_position: Vec2,
     cached_global_position: Vec2,
     cached_global_clip_rect: Maybe(Rect),
 }
@@ -42,13 +43,9 @@ init_widget :: proc(
     widget.event_proc = event_proc
     widget.clip_children = clip_children
     _set_parent(widget, parent)
-    set_position(position, widget)
-    set_size(size, widget)
-    if visibility {
-        show(widget)
-    } else {
-        hide(widget)
-    }
+    widget.position = position
+    widget.size = size
+    widget.is_hidden = !visibility
     return widget, nil
 }
 
@@ -91,6 +88,7 @@ set_position :: proc(position: Vec2, widget := _current_widget) {
             position = widget.position,
             delta = widget.position - previous_position,
         })
+        update_hover(widget)
     }
 }
 
@@ -104,6 +102,7 @@ set_size :: proc(size: Vec2, widget := _current_widget) {
             size = widget.size,
             delta = widget.size - previous_size,
         })
+        update_hover(widget)
     }
 }
 
@@ -210,6 +209,12 @@ release_hover :: proc(widget := _current_widget) {
     assert(widget != nil)
     assert(widget.root != nil)
     widget.root.hover_captured = false
+}
+
+update_hover :: proc(widget := _current_widget) {
+    assert(widget != nil)
+    assert(widget.root != nil)
+    _update_root_hover(widget.root)
 }
 
 set_focus :: proc(focus: ^Widget, widget := _current_widget) {

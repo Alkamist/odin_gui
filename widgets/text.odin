@@ -1,9 +1,8 @@
 package widgets
 
+import "base:runtime"
 import "core:fmt"
-import "core:mem"
 import "core:math"
-import "core:runtime"
 import "core:text/edit"
 import "core:strings"
 import "../../gui"
@@ -46,7 +45,7 @@ init_text :: proc(
     font: gui.Font = nil,
     event_proc: proc(^gui.Widget, ^gui.Widget, any) = text_event_proc,
     allocator := context.allocator,
-) -> (res: ^Text, err: mem.Allocator_Error) #optional_allocator_error {
+) -> (res: ^Text, err: runtime.Allocator_Error) #optional_allocator_error {
     gui.init_widget(
         text,
         parent,

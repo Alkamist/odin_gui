@@ -3,9 +3,12 @@ package gui
 import "core:time"
 import "rect"
 
+Tick :: time.Tick
+Duration :: time.Duration
+
 Backend :: struct {
     user_data: rawptr,
-    get_tick: proc(backend: ^Backend) -> (tick: time.Tick, ok: bool),
+    get_tick: proc(backend: ^Backend) -> (tick: Tick, ok: bool),
     set_cursor_style: proc(backend: ^Backend, style: Cursor_Style) -> (ok: bool),
     get_clipboard: proc(backend: ^Backend) -> (data: string, ok: bool),
     set_clipboard: proc(backend: ^Backend, data: string) -> (ok: bool),
@@ -23,7 +26,7 @@ redraw :: proc(widget := _current_widget) {
     widget.root.needs_redisplay = true
 }
 
-get_tick :: proc(widget := _current_widget) -> (tick: time.Tick, ok: bool) {
+get_tick :: proc(widget := _current_widget) -> (tick: Tick, ok: bool) {
     assert(widget != nil)
     assert(widget.root != nil)
     if widget.root.backend.get_tick == nil do return {}, false

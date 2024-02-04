@@ -200,7 +200,7 @@ _redisplay_if_necessary :: proc(window: ^Window) {
     }
 }
 
-_backend_get_tick :: proc(backend: ^gui.Backend) -> (tick: time.Tick, ok: bool) {
+_backend_get_tick :: proc(backend: ^gui.Backend) -> (tick: gui.Tick, ok: bool) {
     return time.tick_now(), true
 }
 

@@ -1,6 +1,6 @@
 package widgets
 
-import "core:mem"
+import "base:runtime"
 import "../../gui"
 
 Button :: struct {
@@ -23,7 +23,7 @@ init_button :: proc(
     mouse_button := gui.Mouse_Button.Left,
     event_proc: proc(^gui.Widget, ^gui.Widget, any) = button_event_proc,
     allocator := context.allocator,
-) -> (res: ^Button, err: mem.Allocator_Error) #optional_allocator_error {
+) -> (res: ^Button, err: runtime.Allocator_Error) #optional_allocator_error {
     gui.init_widget(
         button,
         parent,

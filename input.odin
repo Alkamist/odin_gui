@@ -96,45 +96,16 @@ input_mouse_exit :: proc(root: ^Root, position: Vec2) {
 }
 
 input_mouse_move :: proc(root: ^Root, position: Vec2) {
-    if position == root.input.mouse.position {
+    previous_mouse_position := root.input.mouse.position
+    if position == previous_mouse_position {
         return
     }
-
-    delta := position - root.input.mouse.position
-
     root.input.mouse.position = position
-    root.previous_hover = root.hover
-
-    root.mouse_hit = _recursive_hit_test(root, position)
-
-    if !root.hover_captured {
-        root.hover = root.mouse_hit
-    }
-
     send_global_event(root, Mouse_Move_Event{
         position = position,
-        delta = delta,
+        delta = position - previous_mouse_position,
     })
-
-    if root.hover != root.previous_hover {
-        if root.previous_hover != nil {
-            send_event(root.previous_hover, Mouse_Exit_Event{
-                position = mouse_position(root.previous_hover),
-            })
-        }
-        if root.hover != nil {
-            send_event(root.hover, Mouse_Enter_Event{
-                position = mouse_position(root.hover),
-            })
-        }
-    }
-
-    if root.hover != nil {
-        send_event(root.hover, Mouse_Move_Event{
-            position = mouse_position(root.hover),
-            delta = delta,
-        })
-    }
+    _update_root_hover(root)
 }
 
 input_mouse_press :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
@@ -156,9 +127,6 @@ input_mouse_press :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
 input_mouse_release :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
     root.input.mouse.button_down[button] = false
 
-    root.previous_hover = root.hover
-    root.mouse_hit = _recursive_hit_test(root, position)
-
     send_global_event(root, Mouse_Release_Event{
         position = position,
         button = button,
@@ -171,22 +139,7 @@ input_mouse_release :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
         })
     }
 
-    if !root.hover_captured {
-        root.hover = root.mouse_hit
-    }
-
-    if root.hover != root.previous_hover {
-        if root.previous_hover != nil {
-            send_event(root.previous_hover, Mouse_Exit_Event{
-                position = mouse_position(root.previous_hover),
-            })
-        }
-        if root.hover != nil {
-            send_event(root.hover, Mouse_Enter_Event{
-                position = mouse_position(root.hover),
-            })
-        }
-    }
+    _update_root_hover(root)
 }
 
 input_mouse_scroll :: proc(root: ^Root, position: Vec2, amount: Vec2) {
@@ -264,5 +217,41 @@ input_content_scale :: proc(root: ^Root, scale: Vec2) {
             scale = scale,
             delta = scale - previous_content_scale,
         })
+    }
+}
+
+
+
+_update_root_hover :: proc(root: ^Root) {
+    previous_hover := root.hover
+    root.mouse_hit = _recursive_hit_test(root, root.input.mouse.position)
+
+    if !root.hover_captured {
+        root.hover = root.mouse_hit
+    }
+
+    if root.hover != nil {
+        previous_mouse_position := root.hover.cached_relative_mouse_position
+        mp := mouse_position(root.hover)
+        if mp != previous_mouse_position {
+            root.hover.cached_relative_mouse_position = mp
+            send_event(root.hover, Mouse_Move_Event{
+                position = mp,
+                delta = mp - previous_mouse_position,
+            })
+        }
+    }
+
+    if root.hover != previous_hover {
+        if previous_hover != nil {
+            send_event(previous_hover, Mouse_Exit_Event{
+                position = mouse_position(previous_hover),
+            })
+        }
+        if root.hover != nil {
+            send_event(root.hover, Mouse_Enter_Event{
+                position = mouse_position(root.hover),
+            })
+        }
     }
 }
