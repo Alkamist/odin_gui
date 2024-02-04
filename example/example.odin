@@ -112,7 +112,7 @@ main :: proc() {
     )
     defer widgets.destroy_slider(&slider)
 
-    widgets.init_text(&text, &window.root, {50, 50}, {400, 400}, SAMPLE_TEXT, font = &consola)
+    widgets.init_text(&text, &window.root, {50, 50}, {400, 400}, "Hello World.\r\nHello World.", font = &consola)
     defer widgets.destroy_text(&text)
 
     // text.clip_children = true
