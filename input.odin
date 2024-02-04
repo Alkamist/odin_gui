@@ -202,16 +202,29 @@ input_mouse_scroll :: proc(root: ^Root, position: Vec2, amount: Vec2) {
 }
 
 input_key_press :: proc(root: ^Root, key: Keyboard_Key) {
+    already_down := root.input.keyboard.key_down[key]
     root.input.keyboard.key_down[key] = true
 
-    send_global_event(root, Key_Press_Event{
-        key = key,
-    })
-
-    if root.focus != nil {
-        send_event(root.focus, Key_Press_Event{
+    if already_down {
+        send_global_event(root, Key_Repeat_Event{
             key = key,
         })
+
+        if root.focus != nil {
+            send_event(root.focus, Key_Repeat_Event{
+                key = key,
+            })
+        }
+    } else {
+        send_global_event(root, Key_Press_Event{
+            key = key,
+        })
+
+        if root.focus != nil {
+            send_event(root.focus, Key_Press_Event{
+                key = key,
+            })
+        }
     }
 }
 

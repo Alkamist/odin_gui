@@ -299,6 +299,9 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
         case gui.Key_Press_Event:
             _handle_text_edit_keybinds(text, e.key)
 
+        case gui.Key_Repeat_Event:
+            _handle_text_edit_keybinds(text, e.key)
+
         case gui.Draw_Event:
             _handle_text_render(text)
         }
