@@ -8,7 +8,6 @@ import "core:strings"
 import "../../gui"
 
 // Todo:
-// Double, triple, and quadruple clicks.
 // Handle carriage returns?
 // Single line mode?
 // Text edit events.
@@ -272,8 +271,7 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
         case gui.Update_Event:
             // Manually update the edit state time with the
             // time provided by the backend.
-            tick, _ := gui.get_tick()
-            text.edit_state.current_time = tick
+            text.edit_state.current_time = gui.get_tick() or_else gui.Tick{}
             if text.edit_state.undo_timeout <= 0 {
                 text.edit_state.undo_timeout = edit.DEFAULT_UNDO_TIMEOUT
             }
@@ -290,6 +288,19 @@ text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
             case .Left, .Middle:
                 shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
                 start_drag_selection(text, e.position, only_head = shift)
+            }
+
+        case gui.Mouse_Repeat_Event:
+            switch e.repeats {
+            case 1: // Double click
+                edit_text(text, .Word_Left)
+                edit_text(text, .Select_Word_Right)
+            case 2: // Triple click
+                edit_text(text, .Line_Start)
+                edit_text(text, .Select_Line_End)
+            case 3: // Quadruple click
+                edit_text(text, .Start)
+                edit_text(text, .Select_End)
             }
 
         case gui.Mouse_Release_Event:

@@ -111,16 +111,54 @@ input_mouse_move :: proc(root: ^Root, position: Vec2) {
 input_mouse_press :: proc(root: ^Root, position: Vec2, button: Mouse_Button) {
     root.input.mouse.button_down[button] = true
 
-    send_global_event(root, Mouse_Press_Event{
-        position = position,
-        button = button,
-    })
+    tick_available := false
+    previous_mouse_repeat_tick := root.mouse_repeat_tick
+    root.mouse_repeat_tick, tick_available = get_tick(root)
 
-    if root.hover != nil {
-        send_event(root.hover, Mouse_Press_Event{
-            position = mouse_position(root.hover),
+    if tick_available {
+        delta := time.tick_diff(previous_mouse_repeat_tick, root.mouse_repeat_tick)
+        if delta <= root.mouse_repeat_duration {
+            root.mouse_repeats += 1
+        } else {
+            root.mouse_repeats = 0
+        }
+
+        // This is just a simple x, y comparison, not true distance.
+        movement := root.input.mouse.position - root.mouse_repeat_start_position
+        if abs(movement.x) > root.mouse_repeat_movement_tolerance ||
+           abs(movement.y) > root.mouse_repeat_movement_tolerance {
+            root.mouse_repeats = 0
+        }
+    }
+
+    if root.mouse_repeats > 0 {
+        send_global_event(root, Mouse_Repeat_Event{
+            position = position,
+            button = button,
+            repeats = root.mouse_repeats,
+        })
+
+        if root.hover != nil {
+            send_event(root.hover, Mouse_Repeat_Event{
+                position = mouse_position(root.hover),
+                button = button,
+                repeats = root.mouse_repeats,
+            })
+        }
+    } else {
+        root.mouse_repeat_start_position = root.input.mouse.position
+
+        send_global_event(root, Mouse_Press_Event{
+            position = position,
             button = button,
         })
+
+        if root.hover != nil {
+            send_event(root.hover, Mouse_Press_Event{
+                position = mouse_position(root.hover),
+                button = button,
+            })
+        }
     }
 }
 
