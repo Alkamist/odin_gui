@@ -86,6 +86,16 @@ main :: proc() {
             widgets.button_event_proc(button, event)
 
             #partial switch e in event {
+            case gui.Window_Mouse_Press_Event:
+                if e.button == .Extra_1 {
+                    gui.show(button)
+                }
+
+            case gui.Mouse_Press_Event:
+                if e.button == .Middle {
+                    gui.hide(button)
+                }
+
             case gui.Window_Mouse_Move_Event:
                 if gui.mouse_down(.Right) {
                     gui.set_position(button, button.position + e.delta)
@@ -93,6 +103,7 @@ main :: proc() {
                 }
                 if gui.mouse_hover() == button && button.is_down {
                     gui.set_position(button, button.position + e.delta)
+                    gui.set_position_offset(&text, button.position)
                     gui.redraw()
                 }
             }
@@ -101,9 +112,7 @@ main :: proc() {
 
     widgets.init_slider(&slider)
     gui.set_window(&slider, &window)
-    slider.position = {100, 100}
-
-
+    slider.position = {0, 0}
 
     open_window(&window)
     for window_is_open(&window) {

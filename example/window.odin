@@ -40,7 +40,7 @@ init_window :: proc(
         user_data = window,
         event_proc = _window_event_proc,
     )
-    gui.init_window(window, size, allocator)
+    gui.init_window(window, position, size, allocator)
     window.background_color = background_color
     window.backend.user_data = window
     window.backend.get_tick = _backend_get_tick

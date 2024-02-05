@@ -52,15 +52,15 @@ pixel_size :: proc(window := _current_window) -> Vec2 {
 
 draw_rect :: proc(position, size: Vec2, color: Color, window := _current_window) {
     assert(window != nil)
-    window.backend->render_draw_command(Draw_Rect_Command{window.draw_offset + position, size, color})
+    window.backend->render_draw_command(Draw_Rect_Command{window.cached_draw_offset + position, size, color})
 }
 
 draw_text :: proc(text: string, position: Vec2, font: Font, color: Color, window := _current_window) {
     assert(window != nil)
-    window.backend->render_draw_command(Draw_Text_Command{text, window.draw_offset + position, font, color})
+    window.backend->render_draw_command(Draw_Text_Command{text, window.cached_draw_offset + position, font, color})
 }
 
 clip_drawing :: proc(position, size: Vec2, window := _current_window) {
     assert(window != nil)
-    window.backend->render_draw_command(Clip_Drawing_Command{window.draw_offset + position, size})
+    window.backend->render_draw_command(Clip_Drawing_Command{window.cached_draw_offset + position, size})
 }

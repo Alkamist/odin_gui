@@ -131,7 +131,7 @@ Show_Event :: struct {}
 Hide_Event :: struct {}
 
 Move_Event :: struct {
-    position: Vec2,
+    global_position: Vec2,
     delta: Vec2,
 }
 

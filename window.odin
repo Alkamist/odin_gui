@@ -88,19 +88,22 @@ Window :: struct {
     position: Vec2,
     size: Vec2,
     content_scale: Vec2,
-    draw_offset: Vec2,
     needs_redisplay: bool,
     mouse: Mouse_State,
     keyboard: Keyboard_State,
     widgets: [dynamic]^Widget,
     backend: Backend,
+
+    cached_draw_offset: Vec2,
 }
 
 init_window :: proc(
     window: ^Window,
+    position: Vec2,
     size: Vec2,
     allocator := context.allocator,
 ) -> (res: ^Window, err: runtime.Allocator_Error) #optional_allocator_error {
+    window.position = position
     window.size = size
     window.mouse.repeat_duration = 300 * time.Millisecond
     window.mouse.repeat_movement_tolerance = 3
@@ -138,11 +141,11 @@ input_window_close :: proc(window: ^Window) {
 
 input_window_draw :: proc(window: ^Window) {
     for widget in window.widgets {
-        window.draw_offset = window.position
+        window.cached_draw_offset = {0, 0}
         clip_drawing({0, 0}, window.size, window)
         send_event(widget, Window_Draw_Event{})
         if !widget.is_hidden {
-            window.draw_offset = widget.position
+            window.cached_draw_offset = global_position(widget)
             send_event(widget, Draw_Event{})
         }
     }
@@ -158,9 +161,7 @@ input_window_update :: proc(window: ^Window) {
 }
 
 input_window_move :: proc(window: ^Window, position: Vec2) {
-    if position == window.position {
-        return
-    }
+    if position == window.position do return
     previous_position := window.position
     window.position = position
     for widget in window.widgets {
@@ -172,9 +173,7 @@ input_window_move :: proc(window: ^Window, position: Vec2) {
 }
 
 input_window_resize :: proc(window: ^Window, size: Vec2) {
-    if size == window.size {
-        return
-    }
+    if size == window.size do return
     previous_size := window.size
     window.size = size
     for widget in window.widgets {
@@ -203,9 +202,7 @@ input_window_mouse_exit :: proc(window: ^Window, position: Vec2) {
 
 input_window_mouse_move :: proc(window: ^Window, position: Vec2) {
     previous_mouse_position := window.mouse.position
-    if position == previous_mouse_position {
-        return
-    }
+    if position == previous_mouse_position do return
     window.mouse.position = position
     for widget in window.widgets {
         send_event(widget, Window_Mouse_Move_Event{
@@ -256,7 +253,7 @@ input_window_mouse_press :: proc(window: ^Window, position: Vec2, button: Mouse_
     }
 
     if window.mouse.hover != nil {
-        mp := position - window.mouse.hover.position
+        mp := mouse_position(window.mouse.hover)
         send_event(window.mouse.hover, Mouse_Press_Event{
             position = mp,
             button = button,
@@ -281,7 +278,7 @@ input_window_mouse_release :: proc(window: ^Window, position: Vec2, button: Mous
 
     if window.mouse.hover != nil {
         send_event(window.mouse.hover, Mouse_Release_Event{
-            position = position - window.mouse.hover.position,
+            position = mouse_position(window.mouse.hover),
             button = button,
         })
     }
@@ -299,7 +296,7 @@ input_window_mouse_scroll :: proc(window: ^Window, position: Vec2, amount: Vec2)
 
     if window.mouse.hover != nil {
         send_event(window.mouse.hover, Mouse_Scroll_Event{
-            position = position,
+            position = mouse_position(window.mouse.hover),
             amount = amount,
         })
     }
@@ -421,7 +418,7 @@ font_metrics :: proc(font: Font, window := _current_window) -> (metrics: Font_Me
 hit_test :: proc(position: Vec2, window := _current_window) -> ^Widget {
     assert(window != nil)
     #reverse for widget in window.widgets {
-        if rect.contains({widget.position, widget.size}, position, include_borders = false) {
+        if !widget.is_hidden && rect.contains({global_position(widget), widget.size}, position, include_borders = false) {
             return widget
         }
     }
@@ -470,7 +467,7 @@ update_mouse_hover :: proc(window := _current_window) {
 
     if window.mouse.hover != nil {
         previous_mouse_position := window.mouse.hover.cached_mouse_position
-        mp := window.mouse.position - window.mouse.hover.position
+        mp := mouse_position(window.mouse.hover)
         if mp != previous_mouse_position {
             window.mouse.hover.cached_mouse_position = mp
             send_event(window.mouse.hover, Mouse_Move_Event{
@@ -483,12 +480,12 @@ update_mouse_hover :: proc(window := _current_window) {
     if window.mouse.hover != previous_hover {
         if previous_hover != nil {
             send_event(previous_hover, Mouse_Exit_Event{
-                position = window.mouse.position - previous_hover.position,
+                position = mouse_position(previous_hover),
             })
         }
         if window.mouse.hover != nil {
             send_event(window.mouse.hover, Mouse_Enter_Event{
-                position = window.mouse.position - window.mouse.hover.position,
+                position = mouse_position(window.mouse.hover),
             })
         }
     }
