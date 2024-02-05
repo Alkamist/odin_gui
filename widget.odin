@@ -3,12 +3,6 @@ package gui
 import "base:runtime"
 import "rect"
 
-@(thread_local) _current_widget: ^Widget
-
-Vec2 :: [2]f32
-Rect :: rect.Rect
-Color :: [4]f32
-
 Widget :: struct {
     root: ^Root,
     parent: ^Widget,
@@ -21,6 +15,7 @@ Widget :: struct {
     draw_commands: [dynamic]Draw_Command,
 
     // For rendering and hit detection
+    needs_redraw: bool,
     cached_relative_mouse_position: Vec2,
     cached_global_position: Vec2,
     cached_global_clip_rect: Maybe(Rect),

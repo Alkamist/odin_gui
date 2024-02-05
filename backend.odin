@@ -1,10 +1,6 @@
 package gui
 
-import "core:time"
 import "rect"
-
-Tick :: time.Tick
-Duration :: time.Duration
 
 Backend :: struct {
     user_data: rawptr,
@@ -20,9 +16,7 @@ Backend :: struct {
 redraw :: proc(widget := _current_widget) {
     assert(widget != nil)
     assert(widget.root != nil)
-    clear(&widget.draw_commands)
-    clip_drawing({0, 0}, widget.size, widget)
-    send_event(widget, Draw_Event{})
+    widget.needs_redraw = true
     widget.root.needs_redisplay = true
 }
 
@@ -71,6 +65,13 @@ font_metrics :: proc(font: Font, widget := _current_widget) -> (metrics: Font_Me
 render_draw_commands :: proc(widget: ^Widget) {
     if widget.is_hidden {
         return
+    }
+
+    if widget.needs_redraw {
+        clear(&widget.draw_commands)
+        clip_drawing({0, 0}, widget.size, widget)
+        send_event(widget, Draw_Event{})
+        widget.needs_redraw = false
     }
 
     _update_cached_global_helpers(widget)

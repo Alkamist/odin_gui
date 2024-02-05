@@ -2,6 +2,7 @@ package gui
 
 import "rect"
 
+Color :: [4]f32
 Font :: rawptr
 
 Font_Metrics :: struct {
