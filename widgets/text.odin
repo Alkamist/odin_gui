@@ -10,7 +10,7 @@ import "../../gui"
 
 // Todo:
 // Single line mode?
-// Text edit events.
+// Text edit responses.
 
 POSITIONAL_SELECTION_HORIZONTAL_BIAS :: 3 // Bias positional selection to the right a little for feel.
 CARET_WIDTH :: 2
@@ -36,48 +36,29 @@ Text :: struct {
 
 init_text :: proc(
     text: ^Text,
-    parent: ^gui.Widget,
-    position := Vec2{0, 0},
-    size := Vec2{0, 0},
-    str := "",
-    color := Color{1, 1, 1, 1},
-    font: gui.Font = nil,
-    event_proc: proc(^gui.Widget, ^gui.Widget, any) = text_event_proc,
     allocator := context.allocator,
 ) -> (res: ^Text, err: runtime.Allocator_Error) #optional_allocator_error {
-    gui.init_widget(
-        text,
-        parent,
-        position = position,
-        size = size,
-        event_proc = event_proc,
-        allocator = allocator,
-    ) or_return
-    text.is_drag_selecting = false
+    text.size = {96, 32}
+    text.color = {1, 1, 1, 1}
     text.lines = make([dynamic]Text_Line, allocator = allocator)
     strings.builder_init(&text.builder, allocator = allocator)
-
-    checkpoint := runtime.default_temp_allocator_temp_begin()
-    str_, _ := _remove_carriage_returns(str, context.temp_allocator)
-    strings.write_string(&text.builder, str_)
-    runtime.default_temp_allocator_temp_end(checkpoint)
-
-    text.font = font
-    text.color = color
     edit.init(&text.edit_state, allocator, allocator)
     edit.setup_once(&text.edit_state, &text.builder)
     text.edit_state.selection = {0, 0}
     text.edit_state.clipboard_user_data = text
     text.edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
-        if data_, ok_ := gui.get_clipboard(cast(^Text)user_data); ok_ {
+        text := cast(^Text)user_data
+        if data_, ok_ := gui.get_clipboard(text.window); ok_ {
             data_no_cr, _ := _remove_carriage_returns(data_, context.temp_allocator)
             return data_no_cr, ok_
         }
         return "", false
     }
     text.edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
-        return gui.set_clipboard(data, cast(^Text)user_data)
+        text := cast(^Text)user_data
+        return gui.set_clipboard(data, text.window)
     }
+    text.event_proc = text_event_proc
     return text, nil
 }
 
@@ -85,11 +66,10 @@ destroy_text :: proc(text: ^Text) {
     delete(text.lines)
     strings.builder_destroy(&text.builder)
     edit.destroy(&text.edit_state)
-    gui.destroy_widget(text)
 }
 
 line_height :: proc(text: ^Text) -> f32 {
-    pixel_height := gui.pixel_size(text).y
+    pixel_height := gui.pixel_size(text.window).y
     metrics, _ := gui.font_metrics(text.font)
     return math.ceil(metrics.line_height / pixel_height) * pixel_height
 }
@@ -99,7 +79,7 @@ input_text :: proc(text: ^Text, str: string) {
     str_, _ := _remove_carriage_returns(str, context.temp_allocator)
     edit.input_text(&text.edit_state, str)
     runtime.default_temp_allocator_temp_end(checkpoint)
-    gui.redraw(text)
+    gui.redraw(text.window)
 }
 
 input_runes :: proc(text: ^Text, runes: []rune) {
@@ -108,23 +88,23 @@ input_runes :: proc(text: ^Text, runes: []rune) {
     str_, _ := _remove_carriage_returns(str, context.temp_allocator)
     edit.input_runes(&text.edit_state, runes)
     runtime.default_temp_allocator_temp_end(checkpoint)
-    gui.redraw(text)
+    gui.redraw(text.window)
 }
 
 input_rune :: proc(text: ^Text, r: rune) {
     if r == '\r' do return
     edit.input_rune(&text.edit_state, r)
-    gui.redraw(text)
+    gui.redraw(text.window)
 }
 
 insert_text :: proc(text: ^Text, at: int, str: string) {
     edit.insert(&text.edit_state, at, str)
-    gui.redraw(text)
+    gui.redraw(text.window)
 }
 
 remove_text_range :: proc(text: ^Text, lo, hi: int) {
     edit.remove(&text.edit_state, lo, hi)
-    gui.redraw(text)
+    gui.redraw(text.window)
 }
 
 text_has_selection :: proc(text: ^Text) -> bool {
@@ -137,7 +117,7 @@ sorted_text_selection :: proc(text: ^Text) -> (lo, hi: int) {
 
 delete_text_selection :: proc(text: ^Text) {
     edit.selection_delete(&text.edit_state)
-    gui.redraw(text)
+    gui.redraw(text.window)
 }
 
 edit_text :: proc(text: ^Text, command: Text_Edit_Command) {
@@ -149,28 +129,28 @@ edit_text :: proc(text: ^Text, command: Text_Edit_Command) {
     checkpoint := runtime.default_temp_allocator_temp_begin()
     edit.perform_command(&text.edit_state, command)
     runtime.default_temp_allocator_temp_end(checkpoint)
-    gui.redraw(text)
+    gui.redraw(text.window)
 }
 
 start_drag_selection :: proc(text: ^Text, position: Vec2, only_head := false) {
-    gui.set_focus(text)
+    gui.set_keyboard_focus(text)
     index := rune_index_at_position(text, position)
     text.is_drag_selecting = true
     text.edit_state.selection[0] = index
     if !only_head do text.edit_state.selection[1] = index
-    gui.redraw(text)
+    gui.redraw(text.window)
 }
 
 move_drag_selection :: proc(text: ^Text, position: Vec2) {
     if !text.is_drag_selecting do return
     text.edit_state.selection[0] = rune_index_at_position(text, position)
-    gui.redraw(text)
+    gui.redraw(text.window)
 }
 
 end_drag_selection :: proc(text: ^Text) {
     if !text.is_drag_selecting do return
     text.is_drag_selecting = false
-    gui.redraw(text)
+    gui.redraw(text.window)
 }
 
 line_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
@@ -280,38 +260,27 @@ position_of_rune_index :: proc(text: ^Text, rune_index: int) -> Vec2 {
     return {0, 0}
 }
 
-text_event_proc :: proc(widget, subject: ^gui.Widget, event: any) {
+text_event_proc :: proc(widget: ^gui.Widget, event: gui.Event) {
     text := cast(^Text)widget
 
-    // Release focus if any other widget is clicked.
-    if subject != widget {
-        switch e in event {
-        case gui.Mouse_Press_Event:
-            if gui.current_focus() == widget do gui.release_focus()
-        }
-    }
+    _handle_text_editing(text, event)
 
-    switch subject {
-    case nil:
-        switch e in event {
-        case gui.Open_Event: gui.redraw()
+    #partial switch e in event {
+    case gui.Window_Mouse_Press_Event:
+        if gui.mouse_hover() != widget && gui.keyboard_focus() == widget {
+            gui.release_keyboard_focus()
         }
 
-    case widget:
-        _handle_text_editing(text, event)
-
-        switch e in event {
-        case gui.Update_Event:
-            // Manually update the edit state time with the
-            // time provided by the backend.
-            text.edit_state.current_time = gui.get_tick() or_else gui.Tick{}
-            if text.edit_state.undo_timeout <= 0 {
-                text.edit_state.undo_timeout = edit.DEFAULT_UNDO_TIMEOUT
-            }
-
-        case gui.Draw_Event:
-            _handle_text_render(text)
+    case gui.Update_Event:
+        // Manually update the edit state time with the
+        // time provided by the backend.
+        text.edit_state.current_time = gui.get_tick() or_else gui.Tick{}
+        if text.edit_state.undo_timeout <= 0 {
+            text.edit_state.undo_timeout = edit.DEFAULT_UNDO_TIMEOUT
         }
+
+    case gui.Draw_Event:
+        _handle_text_render(text)
     }
 }
 
@@ -442,8 +411,8 @@ _handle_text_render :: proc(text: ^Text) {
     gui.draw_rect(caret_position, {CARET_WIDTH, line_height}, CARET_COLOR)
 }
 
-_handle_text_editing :: proc(text: ^Text, event: any) {
-    switch e in event {
+_handle_text_editing :: proc(text: ^Text, event: gui.Event) {
+    #partial switch e in event {
     case gui.Mouse_Enter_Event:
         gui.set_cursor_style(.I_Beam)
 
@@ -451,7 +420,7 @@ _handle_text_editing :: proc(text: ^Text, event: any) {
         gui.set_cursor_style(.Arrow)
 
     case gui.Mouse_Repeat_Event:
-        gui.capture_hover()
+        gui.capture_mouse_hover()
 
         switch e.press_count {
         case 1: // Single click
@@ -477,16 +446,13 @@ _handle_text_editing :: proc(text: ^Text, event: any) {
 
     case gui.Mouse_Release_Event:
         end_drag_selection(text)
-        gui.release_hover()
+        gui.release_mouse_hover()
 
     case gui.Mouse_Move_Event:
         move_drag_selection(text, e.position)
 
     case gui.Text_Event:
         input_rune(text, e.text)
-
-    case gui.Key_Press_Event:
-        _handle_text_edit_keybinds(text, e.key)
 
     case gui.Key_Repeat_Event:
         _handle_text_edit_keybinds(text, e.key)
@@ -498,7 +464,7 @@ _handle_text_edit_keybinds :: proc(text: ^Text, key: gui.Keyboard_Key) {
     shift := gui.key_down(.Left_Shift) || gui.key_down(.Right_Shift)
 
     #partial switch key {
-    case .Escape: gui.release_focus()
+    case .Escape: gui.release_keyboard_focus()
     case .Enter, .Pad_Enter: edit_text(text, .New_Line)
     case .A: if ctrl do edit_text(text, .Select_All)
     case .C: if ctrl do edit_text(text, .Copy)

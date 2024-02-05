@@ -24,7 +24,7 @@ layout_free_axis :: proc(
         position := widget.position
         position[axis_int] = p
 
-        set_position(position, widget)
+        set_position(widget, position)
 
         p += widget.size[axis_int] + spacing
     }
@@ -60,8 +60,8 @@ layout_grid_axis :: proc(
         size := widget.size
         size[axis_int] = widget_size
 
-        set_position(position, widget)
-        set_size(size, widget)
+        set_position(widget, position)
+        set_size(widget, size)
 
         p += widget_size + spacing
     }
@@ -100,7 +100,7 @@ layout_flex_axis :: proc(
         position := widget.position
         position[axis_int] = p
 
-        set_position(position, widget)
+        set_position(widget, position)
 
         p += widget.size[axis_int] + spacing
     }
@@ -133,8 +133,8 @@ layout_grid :: proc(
                 return
             }
 
-            set_position(position, widgets[i])
-            set_size(child_size, widgets[i])
+            set_position(widgets[i], position)
+            set_size(widgets[i], child_size)
 
             position.x += child_size.x + spacing.x
             i += 1

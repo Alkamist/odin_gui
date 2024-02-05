@@ -60,62 +60,50 @@ main :: proc() {
     )
     defer destroy_window(&window)
 
-    for &button, i in buttons {
-        widgets.init_button(&button, &window.root,
-            position = {f32(i * 20), f32(i * 20)},
-            size = {32 + rand.float32() * 100, 32 + rand.float32() * 100},
-            event_proc = proc(widget, subject: ^gui.Widget, event: any) {
-                button := cast(^widgets.Button)widget
-                widgets.button_event_proc(button, subject, event)
-
-                switch subject {
-                case nil:
-                    switch e in event {
-                    case gui.Mouse_Move_Event:
-                        if gui.mouse_down(.Right) {
-                            gui.set_position(button.position + e.delta)
-                            gui.redraw()
-                        }
-                        if gui.current_hover() == button && button.is_down {
-                            gui.set_position(button.position + e.delta)
-                            gui.redraw()
-                        }
-                    }
-
-                case widget:
-                    switch e in event {
-                    case widgets.Button_Click_Event:
-                        fmt.println("Clicked")
-                    }
-                }
-            },
-        )
-    }
-    defer for &button in buttons {
-        widgets.destroy_button(&button)
-    }
-
-    widgets.init_slider(&slider, &window.root,
-        position = {100, 100},
-        // event_proc = proc(widget, subject: ^gui.Widget, event: any) {
-        //     slider := cast(^widgets.Slider)widget
-        //     widgets.slider_event_proc(widget, subject, event)
-        //     switch subject {
-        //     case widget:
-        //         switch e in event {
-        //         case widgets.Slider_Value_Change_Event:
-        //             consola.size = slider.value * 64
-        //             gui.redraw(&text)
-        //         }
-        //     }
-        // },
-    )
-    defer widgets.destroy_slider(&slider)
-
-    widgets.init_text(&text, &window.root, {50, 50}, {400, 400}, "Hello World.\r\nHello World.", font = &consola)
+    widgets.init_text(&text)
     defer widgets.destroy_text(&text)
+    gui.set_window(&text, &window)
+    text.position = {100, 100}
+    text.size = {400, 400}
+    text.font = &consola
+    widgets.input_text(&text, SAMPLE_TEXT)
 
-    // text.clip_children = true
+    for &button, i in buttons {
+        widgets.init_button(&button)
+        gui.set_window(&button, &window)
+        button.position = {f32(i * 20), f32(i * 20)}
+        button.size = {32 + rand.float32() * 100, 32 + rand.float32() * 100}
+
+        button.response_proc = proc(button: ^widgets.Button, event: widgets.Button_Event) {
+            #partial switch e in event {
+            case widgets.Button_Click_Event:
+                fmt.println("Clicked")
+            }
+        }
+
+        button.event_proc = proc(widget: ^gui.Widget, event: gui.Event) {
+            button := cast(^widgets.Button)widget
+            widgets.button_event_proc(button, event)
+
+            #partial switch e in event {
+            case gui.Window_Mouse_Move_Event:
+                if gui.mouse_down(.Right) {
+                    gui.set_position(button, button.position + e.delta)
+                    gui.redraw()
+                }
+                if gui.mouse_hover() == button && button.is_down {
+                    gui.set_position(button, button.position + e.delta)
+                    gui.redraw()
+                }
+            }
+        }
+    }
+
+    widgets.init_slider(&slider)
+    gui.set_window(&slider, &window)
+    slider.position = {100, 100}
+
+
 
     open_window(&window)
     for window_is_open(&window) {
