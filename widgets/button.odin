@@ -21,13 +21,21 @@ Button_Press_Event :: struct {}
 Button_Release_Event :: struct {}
 Button_Click_Event :: struct {}
 
-init_button :: proc(button: ^Button) -> ^Button {
+init_button :: proc(
+    button: ^Button,
+    allocator := context.allocator,
+) -> (res: ^Button, err: runtime.Allocator_Error) #optional_allocator_error {
+    gui.init_widget(button, allocator) or_return
     button.position = Vec2{0, 0}
     button.size = Vec2{96, 32}
     button.color = Color{0.5, 0.5, 0.5, 1}
     button.mouse_button = gui.Mouse_Button.Left
     button.event_proc = button_event_proc
-    return button
+    return button, nil
+}
+
+destroy_button :: proc(button: ^Button) {
+    gui.destroy_widget(button)
 }
 
 button_event_proc :: proc(widget: ^gui.Widget, event: gui.Event) {
@@ -58,7 +66,7 @@ button_event_proc :: proc(widget: ^gui.Widget, event: gui.Event) {
         gui.redraw()
 
     case gui.Draw_Event:
-        gui.draw_rect({0, 0}, button.size, {0.4, 0.4, 0.4, 1})
+        gui.draw_rect({0, 0}, button.size, button.color)
         if button.is_down {
             gui.draw_rect({0, 0}, button.size, {0, 0, 0, 0.2})
         } else if gui.mouse_hover() == button {

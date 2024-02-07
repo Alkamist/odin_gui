@@ -27,7 +27,7 @@ consola := Font{"Consola", 13}
 
 window: Window
 buttons: [8]widgets.Button
-slider: widgets.Slider
+// slider: widgets.Slider
 text: widgets.Text
 
 main :: proc() {
@@ -62,7 +62,7 @@ main :: proc() {
 
     widgets.init_text(&text)
     defer widgets.destroy_text(&text)
-    gui.set_window(&text, &window)
+    gui.set_parent(&text, &window.root)
     text.position = {100, 100}
     text.size = {400, 400}
     text.font = &consola
@@ -70,9 +70,26 @@ main :: proc() {
 
     for &button, i in buttons {
         widgets.init_button(&button)
-        gui.set_window(&button, &window)
-        button.position = {f32(i * 20), f32(i * 20)}
-        button.size = {32 + rand.float32() * 100, 32 + rand.float32() * 100}
+        if i == 0 {
+            gui.set_parent(&button, &window.root)
+        } else {
+            gui.set_parent(&button, &buttons[i - 1])
+        }
+
+        button.position = {
+            f32(i * 20),
+            f32(i * 20),
+        }
+        button.size = {
+            32 + rand.float32() * 100,
+            32 + rand.float32() * 100,
+        }
+        button.color = {
+            0.5 + rand.float32() * 0.5,
+            0.5 + rand.float32() * 0.5,
+            0.5 + rand.float32() * 0.5,
+            1,
+        }
 
         button.response_proc = proc(button: ^widgets.Button, event: widgets.Button_Event) {
             #partial switch e in event {
@@ -103,16 +120,19 @@ main :: proc() {
                 }
                 if gui.mouse_hover() == button && button.is_down {
                     gui.set_position(button, button.position + e.delta)
-                    gui.set_position_offset(&text, button.position)
                     gui.redraw()
                 }
             }
         }
     }
+    defer for &button in buttons {
+        widgets.destroy_button(&button)
+    }
 
-    widgets.init_slider(&slider)
-    gui.set_window(&slider, &window)
-    slider.position = {0, 0}
+    // widgets.init_slider(&slider)
+    // defer widgets.destroy_slider(&slider)
+    // gui.set_parent(&slider, &button)
+    // slider.position = {50, 50}
 
     open_window(&window)
     for window_is_open(&window) {

@@ -85,9 +85,9 @@ destroy :: proc(window: ^Window) {
     _force_close(window)
 }
 
-open :: proc(window: ^Window) -> bool {
+open :: proc(window: ^Window, allocator := context.temp_allocator) -> (ok: bool) {
     if window.is_open {
-        return false
+        return true
     }
 
     if _window_count == 0 {
@@ -98,10 +98,13 @@ open :: proc(window: ^Window) -> bool {
         }
         _world = pugl.NewWorld(world_type, {})
 
-        checkpoint := runtime.default_temp_allocator_temp_begin()
         world_id := fmt.tprint("WindowThread", _generate_id())
-        pugl.SetWorldString(_world, .CLASS_NAME, strings.clone_to_cstring(world_id, context.temp_allocator))
-        runtime.default_temp_allocator_temp_end(checkpoint)
+        world_id_cstring, err := strings.clone_to_cstring(world_id, allocator)
+        if err != nil {
+            return false
+        }
+
+        pugl.SetWorldString(_world, .CLASS_NAME, strings.clone_to_cstring(world_id, allocator))
     }
 
     if window.parent_handle != nil && window.child_kind == .None {
@@ -110,7 +113,12 @@ open :: proc(window: ^Window) -> bool {
 
     view := pugl.NewView(_world)
 
-    pugl.SetViewString(view, .WINDOW_TITLE, strings.clone_to_cstring(window.title, context.temp_allocator))
+    title_cstring, err := strings.clone_to_cstring(window.title, allocator)
+    if err != nil {
+        return false
+    }
+
+    pugl.SetViewString(view, .WINDOW_TITLE, title_cstring)
     pugl.SetSizeHint(view, .DEFAULT_SIZE, u16(window.last_size.x), u16(window.last_size.y))
 
     if min_size, ok := window.min_size.?; ok {
@@ -270,7 +278,7 @@ get_clipboard :: proc(window: ^Window) -> (data: string, ok: bool) {
     return string(clipboard_cstring), true
 }
 
-set_clipboard :: proc(window: ^Window, data: string, allocator := context.allocator) -> (ok: bool) {
+set_clipboard :: proc(window: ^Window, data: string, allocator := context.temp_allocator) -> (ok: bool) {
     data_cstring, err := strings.clone_to_cstring(data, allocator)
     defer delete(data_cstring)
     if err != nil do return false

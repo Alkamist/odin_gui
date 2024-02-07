@@ -1,5 +1,6 @@
 package widgets
 
+import "base:runtime"
 import "../../gui"
 
 Slider :: struct {
@@ -29,14 +30,22 @@ Slider_Value_Change_Event :: struct {
     delta: f32,
 }
 
-init_slider :: proc(slider: ^Slider) -> ^Slider {
+init_slider :: proc(
+    slider: ^Slider,
+    allocator := context.allocator,
+) -> (res: ^Slider, err: runtime.Allocator_Error) #optional_allocator_error {
+    gui.init_widget(slider, allocator) or_return
     slider.size = Vec2{300, 24}
     slider.max_value = 1
     slider.handle_length = 16
     slider.mouse_button = .Left
     slider.precision_key = .Left_Shift
     slider.event_proc = slider_event_proc
-    return slider
+    return slider, nil
+}
+
+destroy_slider :: proc(slider: ^Slider) {
+    gui.destroy_widget(slider)
 }
 
 set_slider_value :: proc(slider: ^Slider, value: f32) {
@@ -75,6 +84,9 @@ slider_event_proc :: proc(widget: ^gui.Widget, event: gui.Event) {
     slider := cast(^Slider)widget
 
     #partial switch e in event {
+    case gui.Mouse_Enter_Event: gui.redraw()
+    case gui.Mouse_Exit_Event: gui.redraw()
+
     case gui.Window_Key_Press_Event:
         if slider.is_grabbed && e.key == slider.precision_key {
             slider.value_when_grabbed = slider.value
@@ -86,9 +98,6 @@ slider_event_proc :: proc(widget: ^gui.Widget, event: gui.Event) {
             slider.value_when_grabbed = slider.value
             slider.global_mouse_position_when_grabbed = gui.global_mouse_position()
         }
-
-    case gui.Mouse_Enter_Event: gui.redraw()
-    case gui.Mouse_Exit_Event: gui.redraw()
 
     case gui.Mouse_Press_Event:
         if e.button == slider.mouse_button {

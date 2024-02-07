@@ -9,6 +9,7 @@ import "core:strings"
 import "../../gui"
 
 // Todo:
+// Handle clipping.
 // Single line mode?
 // Text edit responses.
 
@@ -32,16 +33,20 @@ Text :: struct {
     is_drag_selecting: bool,
     edit_state: edit.State,
     lines: [dynamic]Text_Line,
+    temp_allocator: runtime.Allocator,
 }
 
 init_text :: proc(
     text: ^Text,
     allocator := context.allocator,
+    temp_allocator := context.temp_allocator,
 ) -> (res: ^Text, err: runtime.Allocator_Error) #optional_allocator_error {
+    gui.init_widget(text, allocator) or_return
+    text.lines = make([dynamic]Text_Line, allocator = allocator) or_return
+    text.temp_allocator = temp_allocator
     text.size = {96, 32}
     text.color = {1, 1, 1, 1}
-    text.lines = make([dynamic]Text_Line, allocator = allocator)
-    strings.builder_init(&text.builder, allocator = allocator)
+    strings.builder_init(&text.builder, allocator = allocator) or_return
     edit.init(&text.edit_state, allocator, allocator)
     edit.setup_once(&text.edit_state, &text.builder)
     text.edit_state.selection = {0, 0}
@@ -49,7 +54,7 @@ init_text :: proc(
     text.edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
         text := cast(^Text)user_data
         if data_, ok_ := gui.get_clipboard(text.window); ok_ {
-            data_no_cr, _ := _remove_carriage_returns(data_, context.temp_allocator)
+            data_no_cr, _ := _remove_carriage_returns(data_, text.temp_allocator)
             return data_no_cr, ok_
         }
         return "", false
@@ -66,6 +71,7 @@ destroy_text :: proc(text: ^Text) {
     delete(text.lines)
     strings.builder_destroy(&text.builder)
     edit.destroy(&text.edit_state)
+    gui.destroy_widget(text)
 }
 
 line_height :: proc(text: ^Text) -> f32 {
@@ -75,19 +81,15 @@ line_height :: proc(text: ^Text) -> f32 {
 }
 
 input_text :: proc(text: ^Text, str: string) {
-    checkpoint := runtime.default_temp_allocator_temp_begin()
-    str_, _ := _remove_carriage_returns(str, context.temp_allocator)
+    str_, _ := _remove_carriage_returns(str, text.temp_allocator)
     edit.input_text(&text.edit_state, str)
-    runtime.default_temp_allocator_temp_end(checkpoint)
     gui.redraw(text.window)
 }
 
 input_runes :: proc(text: ^Text, runes: []rune) {
-    checkpoint := runtime.default_temp_allocator_temp_begin()
-    str := utf8.runes_to_string(runes, context.temp_allocator)
-    str_, _ := _remove_carriage_returns(str, context.temp_allocator)
+    str := utf8.runes_to_string(runes, text.temp_allocator)
+    str_, _ := _remove_carriage_returns(str, text.temp_allocator)
     edit.input_runes(&text.edit_state, runes)
-    runtime.default_temp_allocator_temp_end(checkpoint)
     gui.redraw(text.window)
 }
 
@@ -126,9 +128,7 @@ edit_text :: proc(text: ^Text, command: Text_Edit_Command) {
     case .Up, .Select_Up: _update_edit_state_up_index(text)
     case .Down, .Select_Down: _update_edit_state_down_index(text)
     }
-    checkpoint := runtime.default_temp_allocator_temp_begin()
     edit.perform_command(&text.edit_state, command)
-    runtime.default_temp_allocator_temp_end(checkpoint)
     gui.redraw(text.window)
 }
 
@@ -174,9 +174,6 @@ rune_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
     position := position
     position.x += POSITIONAL_SELECTION_HORIZONTAL_BIAS
 
-    checkpoint := runtime.default_temp_allocator_temp_begin()
-    defer runtime.default_temp_allocator_temp_end(checkpoint)
-
     _update_text_lines(text)
     line_height := line_height(text)
 
@@ -201,7 +198,7 @@ rune_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
 
         line_str := string(text.builder.buf[line.start:][:line.length])
 
-        glyphs := make([dynamic]gui.Text_Glyph, context.temp_allocator)
+        glyphs := make([dynamic]gui.Text_Glyph, text.temp_allocator)
         gui.measure_text(&glyphs, line_str, text.font)
 
         #reverse for glyph in glyphs {
@@ -226,9 +223,6 @@ rune_index_at_position :: proc(text: ^Text, position: Vec2) -> int {
 }
 
 position_of_rune_index :: proc(text: ^Text, rune_index: int) -> Vec2 {
-    checkpoint := runtime.default_temp_allocator_temp_begin()
-    defer runtime.default_temp_allocator_temp_end(checkpoint)
-
     line_count := len(text.lines)
     line_height := line_height(text)
 
@@ -242,7 +236,7 @@ position_of_rune_index :: proc(text: ^Text, rune_index: int) -> Vec2 {
         line_y := line_height * f32(i)
         line_end := f32(0)
 
-        glyphs := make([dynamic]gui.Text_Glyph, context.temp_allocator)
+        glyphs := make([dynamic]gui.Text_Glyph, text.temp_allocator)
         gui.measure_text(&glyphs, line_str, text.font)
 
         for glyph in glyphs {
@@ -345,10 +339,7 @@ _update_text_lines :: proc(text: ^Text) {
 }
 
 _handle_text_render :: proc(text: ^Text) {
-    checkpoint := runtime.default_temp_allocator_temp_begin()
-    defer runtime.default_temp_allocator_temp_end(checkpoint)
-
-    gui.clip_drawing({0, 0}, text.size)
+    // gui.clip_drawing({0, 0}, text.size)
     _update_text_lines(text)
 
     line_height := line_height(text)
@@ -368,7 +359,7 @@ _handle_text_render :: proc(text: ^Text) {
         line_y := line_height * f32(i)
         line_end := f32(0)
 
-        glyphs := make([dynamic]gui.Text_Glyph, context.temp_allocator)
+        glyphs := make([dynamic]gui.Text_Glyph, text.temp_allocator)
         gui.measure_text(&glyphs, line_str, text.font)
 
         // Left and right of the selection.

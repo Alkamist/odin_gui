@@ -85,16 +85,16 @@ Backend :: struct {
 }
 
 Window :: struct {
+    root: Widget,
     position: Vec2,
     size: Vec2,
     content_scale: Vec2,
     needs_redisplay: bool,
     mouse: Mouse_State,
     keyboard: Keyboard_State,
-    widgets: [dynamic]^Widget,
     backend: Backend,
 
-    cached_draw_offset: Vec2,
+    current_cached_global_position: Vec2,
 }
 
 init_window :: proc(
@@ -103,117 +103,86 @@ init_window :: proc(
     size: Vec2,
     allocator := context.allocator,
 ) -> (res: ^Window, err: runtime.Allocator_Error) #optional_allocator_error {
+    init_widget(&window.root, allocator) or_return
+    window.root.window = window
+    window.root.size = size
     window.position = position
     window.size = size
     window.mouse.repeat_duration = 300 * time.Millisecond
     window.mouse.repeat_movement_tolerance = 3
     window.content_scale = Vec2{1, 1}
     window.needs_redisplay = true
-    window.widgets = make([dynamic]^Widget, allocator) or_return
     return window, nil
 }
 
 destroy_window :: proc(window: ^Window) {
-    delete(window.widgets)
+    destroy_widget(&window.root)
 }
 
-send_window_event :: proc(window: ^Window, event: Event) {
-    for widget in window.widgets {
-        if widget.event_proc == nil do continue
-        previous_window := _current_window
-        _current_window = window
-        widget->event_proc(event)
-        _current_window = previous_window
-    }
+input_open :: proc(window: ^Window) {
+    _send_window_event(window, Window_Open_Event{})
 }
 
-input_window_open :: proc(window: ^Window) {
-    for widget in window.widgets {
-        send_event(widget, Window_Open_Event{})
-    }
+input_close :: proc(window: ^Window) {
+    _send_window_event(window, Window_Close_Event{})
 }
 
-input_window_close :: proc(window: ^Window) {
-    for widget in window.widgets {
-        send_event(widget, Window_Close_Event{})
-    }
+input_draw :: proc(window: ^Window) {
+    window.current_cached_global_position = window.root.position
+    _send_window_event(window, Window_Draw_Event{})
+    _send_event_recursively(&window.root, true, Draw_Event{})
 }
 
-input_window_draw :: proc(window: ^Window) {
-    for widget in window.widgets {
-        window.cached_draw_offset = {0, 0}
-        clip_drawing({0, 0}, window.size, window)
-        send_event(widget, Window_Draw_Event{})
-        if !widget.is_hidden {
-            window.cached_draw_offset = global_position(widget)
-            send_event(widget, Draw_Event{})
-        }
-    }
+input_update :: proc(window: ^Window) {
+    _send_window_event(window, Window_Update_Event{})
+    _send_event_recursively(&window.root, true, Update_Event{})
 }
 
-input_window_update :: proc(window: ^Window) {
-    for widget in window.widgets {
-        send_event(widget, Window_Update_Event{})
-        if !widget.is_hidden {
-            send_event(widget, Update_Event{})
-        }
-    }
-}
-
-input_window_move :: proc(window: ^Window, position: Vec2) {
+input_move :: proc(window: ^Window, position: Vec2) {
     if position == window.position do return
     previous_position := window.position
     window.position = position
-    for widget in window.widgets {
-        send_event(widget, Window_Move_Event{
-            position = position,
-            delta = position - previous_position,
-        })
-    }
+    _send_window_event(window, Window_Move_Event{
+        position = position,
+        delta = position - previous_position,
+    })
 }
 
-input_window_resize :: proc(window: ^Window, size: Vec2) {
+input_resize :: proc(window: ^Window, size: Vec2) {
     if size == window.size do return
     previous_size := window.size
     window.size = size
-    for widget in window.widgets {
-        send_event(widget, Window_Resize_Event{
-            size = size,
-            delta = size - previous_size,
-        })
-    }
+    _send_window_event(window, Window_Resize_Event{
+        size = size,
+        delta = size - previous_size,
+    })
+    set_size(&window.root, size)
 }
 
-input_window_mouse_enter :: proc(window: ^Window, position: Vec2) {
-    for widget in window.widgets {
-        send_event(widget, Window_Mouse_Enter_Event{
-            position = position,
-        })
-    }
+input_mouse_enter :: proc(window: ^Window, position: Vec2) {
+    _send_window_event(window, Window_Mouse_Enter_Event{
+        position = position,
+    })
 }
 
-input_window_mouse_exit :: proc(window: ^Window, position: Vec2) {
-    for widget in window.widgets {
-        send_event(widget, Window_Mouse_Exit_Event{
-            position = position,
-        })
-    }
+input_mouse_exit :: proc(window: ^Window, position: Vec2) {
+    _send_window_event(window, Window_Mouse_Exit_Event{
+        position = position,
+    })
 }
 
-input_window_mouse_move :: proc(window: ^Window, position: Vec2) {
+input_mouse_move :: proc(window: ^Window, position: Vec2) {
     previous_mouse_position := window.mouse.position
     if position == previous_mouse_position do return
     window.mouse.position = position
-    for widget in window.widgets {
-        send_event(widget, Window_Mouse_Move_Event{
-            position = position,
-            delta = position - previous_mouse_position,
-        })
-    }
+    _send_window_event(window, Window_Mouse_Move_Event{
+        position = position,
+        delta = position - previous_mouse_position,
+    })
     update_mouse_hover(window)
 }
 
-input_window_mouse_press :: proc(window: ^Window, position: Vec2, button: Mouse_Button) {
+input_mouse_press :: proc(window: ^Window, position: Vec2, button: Mouse_Button) {
     window.mouse.button_down[button] = true
 
     tick_available := false
@@ -240,25 +209,23 @@ input_window_mouse_press :: proc(window: ^Window, position: Vec2, button: Mouse_
         window.mouse.repeat_start_position = window.mouse.position
     }
 
-    for widget in window.widgets {
-        send_event(widget, Window_Mouse_Press_Event{
-            position = position,
-            button = button,
-        })
-        send_event(widget, Window_Mouse_Repeat_Event{
-            position = position,
-            button = button,
-            press_count = window.mouse.repeat_press_count,
-        })
-    }
+    _send_window_event(window, Window_Mouse_Press_Event{
+        position = position,
+        button = button,
+    })
+    _send_window_event(window, Window_Mouse_Repeat_Event{
+        position = position,
+        button = button,
+        press_count = window.mouse.repeat_press_count,
+    })
 
     if window.mouse.hover != nil {
         mp := mouse_position(window.mouse.hover)
-        send_event(window.mouse.hover, Mouse_Press_Event{
+        _send_event(window.mouse.hover, true, Mouse_Press_Event{
             position = mp,
             button = button,
         })
-        send_event(window.mouse.hover, Mouse_Repeat_Event{
+        _send_event(window.mouse.hover, true, Mouse_Repeat_Event{
             position = mp,
             button = button,
             press_count = window.mouse.repeat_press_count,
@@ -266,18 +233,16 @@ input_window_mouse_press :: proc(window: ^Window, position: Vec2, button: Mouse_
     }
 }
 
-input_window_mouse_release :: proc(window: ^Window, position: Vec2, button: Mouse_Button) {
+input_mouse_release :: proc(window: ^Window, position: Vec2, button: Mouse_Button) {
     window.mouse.button_down[button] = false
 
-    for widget in window.widgets {
-        send_event(widget, Window_Mouse_Release_Event{
-            position = position,
-            button = button,
-        })
-    }
+    _send_window_event(window, Window_Mouse_Release_Event{
+        position = position,
+        button = button,
+    })
 
     if window.mouse.hover != nil {
-        send_event(window.mouse.hover, Mouse_Release_Event{
+        _send_event(window.mouse.hover, true, Mouse_Release_Event{
             position = mouse_position(window.mouse.hover),
             button = button,
         })
@@ -286,92 +251,79 @@ input_window_mouse_release :: proc(window: ^Window, position: Vec2, button: Mous
     update_mouse_hover(window)
 }
 
-input_window_mouse_scroll :: proc(window: ^Window, position: Vec2, amount: Vec2) {
-    for widget in window.widgets {
-        send_event(widget, Window_Mouse_Scroll_Event{
-            position = position,
-            amount = amount,
-        })
-    }
+input_mouse_scroll :: proc(window: ^Window, position: Vec2, amount: Vec2) {
+    _send_window_event(window, Window_Mouse_Scroll_Event{
+        position = position,
+        amount = amount,
+    })
 
     if window.mouse.hover != nil {
-        send_event(window.mouse.hover, Mouse_Scroll_Event{
+        _send_event(window.mouse.hover, true, Mouse_Scroll_Event{
             position = mouse_position(window.mouse.hover),
             amount = amount,
         })
     }
 }
 
-input_window_key_press :: proc(window: ^Window, key: Keyboard_Key) {
+input_key_press :: proc(window: ^Window, key: Keyboard_Key) {
     already_down := window.keyboard.key_down[key]
     window.keyboard.key_down[key] = true
 
     if !already_down {
-        for widget in window.widgets {
-            send_event(widget, Window_Key_Press_Event{
-                key = key,
-            })
-        }
+        _send_window_event(window, Window_Key_Press_Event{
+            key = key,
+        })
         if window.keyboard.focus != nil {
-            send_event(window.keyboard.focus, Key_Press_Event{
+            _send_event(window.keyboard.focus, true, Key_Press_Event{
                 key = key,
             })
         }
     }
 
-    for widget in window.widgets {
-        send_event(widget, Window_Key_Repeat_Event{
-            key = key,
-        })
-    }
+    _send_window_event(window, Window_Key_Repeat_Event{
+        key = key,
+    })
     if window.keyboard.focus != nil {
-        send_event(window.keyboard.focus, Key_Repeat_Event{
+        _send_event(window.keyboard.focus, true, Key_Repeat_Event{
             key = key,
         })
     }
 }
 
-input_window_key_release :: proc(window: ^Window, key: Keyboard_Key) {
+input_key_release :: proc(window: ^Window, key: Keyboard_Key) {
     window.keyboard.key_down[key] = false
 
-    for widget in window.widgets {
-        send_event(widget, Window_Key_Release_Event{
-            key = key,
-        })
-    }
+    _send_window_event(window, Window_Key_Release_Event{
+        key = key,
+    })
 
     if window.keyboard.focus != nil {
-        send_event(window.keyboard.focus, Key_Release_Event{
+        _send_event(window.keyboard.focus, true, Key_Release_Event{
             key = key,
         })
     }
 }
 
-input_window_text :: proc(window: ^Window, text: rune) {
-    for widget in window.widgets {
-        send_event(widget, Window_Text_Event{
-            text = text,
-        })
-    }
+input_text :: proc(window: ^Window, text: rune) {
+    _send_window_event(window, Window_Text_Event{
+        text = text,
+    })
 
     if window.keyboard.focus != nil {
-        send_event(window.keyboard.focus, Text_Event{
+        _send_event(window.keyboard.focus, true, Text_Event{
             text = text,
         })
     }
 }
 
-input_window_content_scale :: proc(window: ^Window, scale: Vec2) {
+input_content_scale :: proc(window: ^Window, scale: Vec2) {
     previous_content_scale := window.content_scale
-    if scale != previous_content_scale {
-        window.content_scale = scale
-        for widget in window.widgets {
-            send_event(widget, Window_Content_Scale_Event{
-                scale = scale,
-                delta = scale - previous_content_scale,
-            })
-        }
-    }
+    if scale == previous_content_scale do return
+    window.content_scale = scale
+    _send_window_event(window, Window_Content_Scale_Event{
+        scale = scale,
+        delta = scale - previous_content_scale,
+    })
 }
 
 redraw :: proc(window := _current_window) {
@@ -417,12 +369,7 @@ font_metrics :: proc(font: Font, window := _current_window) -> (metrics: Font_Me
 
 hit_test :: proc(position: Vec2, window := _current_window) -> ^Widget {
     assert(window != nil)
-    #reverse for widget in window.widgets {
-        if !widget.is_hidden && rect.contains({global_position(widget), widget.size}, position, include_borders = false) {
-            return widget
-        }
-    }
-    return nil
+    return _hit_test_recursively(&window.root, position)
 }
 
 global_mouse_position :: proc(window := _current_window) -> Vec2 {
@@ -470,7 +417,7 @@ update_mouse_hover :: proc(window := _current_window) {
         mp := mouse_position(window.mouse.hover)
         if mp != previous_mouse_position {
             window.mouse.hover.cached_mouse_position = mp
-            send_event(window.mouse.hover, Mouse_Move_Event{
+            _send_event(window.mouse.hover, true, Mouse_Move_Event{
                 position = mp,
                 delta = mp - previous_mouse_position,
             })
@@ -479,12 +426,12 @@ update_mouse_hover :: proc(window := _current_window) {
 
     if window.mouse.hover != previous_hover {
         if previous_hover != nil {
-            send_event(previous_hover, Mouse_Exit_Event{
+            _send_event(previous_hover, false, Mouse_Exit_Event{
                 position = mouse_position(previous_hover),
             })
         }
         if window.mouse.hover != nil {
-            send_event(window.mouse.hover, Mouse_Enter_Event{
+            _send_event(window.mouse.hover, true, Mouse_Enter_Event{
                 position = mouse_position(window.mouse.hover),
             })
         }
@@ -513,16 +460,6 @@ release_keyboard_focus :: proc(window := _current_window) {
 
 
 
-_remove_widget_from_window :: proc(window: ^Window, widget: ^Widget) {
-    keep_position := 0
-    for i in 0 ..< len(window.widgets) {
-        if window.widgets[i] != widget {
-            if keep_position != i {
-                window.widgets[keep_position] = window.widgets[i]
-            }
-            keep_position += 1
-        }
-    }
-    resize(&window.widgets, keep_position)
-    widget.window = nil
+_send_window_event :: proc(window: ^Window, event: Event) {
+    _send_event_recursively(&window.root, false, event)
 }

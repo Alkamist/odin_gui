@@ -21,7 +21,7 @@ Color :: gui.Color
 update :: wnd.update
 
 Window :: struct {
-    using window: gui.Window,
+    using w: gui.Window,
     background_color: gui.Color,
     nvg_ctx: ^nvg.Context,
     backend_window: wnd.Window,
@@ -85,7 +85,7 @@ _window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
 
         _load_font(window, "Consola", #load("consola.ttf"))
 
-        gui.input_window_open(window)
+        gui.input_open(window)
         _update_content_scale(window)
 
         _redisplay_if_necessary(window)
@@ -93,7 +93,7 @@ _window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
     case wnd.Close_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_close(window)
+        gui.input_close(window)
         nvg_gl.Destroy(window.nvg_ctx)
 
     case wnd.Display_Event:
@@ -109,87 +109,87 @@ _window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
 
         nvg.BeginFrame(window.nvg_ctx, size.x, size.y, wnd.content_scale(backend_window))
 
-        gui.input_window_draw(window)
+        gui.input_draw(window)
 
         nvg.EndFrame(window.nvg_ctx)
 
     case wnd.Update_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_update(window)
+        gui.input_update(window)
         _redisplay_if_necessary(window)
 
     case wnd.Move_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_move(window, e.position)
+        gui.input_move(window, e.position)
         _redisplay_if_necessary(window)
 
     case wnd.Resize_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_resize(window, e.size)
+        gui.input_resize(window, e.size)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Enter_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_mouse_enter(window, e.position)
+        gui.input_mouse_enter(window, e.position)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Exit_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_mouse_exit(window, e.position)
+        gui.input_mouse_exit(window, e.position)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Move_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_mouse_move(window, e.position)
+        gui.input_mouse_move(window, e.position)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Scroll_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_mouse_scroll(window, e.position, e.amount)
+        gui.input_mouse_scroll(window, e.position, e.amount)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Press_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_mouse_press(window, e.position, cast(gui.Mouse_Button)e.button)
+        gui.input_mouse_press(window, e.position, cast(gui.Mouse_Button)e.button)
         _redisplay_if_necessary(window)
 
     case wnd.Mouse_Release_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_mouse_release(window, e.position, cast(gui.Mouse_Button)e.button)
+        gui.input_mouse_release(window, e.position, cast(gui.Mouse_Button)e.button)
         _redisplay_if_necessary(window)
 
     case wnd.Key_Press_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_key_press(window, cast(gui.Keyboard_Key)e.key)
+        gui.input_key_press(window, cast(gui.Keyboard_Key)e.key)
         _redisplay_if_necessary(window)
 
     case wnd.Key_Release_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_key_release(window, cast(gui.Keyboard_Key)e.key)
+        gui.input_key_release(window, cast(gui.Keyboard_Key)e.key)
         _redisplay_if_necessary(window)
 
     case wnd.Text_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_window_text(window, e.text)
+        gui.input_text(window, e.text)
         _redisplay_if_necessary(window)
     }
 }
 
 _update_content_scale :: proc(window: ^Window) {
     scale := wnd.content_scale(&window.backend_window)
-    gui.input_window_content_scale(window, {scale, scale})
+    gui.input_content_scale(window, {scale, scale})
 }
 
 _load_font :: proc(window: ^Window, name: string, font_data: []byte) {
