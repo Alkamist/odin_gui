@@ -1,10 +1,20 @@
 package gui
 
 import "base:runtime"
+import "base:intrinsics"
 import "core:time"
+import "core:slice"
+import "core:strings"
 import "rect"
 
 @(thread_local) _current_window: ^Window
+
+Id :: u64
+
+get_id :: proc "contextless" () -> u64 {
+    @(static) id: u64
+    return 1 + intrinsics.atomic_add(&id, 1)
+}
 
 Vec2 :: [2]f32
 Rect :: rect.Rect
@@ -55,411 +65,482 @@ Keyboard_Key :: enum {
     Pad_Decimal, Print_Screen,
 }
 
-Mouse_State :: struct {
-    position: Vec2,
-    button_down: [Mouse_Button]bool,
-    hit: ^Widget,
-    hover: ^Widget,
-    hover_captured: bool,
-    repeat_duration: Duration,
-    repeat_movement_tolerance: f32,
-    repeat_start_position: Vec2,
-    repeat_press_count: int,
-    repeat_tick: Tick,
-}
 
-Keyboard_State :: struct {
-    key_down: [Keyboard_Key]bool,
-    focus: ^Widget,
-}
-
-Backend :: struct {
-    user_data: rawptr,
-    get_tick: proc(backend: ^Backend) -> (tick: Tick, ok: bool),
-    set_cursor_style: proc(backend: ^Backend, style: Cursor_Style) -> (ok: bool),
-    get_clipboard: proc(backend: ^Backend) -> (data: string, ok: bool),
-    set_clipboard: proc(backend: ^Backend, data: string) -> (ok: bool),
-    measure_text: proc(backend: ^Backend, glyphs: ^[dynamic]Text_Glyph, text: string, font: Font) -> (ok: bool),
-    font_metrics: proc(backend: ^Backend, font: Font) -> (metrics: Font_Metrics, ok: bool),
-    render_draw_command: proc(backend: ^Backend, command: Draw_Command),
-}
 
 Window :: struct {
-    root: Widget,
+    update: proc(window: ^Window),
+    get_tick: proc(window: ^Window) -> (tick: Tick, ok: bool),
+    set_cursor_style: proc(window: ^Window, style: Cursor_Style) -> (ok: bool),
+    get_clipboard: proc(window: ^Window) -> (data: string, ok: bool),
+    set_clipboard: proc(window: ^Window, data: string) -> (ok: bool),
+    measure_text: proc(window: ^Window, glyphs: ^[dynamic]Text_Glyph, text: string, font: Font) -> (ok: bool),
+    font_metrics: proc(window: ^Window, font: Font) -> (metrics: Font_Metrics, ok: bool),
+    render_draw_command: proc(window: ^Window, command: Draw_Command),
+
+    is_open: bool,
+    tick: Tick,
     position: Vec2,
     size: Vec2,
     content_scale: Vec2,
-    needs_redisplay: bool,
-    mouse: Mouse_State,
-    keyboard: Keyboard_State,
-    backend: Backend,
 
-    current_cached_global_position: Vec2,
+    client_area_hovered: bool,
+    global_mouse_position: Vec2,
+    mouse_down: [Mouse_Button]bool,
+    mouse_presses: [dynamic]Mouse_Button,
+    mouse_releases: [dynamic]Mouse_Button,
+    mouse_wheel: Vec2,
+    mouse_repeat_duration: Duration,
+    mouse_repeat_movement_tolerance: f32,
+    mouse_repeat_start_position: Vec2,
+    mouse_repeat_count: int,
+    mouse_repeat_tick: Tick,
+
+    key_down: [Keyboard_Key]bool,
+    key_presses: [dynamic]Keyboard_Key,
+    key_repeats: [dynamic]Keyboard_Key,
+    key_releases: [dynamic]Keyboard_Key,
+    text_input: strings.Builder,
+
+    focus: Id,
+    mouse_hit: Id,
+    mouse_hover: Id,
+    hover_captured: bool,
+
+    offset_stack: [dynamic]Vec2,
+    clip_stack: [dynamic]Rect,
+    layer_stack: [dynamic]Layer,
+    layers: [dynamic]Layer,
+
+    was_open: bool,
+    previous_tick: Tick,
+    previous_global_mouse_position: Vec2,
+
+    temp_allocator: runtime.Allocator,
 }
 
 init_window :: proc(
     window: ^Window,
     position: Vec2,
     size: Vec2,
-    allocator := context.allocator,
-) -> (res: ^Window, err: runtime.Allocator_Error) #optional_allocator_error {
-    init_widget(&window.root, allocator) or_return
-    window.root.window = window
-    window.root.size = size
+    temp_allocator := context.temp_allocator,
+) -> runtime.Allocator_Error {
+    _current_window = window
+    window.temp_allocator = temp_allocator
+    _remake_input_buffers(window) or_return
     window.position = position
     window.size = size
-    window.mouse.repeat_duration = 300 * time.Millisecond
-    window.mouse.repeat_movement_tolerance = 3
+    window.mouse_repeat_duration = 300 * time.Millisecond
+    window.mouse_repeat_movement_tolerance = 3
     window.content_scale = Vec2{1, 1}
-    window.needs_redisplay = true
-    return window, nil
+    return nil
 }
 
 destroy_window :: proc(window: ^Window) {
-    destroy_widget(&window.root)
+    free_all(window.temp_allocator)
 }
 
+update_window :: proc(window: ^Window) {
+    _current_window = window
+
+    window.offset_stack = make([dynamic]Vec2, window.temp_allocator)
+    window.clip_stack = make([dynamic]Rect, window.temp_allocator)
+    window.layer_stack = make([dynamic]Layer, window.temp_allocator)
+    window.layers = make([dynamic]Layer, window.temp_allocator)
+
+    begin_z_index(0, global = true)
+    begin_offset({0, 0}, global = true)
+    begin_clip({0, 0}, window.size, global = true, intersect = false)
+
+    if window.update != nil {
+        window->update()
+    }
+
+    end_clip()
+    end_offset()
+    end_z_index()
+
+    assert(len(window.offset_stack) == 0)
+    assert(len(window.clip_stack) == 0)
+    assert(len(window.layer_stack) == 0)
+
+    slice.reverse(window.layers[:])
+    slice.stable_sort_by(window.layers[:], proc(i, j: Layer) -> bool {
+        return i.z_index < j.z_index
+    })
+
+    window.mouse_hover = 0
+    window.mouse_hit = 0
+
+    for layer in window.layers {
+        for command in layer.draw_commands {
+            render := window.render_draw_command
+            if render != nil {
+                render(window, command)
+            }
+        }
+
+        mouse_hover_request := layer.final_mouse_hover_request
+        if mouse_hover_request != 0 {
+            window.mouse_hover = mouse_hover_request
+            window.mouse_hit = mouse_hover_request
+        }
+    }
+
+    window.mouse_wheel = {0, 0}
+    window.was_open = window.is_open
+    window.previous_tick = window.tick
+    window.previous_global_mouse_position = window.global_mouse_position
+
+    free_all(window.temp_allocator)
+    _remake_input_buffers(window)
+}
+
+
+
 input_open :: proc(window: ^Window) {
-    _send_window_event(window, Window_Open_Event{})
+    window.is_open = true
 }
 
 input_close :: proc(window: ^Window) {
-    _send_window_event(window, Window_Close_Event{})
-}
-
-input_draw :: proc(window: ^Window) {
-    window.current_cached_global_position = window.root.position
-    _send_window_event(window, Window_Draw_Event{})
-    _send_event_recursively(&window.root, true, Draw_Event{})
-}
-
-input_update :: proc(window: ^Window) {
-    _send_window_event(window, Window_Update_Event{})
-    _send_event_recursively(&window.root, true, Update_Event{})
+    window.is_open = false
 }
 
 input_move :: proc(window: ^Window, position: Vec2) {
-    if position == window.position do return
-    previous_position := window.position
     window.position = position
-    _send_window_event(window, Window_Move_Event{
-        position = position,
-        delta = position - previous_position,
-    })
 }
 
 input_resize :: proc(window: ^Window, size: Vec2) {
-    if size == window.size do return
-    previous_size := window.size
     window.size = size
-    _send_window_event(window, Window_Resize_Event{
-        size = size,
-        delta = size - previous_size,
-    })
-    set_size(&window.root, size)
 }
 
-input_mouse_enter :: proc(window: ^Window, position: Vec2) {
-    _send_window_event(window, Window_Mouse_Enter_Event{
-        position = position,
-    })
+input_mouse_enter :: proc(window: ^Window) {
+    window.client_area_hovered = true
 }
 
-input_mouse_exit :: proc(window: ^Window, position: Vec2) {
-    _send_window_event(window, Window_Mouse_Exit_Event{
-        position = position,
-    })
+input_mouse_exit :: proc(window: ^Window) {
+    window.client_area_hovered = false
 }
 
 input_mouse_move :: proc(window: ^Window, position: Vec2) {
-    previous_mouse_position := window.mouse.position
-    if position == previous_mouse_position do return
-    window.mouse.position = position
-    _send_window_event(window, Window_Mouse_Move_Event{
-        position = position,
-        delta = position - previous_mouse_position,
-    })
-    update_mouse_hover(window)
+    window.global_mouse_position = position
 }
 
-input_mouse_press :: proc(window: ^Window, position: Vec2, button: Mouse_Button) {
-    window.mouse.button_down[button] = true
+input_mouse_press :: proc(window: ^Window, button: Mouse_Button) {
+    window.mouse_down[button] = true
 
     tick_available := false
-    previous_mouse_repeat_tick := window.mouse.repeat_tick
-    window.mouse.repeat_tick, tick_available = get_tick(window)
+    previous_mouse_repeat_tick := window.mouse_repeat_tick
+    window.mouse_repeat_tick, tick_available = _get_tick(window)
 
     if tick_available {
-        delta := time.tick_diff(previous_mouse_repeat_tick, window.mouse.repeat_tick)
-        if delta <= window.mouse.repeat_duration {
-            window.mouse.repeat_press_count += 1
+        delta := time.tick_diff(previous_mouse_repeat_tick, window.mouse_repeat_tick)
+        if delta <= window.mouse_repeat_duration {
+            window.mouse_repeat_count += 1
         } else {
-            window.mouse.repeat_press_count = 1
+            window.mouse_repeat_count = 1
         }
 
         // This is just a simple x, y comparison, not true distance.
-        movement := window.mouse.position - window.mouse.repeat_start_position
-        if abs(movement.x) > window.mouse.repeat_movement_tolerance ||
-           abs(movement.y) > window.mouse.repeat_movement_tolerance {
-            window.mouse.repeat_press_count = 1
+        movement := window.global_mouse_position - window.mouse_repeat_start_position
+        if abs(movement.x) > window.mouse_repeat_movement_tolerance ||
+           abs(movement.y) > window.mouse_repeat_movement_tolerance {
+            window.mouse_repeat_count = 1
         }
     }
 
-    if window.mouse.repeat_press_count == 1 {
-        window.mouse.repeat_start_position = window.mouse.position
+    if window.mouse_repeat_count == 1 {
+        window.mouse_repeat_start_position = window.global_mouse_position
     }
 
-    _send_window_event(window, Window_Mouse_Press_Event{
-        position = position,
-        button = button,
-    })
-    _send_window_event(window, Window_Mouse_Repeat_Event{
-        position = position,
-        button = button,
-        press_count = window.mouse.repeat_press_count,
-    })
-
-    if window.mouse.hover != nil {
-        mp := mouse_position(window.mouse.hover)
-        _send_event(window.mouse.hover, true, Mouse_Press_Event{
-            position = mp,
-            button = button,
-        })
-        _send_event(window.mouse.hover, true, Mouse_Repeat_Event{
-            position = mp,
-            button = button,
-            press_count = window.mouse.repeat_press_count,
-        })
-    }
+    append(&window.mouse_presses, button)
 }
 
-input_mouse_release :: proc(window: ^Window, position: Vec2, button: Mouse_Button) {
-    window.mouse.button_down[button] = false
-
-    _send_window_event(window, Window_Mouse_Release_Event{
-        position = position,
-        button = button,
-    })
-
-    if window.mouse.hover != nil {
-        _send_event(window.mouse.hover, true, Mouse_Release_Event{
-            position = mouse_position(window.mouse.hover),
-            button = button,
-        })
-    }
-
-    update_mouse_hover(window)
+input_mouse_release :: proc(window: ^Window, button: Mouse_Button) {
+    window.mouse_down[button] = false
+    append(&window.mouse_releases, button)
 }
 
-input_mouse_scroll :: proc(window: ^Window, position: Vec2, amount: Vec2) {
-    _send_window_event(window, Window_Mouse_Scroll_Event{
-        position = position,
-        amount = amount,
-    })
-
-    if window.mouse.hover != nil {
-        _send_event(window.mouse.hover, true, Mouse_Scroll_Event{
-            position = mouse_position(window.mouse.hover),
-            amount = amount,
-        })
-    }
+input_mouse_scroll :: proc(window: ^Window, amount: Vec2) {
+    window.mouse_wheel = amount
 }
 
 input_key_press :: proc(window: ^Window, key: Keyboard_Key) {
-    already_down := window.keyboard.key_down[key]
-    window.keyboard.key_down[key] = true
-
+    already_down := window.key_down[key]
+    window.key_down[key] = true
     if !already_down {
-        _send_window_event(window, Window_Key_Press_Event{
-            key = key,
-        })
-        if window.keyboard.focus != nil {
-            _send_event(window.keyboard.focus, true, Key_Press_Event{
-                key = key,
-            })
-        }
+        append(&window.key_presses, key)
     }
-
-    _send_window_event(window, Window_Key_Repeat_Event{
-        key = key,
-    })
-    if window.keyboard.focus != nil {
-        _send_event(window.keyboard.focus, true, Key_Repeat_Event{
-            key = key,
-        })
-    }
+    append(&window.key_repeats, key)
 }
 
 input_key_release :: proc(window: ^Window, key: Keyboard_Key) {
-    window.keyboard.key_down[key] = false
-
-    _send_window_event(window, Window_Key_Release_Event{
-        key = key,
-    })
-
-    if window.keyboard.focus != nil {
-        _send_event(window.keyboard.focus, true, Key_Release_Event{
-            key = key,
-        })
-    }
+    window.key_down[key] = false
+    append(&window.key_releases, key)
 }
 
 input_text :: proc(window: ^Window, text: rune) {
-    _send_window_event(window, Window_Text_Event{
-        text = text,
-    })
-
-    if window.keyboard.focus != nil {
-        _send_event(window.keyboard.focus, true, Text_Event{
-            text = text,
-        })
-    }
+    strings.write_rune(&window.text_input, text)
 }
 
 input_content_scale :: proc(window: ^Window, scale: Vec2) {
-    previous_content_scale := window.content_scale
-    if scale == previous_content_scale do return
     window.content_scale = scale
-    _send_window_event(window, Window_Content_Scale_Event{
-        scale = scale,
-        delta = scale - previous_content_scale,
+}
+
+
+
+delta_time_duration :: proc() -> time.Duration {
+    return time.tick_diff(_current_window.previous_tick, _current_window.tick)
+}
+
+delta_time :: proc() -> f32 {
+    return f32(time.duration_seconds(time.tick_diff(_current_window.previous_tick, _current_window.tick)))
+}
+
+mouse_position :: proc() -> Vec2 {
+    return _current_window.global_mouse_position - get_offset()
+}
+
+global_mouse_position :: proc() -> Vec2 {
+    return _current_window.global_mouse_position
+}
+
+mouse_delta :: proc() -> Vec2 {
+    return _current_window.global_mouse_position - _current_window.previous_global_mouse_position
+}
+
+mouse_down :: proc(button: Mouse_Button) -> bool {
+    return _current_window.mouse_down[button]
+}
+
+key_down :: proc(key: Keyboard_Key) -> bool {
+    return _current_window.key_down[key]
+}
+
+mouse_wheel :: proc() -> Vec2 {
+    return _current_window.mouse_wheel
+}
+
+mouse_moved :: proc() -> bool {
+    return mouse_delta() != {0, 0}
+}
+
+mouse_wheel_moved :: proc() -> bool {
+    return _current_window.mouse_wheel != {0, 0}
+}
+
+mouse_pressed :: proc(button: Mouse_Button) -> bool {
+    return slice.contains(_current_window.mouse_presses[:], button)
+}
+
+mouse_repeat_count :: proc() -> int {
+    return _current_window.mouse_repeat_count
+}
+
+mouse_released :: proc(button: Mouse_Button) -> bool {
+    return slice.contains(_current_window.mouse_releases[:], button)
+}
+
+any_mouse_pressed :: proc() -> bool {
+    return len(_current_window.mouse_presses) > 0
+}
+
+any_mouse_released :: proc() -> bool {
+    return len(_current_window.mouse_releases) > 0
+}
+
+key_pressed :: proc(key: Keyboard_Key, repeating := false) -> bool {
+    return slice.contains(_current_window.key_presses[:], key) ||
+           repeating && slice.contains(_current_window.key_repeats[:], key)
+}
+
+key_released :: proc(key: Keyboard_Key) -> bool {
+    return slice.contains(_current_window.key_releases[:], key)
+}
+
+any_key_pressed :: proc() -> bool {
+    return len(_current_window.key_presses) > 0
+}
+
+any_key_released :: proc() -> bool {
+    return len(_current_window.key_releases) > 0
+}
+
+key_presses :: proc(repeating := false) -> []Keyboard_Key {
+    if repeating {
+        return _current_window.key_repeats[:]
+    } else {
+        return _current_window.key_presses[:]
+    }
+}
+
+key_releases :: proc() -> []Keyboard_Key {
+    return _current_window.key_releases[:]
+}
+
+text_input :: proc() -> string {
+    return strings.to_string(_current_window.text_input)
+}
+
+
+
+Layer :: struct {
+    z_index: int,
+    draw_commands: [dynamic]Draw_Command,
+    final_mouse_hover_request: Id,
+}
+
+get_layer :: proc() -> ^Layer {
+    return &_current_window.layer_stack[len(_current_window.layer_stack) - 1]
+}
+
+get_z_index :: proc() -> int {
+    return get_layer().z_index
+}
+
+get_offset :: proc() -> Vec2 {
+    return _current_window.offset_stack[len(_current_window.offset_stack) - 1]
+}
+
+get_clip :: proc() -> Rect {
+    clip := _current_window.clip_stack[len(_current_window.clip_stack) - 1]
+    clip.position -= get_offset()
+    return clip
+}
+
+mouse_hover :: proc() -> Id {
+    return _current_window.mouse_hover
+}
+
+mouse_hit :: proc() -> Id {
+    return _current_window.mouse_hit
+}
+
+request_mouse_hover :: proc(id: Id) {
+    get_layer().final_mouse_hover_request = id
+}
+
+capture_mouse_hover :: proc() {
+    _current_window.hover_captured = true
+}
+
+release_mouse_hover :: proc() {
+    _current_window.hover_captured = false
+}
+
+begin_offset :: proc(offset: Vec2, global := false) {
+    if global {
+        append(&_current_window.offset_stack, offset)
+    } else {
+        append(&_current_window.offset_stack, get_offset() + offset)
+    }
+}
+
+end_offset :: proc() {
+    pop(&_current_window.offset_stack)
+}
+
+@(deferred_none=end_offset)
+scoped_offset :: proc(offset: Vec2, global := false) {
+    begin_offset(offset, global = global)
+}
+
+begin_clip :: proc(position, size: Vec2, global := false, intersect := true) {
+    r := Rect{position = position, size = size}
+
+    if !global {
+        r.position += get_offset()
+    }
+
+    if intersect {
+        r = rect.intersection(r, _current_window.clip_stack[len(_current_window.clip_stack) - 1])
+    }
+
+    append(&_current_window.clip_stack, r)
+    append(&get_layer().draw_commands, Clip_Drawing_Command{
+        position = r.position,
+        size = r.size,
     })
 }
 
-redraw :: proc(window := _current_window) {
-    assert(window != nil)
-    window.needs_redisplay = true
-}
+end_clip :: proc() {
+    pop(&_current_window.clip_stack)
 
-get_tick :: proc(window := _current_window) -> (tick: Tick, ok: bool) {
-    assert(window != nil)
-    if window.backend.get_tick == nil do return {}, false
-    return window.backend->get_tick()
-}
-
-set_cursor_style :: proc(style: Cursor_Style, window := _current_window) -> (ok: bool) {
-    assert(window != nil)
-    if window.backend.set_cursor_style == nil do return false
-    return window.backend->set_cursor_style(style)
-}
-
-get_clipboard :: proc(window := _current_window) -> (data: string, ok: bool) {
-    assert(window != nil)
-    if window.backend.get_clipboard == nil do return "", false
-    return window.backend->get_clipboard()
-}
-
-set_clipboard :: proc(data: string, window := _current_window) -> (ok: bool) {
-    assert(window != nil)
-    if window.backend.set_clipboard == nil do return false
-    return window.backend->set_clipboard(data)
-}
-
-measure_text :: proc(glyphs: ^[dynamic]Text_Glyph, text: string, font: Font, window := _current_window) -> (ok: bool) {
-    assert(window != nil)
-    if window.backend.measure_text == nil do return false
-    return window.backend->measure_text(glyphs, text, font)
-}
-
-font_metrics :: proc(font: Font, window := _current_window) -> (metrics: Font_Metrics, ok: bool) {
-    assert(window != nil)
-    if window.backend.font_metrics == nil do return {}, false
-    return window.backend->font_metrics(font)
-}
-
-hit_test :: proc(position: Vec2, window := _current_window) -> ^Widget {
-    assert(window != nil)
-    return _hit_test_recursively(&window.root, position)
-}
-
-global_mouse_position :: proc(window := _current_window) -> Vec2 {
-    assert(window != nil)
-    return window.mouse.position
-}
-
-mouse_down :: proc(button: Mouse_Button, window := _current_window) -> bool {
-    assert(window != nil)
-    return window.mouse.button_down[button]
-}
-
-mouse_hit :: proc(window := _current_window) -> ^Widget {
-    assert(window != nil)
-    return window.mouse.hit
-}
-
-mouse_hover :: proc(window := _current_window) -> ^Widget {
-    assert(window != nil)
-    return window.mouse.hover
-}
-
-capture_mouse_hover :: proc(window := _current_window) {
-    assert(window != nil)
-    window.mouse.hover_captured = true
-}
-
-release_mouse_hover :: proc(window := _current_window) {
-    assert(window != nil)
-    window.mouse.hover_captured = false
-}
-
-update_mouse_hover :: proc(window := _current_window) {
-    assert(window != nil)
-
-    previous_hover := window.mouse.hover
-    window.mouse.hit = hit_test(window.mouse.position, window)
-
-    if !window.mouse.hover_captured {
-        window.mouse.hover = window.mouse.hit
+    if len(_current_window.clip_stack) == 0 {
+        return
     }
 
-    if window.mouse.hover != nil {
-        previous_mouse_position := window.mouse.hover.cached_mouse_position
-        mp := mouse_position(window.mouse.hover)
-        if mp != previous_mouse_position {
-            window.mouse.hover.cached_mouse_position = mp
-            _send_event(window.mouse.hover, true, Mouse_Move_Event{
-                position = mp,
-                delta = mp - previous_mouse_position,
-            })
-        }
-    }
-
-    if window.mouse.hover != previous_hover {
-        if previous_hover != nil {
-            _send_event(previous_hover, false, Mouse_Exit_Event{
-                position = mouse_position(previous_hover),
-            })
-        }
-        if window.mouse.hover != nil {
-            _send_event(window.mouse.hover, true, Mouse_Enter_Event{
-                position = mouse_position(window.mouse.hover),
-            })
-        }
-    }
+    clip_rect := _current_window.clip_stack[len(_current_window.clip_stack) - 1]
+    append(&get_layer().draw_commands, Clip_Drawing_Command{
+        position = clip_rect.position,
+        size = clip_rect.size,
+    })
 }
 
-key_down :: proc(key: Keyboard_Key, window := _current_window) -> bool {
-    assert(window != nil)
-    return window.keyboard.key_down[key]
+@(deferred_none=end_clip)
+scoped_clip :: proc(position, size: Vec2, global := false, intersect := true) {
+    begin_clip(position, size, global = global, intersect = intersect)
 }
 
-keyboard_focus :: proc(window := _current_window) -> ^Widget {
-    assert(window != nil)
-    return window.keyboard.focus
+begin_z_index :: proc(z_index: int, global := false) {
+    layer: Layer
+    layer.draw_commands = make([dynamic]Draw_Command, _current_window.temp_allocator)
+    if global do layer.z_index = z_index
+    else do layer.z_index = get_z_index() + z_index
+    append(&_current_window.layer_stack, layer)
 }
 
-set_keyboard_focus :: proc(focus: ^Widget, window := _current_window) {
-    assert(window != nil)
-    window.keyboard.focus = focus
+end_z_index :: proc() {
+    layer := pop(&_current_window.layer_stack)
+    append(&_current_window.layers, layer)
 }
 
-release_keyboard_focus :: proc(window := _current_window) {
-    assert(window != nil)
-    window.keyboard.focus = nil
+@(deferred_none=end_z_index)
+scoped_z_index :: proc(z_index: int, global := false) {
+    begin_z_index(z_index, global = global)
+}
+
+hit_test :: proc(position, size, target: Vec2) -> bool {
+    return rect.contains({position, size}, target) && rect.contains(get_clip(), target)
+}
+
+set_cursor_style :: proc(style: Cursor_Style) -> (ok: bool) {
+    if _current_window.set_cursor_style == nil do return false
+    return _current_window->set_cursor_style(style)
+}
+
+get_clipboard :: proc() -> (data: string, ok: bool) {
+    if _current_window.get_clipboard == nil do return "", false
+    return _current_window->get_clipboard()
+}
+
+set_clipboard :: proc(data: string) -> (ok: bool) {
+    if _current_window.set_clipboard == nil do return false
+    return _current_window->set_clipboard(data)
+}
+
+measure_text :: proc(glyphs: ^[dynamic]Text_Glyph, text: string, font: Font) -> (ok: bool) {
+    if _current_window.measure_text == nil do return false
+    return _current_window->measure_text(glyphs, text, font)
+}
+
+font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {
+    if _current_window.font_metrics == nil do return {}, false
+    return _current_window->font_metrics(font)
 }
 
 
 
-_send_window_event :: proc(window: ^Window, event: Event) {
-    _send_event_recursively(&window.root, false, event)
+_get_tick :: proc(window: ^Window) -> (tick: Tick, ok: bool) {
+    if window.get_tick == nil do return {}, false
+    return window->get_tick()
+}
+
+_remake_input_buffers :: proc(window: ^Window) -> runtime.Allocator_Error {
+    window.mouse_presses = make([dynamic]Mouse_Button, window.temp_allocator) or_return
+    window.mouse_releases = make([dynamic]Mouse_Button, window.temp_allocator) or_return
+    window.key_presses = make([dynamic]Keyboard_Key, window.temp_allocator) or_return
+    window.key_repeats = make([dynamic]Keyboard_Key, window.temp_allocator) or_return
+    window.key_releases = make([dynamic]Keyboard_Key, window.temp_allocator) or_return
+    strings.builder_init(&window.text_input, window.temp_allocator) or_return
+    return nil
 }

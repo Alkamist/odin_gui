@@ -48,37 +48,14 @@ update :: proc() {
     pugl.Update(_world, 0)
 }
 
-init :: proc(
-    window: ^Window,
-    title := "",
-    position := Vec2{0, 0},
-    size := Vec2{400, 300},
-    min_size: Maybe(Vec2) = nil,
-    max_size: Maybe(Vec2) = nil,
-    swap_interval := 0,
-    dark_mode := true,
-    is_visible := true,
-    is_resizable := true,
-    double_buffer := true,
-    child_kind := Child_Kind.None,
-    parent_handle: Native_Handle = nil,
-    user_data: rawptr = nil,
-    event_proc: proc(^Window, Event) = nil,
-) {
-    window.title = title
+init :: proc(window: ^Window, position: Vec2, size: Vec2) {
     window.last_position = position
     window.last_size = size
-    window.min_size = min_size
-    window.max_size = max_size
-    window.swap_interval = swap_interval
-    window.dark_mode = dark_mode
-    window.last_visibility = is_visible
-    window.is_resizable = is_resizable
-    window.double_buffer = double_buffer
-    window.child_kind = child_kind
-    window.parent_handle = parent_handle
-    window.user_data = user_data
-    window.event_proc = event_proc
+    window.dark_mode = true
+    window.last_visibility = true
+    window.is_resizable = true
+    window.double_buffer = true
+    window.child_kind = .None
 }
 
 destroy :: proc(window: ^Window) {

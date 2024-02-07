@@ -3,81 +3,66 @@ package widgets
 import "base:runtime"
 import "../../gui"
 
-Button :: struct {
-    using widget: gui.Widget,
-    color: Color,
+Button_State :: struct {
+    id: gui.Id,
+    position: Vec2,
+    size: Vec2,
     mouse_button: gui.Mouse_Button,
-    is_down: bool,
-    response_proc: proc(button: ^Button, event: Button_Event),
+    down: bool,
+    pressed: bool,
+    released: bool,
+    clicked: bool,
 }
 
-Button_Event :: union {
-    Button_Press_Event,
-    Button_Release_Event,
-    Button_Click_Event,
+init_button_state :: proc(button: ^Button_State) {
+    button.id = gui.get_id()
+    button.mouse_button = .Left
 }
 
-Button_Press_Event :: struct {}
-Button_Release_Event :: struct {}
-Button_Click_Event :: struct {}
+update_button_state :: proc(button: ^Button_State) {
+    button.pressed = false
+    button.released = false
+    button.clicked = false
 
-init_button :: proc(
-    button: ^Button,
-    allocator := context.allocator,
-) -> (res: ^Button, err: runtime.Allocator_Error) #optional_allocator_error {
-    gui.init_widget(button, allocator) or_return
-    button.position = Vec2{0, 0}
-    button.size = Vec2{96, 32}
-    button.color = Color{0.5, 0.5, 0.5, 1}
-    button.mouse_button = gui.Mouse_Button.Left
-    button.event_proc = button_event_proc
-    return button, nil
-}
+    if gui.hit_test(button.position, button.size, gui.mouse_position()) {
+        gui.request_mouse_hover(button.id)
+    }
 
-destroy_button :: proc(button: ^Button) {
-    gui.destroy_widget(button)
-}
+    if !button.down && gui.mouse_pressed(button.mouse_button) && gui.mouse_hover() == button.id {
+        gui.capture_mouse_hover()
+        button.down = true
+        button.pressed = true
+    }
 
-button_event_proc :: proc(widget: ^gui.Widget, event: gui.Event) {
-    button := cast(^Button)widget
-
-    #partial switch e in event {
-    case gui.Resize_Event, gui.Mouse_Enter_Event, gui.Mouse_Exit_Event:
-        gui.redraw()
-
-    case gui.Mouse_Press_Event:
-        if e.button == button.mouse_button {
-            button.is_down = true
-            gui.capture_mouse_hover()
-            _button_response(button, Button_Press_Event{})
-        }
-        gui.redraw()
-
-    case gui.Mouse_Release_Event:
-        if e.button == button.mouse_button {
-            gui.release_mouse_hover()
-            if button.is_down && gui.mouse_hit() == button {
-                button.is_down = false
-                _button_response(button, Button_Click_Event{})
-            }
-            button.is_down = false
-            _button_response(button, Button_Release_Event{})
-        }
-        gui.redraw()
-
-    case gui.Draw_Event:
-        gui.draw_rect({0, 0}, button.size, button.color)
-        if button.is_down {
-            gui.draw_rect({0, 0}, button.size, {0, 0, 0, 0.2})
-        } else if gui.mouse_hover() == button {
-            gui.draw_rect({0, 0}, button.size, {1, 1, 1, 0.05})
+    if button.down && gui.mouse_released(button.mouse_button) {
+        gui.release_mouse_hover()
+        button.down = false
+        button.released = true
+        if gui.mouse_hit() == button.id {
+            button.down = false
+            button.clicked = true
         }
     }
 }
 
+Button :: struct {
+    using state: Button_State,
+    color: Color,
+}
 
+init_button :: proc(button: ^Button) {
+    init_button_state(button)
+    button.size = {96, 32}
+    button.color = {0.5, 0.5, 0.5, 1}
+}
 
-_button_response :: proc(button: ^Button, event: Button_Event) {
-    if button.response_proc == nil do return
-    button->response_proc(event)
+update_button :: proc(button: ^Button) {
+    update_button_state(button)
+
+    gui.draw_rect(button.position, button.size, button.color)
+    if button.down {
+        gui.draw_rect(button.position, button.size, {0, 0, 0, 0.2})
+    } else if gui.mouse_hover() == button.id {
+        gui.draw_rect(button.position, button.size, {1, 1, 1, 0.05})
+    }
 }

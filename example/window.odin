@@ -29,27 +29,22 @@ Window :: struct {
 
 init_window :: proc(
     window: ^Window,
-    position := Vec2{0, 0},
-    size := Vec2{400, 300},
-    background_color := Color{0, 0, 0, 1},
-    allocator := context.allocator,
-) {
-    wnd.init(&window.backend_window,
-        position = position,
-        size = size,
-        user_data = window,
-        event_proc = _window_event_proc,
-    )
-    gui.init_window(window, position, size, allocator)
-    window.background_color = background_color
-    window.backend.user_data = window
-    window.backend.get_tick = _backend_get_tick
-    window.backend.set_cursor_style = _backend_set_cursor_style
-    window.backend.get_clipboard = _backend_get_clipboard
-    window.backend.set_clipboard = _backend_set_clipboard
-    window.backend.measure_text = _backend_measure_text
-    window.backend.font_metrics = _backend_font_metrics
-    window.backend.render_draw_command = _backend_render_draw_command
+    position: Vec2,
+    size: Vec2,
+    temp_allocator := context.temp_allocator,
+) -> runtime.Allocator_Error{
+    wnd.init(&window.backend_window, position, size)
+    window.backend_window.user_data = window
+    window.backend_window.event_proc = _window_event_proc
+    gui.init_window(window, position, size, temp_allocator) or_return
+    window.get_tick = _backend_get_tick
+    window.set_cursor_style = _backend_set_cursor_style
+    window.get_clipboard = _backend_get_clipboard
+    window.set_clipboard = _backend_set_clipboard
+    window.measure_text = _backend_measure_text
+    window.font_metrics = _backend_font_metrics
+    window.render_draw_command = _backend_render_draw_command
+    return nil
 }
 
 destroy_window :: proc(window: ^Window) {
@@ -88,7 +83,7 @@ _window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
         gui.input_open(window)
         _update_content_scale(window)
 
-        _redisplay_if_necessary(window)
+        wnd.display(backend_window)
 
     case wnd.Close_Event:
         wnd.activate_context(backend_window)
@@ -109,81 +104,80 @@ _window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
 
         nvg.BeginFrame(window.nvg_ctx, size.x, size.y, wnd.content_scale(backend_window))
 
-        gui.input_draw(window)
+        gui.update_window(window)
 
         nvg.EndFrame(window.nvg_ctx)
 
     case wnd.Update_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_update(window)
-        _redisplay_if_necessary(window)
+        wnd.display(backend_window)
 
     case wnd.Move_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
         gui.input_move(window, e.position)
-        _redisplay_if_necessary(window)
+        wnd.display(backend_window)
 
     case wnd.Resize_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
         gui.input_resize(window, e.size)
-        _redisplay_if_necessary(window)
+        wnd.display(backend_window)
 
     case wnd.Mouse_Enter_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_mouse_enter(window, e.position)
-        _redisplay_if_necessary(window)
+        gui.input_mouse_enter(window)
+        wnd.display(backend_window)
 
     case wnd.Mouse_Exit_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_mouse_exit(window, e.position)
-        _redisplay_if_necessary(window)
+        gui.input_mouse_exit(window)
+        wnd.display(backend_window)
 
     case wnd.Mouse_Move_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
         gui.input_mouse_move(window, e.position)
-        _redisplay_if_necessary(window)
+        wnd.display(backend_window)
 
     case wnd.Mouse_Scroll_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_mouse_scroll(window, e.position, e.amount)
-        _redisplay_if_necessary(window)
+        gui.input_mouse_scroll(window, e.amount)
+        wnd.display(backend_window)
 
     case wnd.Mouse_Press_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_mouse_press(window, e.position, cast(gui.Mouse_Button)e.button)
-        _redisplay_if_necessary(window)
+        gui.input_mouse_press(window, cast(gui.Mouse_Button)e.button)
+        wnd.display(backend_window)
 
     case wnd.Mouse_Release_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
-        gui.input_mouse_release(window, e.position, cast(gui.Mouse_Button)e.button)
-        _redisplay_if_necessary(window)
+        gui.input_mouse_release(window, cast(gui.Mouse_Button)e.button)
+        wnd.display(backend_window)
 
     case wnd.Key_Press_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
         gui.input_key_press(window, cast(gui.Keyboard_Key)e.key)
-        _redisplay_if_necessary(window)
+        wnd.display(backend_window)
 
     case wnd.Key_Release_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
         gui.input_key_release(window, cast(gui.Keyboard_Key)e.key)
-        _redisplay_if_necessary(window)
+        wnd.display(backend_window)
 
     case wnd.Text_Event:
         wnd.activate_context(backend_window)
         _update_content_scale(window)
         gui.input_text(window, e.text)
-        _redisplay_if_necessary(window)
+        wnd.display(backend_window)
     }
 }
 
@@ -199,27 +193,20 @@ _load_font :: proc(window: ^Window, name: string, font_data: []byte) {
     }
 }
 
-_redisplay_if_necessary :: proc(window: ^Window) {
-    if window.needs_redisplay {
-        wnd.display(&window.backend_window)
-        window.needs_redisplay = false
-    }
-}
-
-_backend_get_tick :: proc(backend: ^gui.Backend) -> (tick: gui.Tick, ok: bool) {
+_backend_get_tick :: proc(window: ^gui.Window) -> (tick: gui.Tick, ok: bool) {
     return time.tick_now(), true
 }
 
-_backend_set_cursor_style :: proc(backend: ^gui.Backend, style: gui.Cursor_Style) -> (ok: bool) {
-    window := cast(^Window)backend.user_data
+_backend_set_cursor_style :: proc(window: ^gui.Window, style: gui.Cursor_Style) -> (ok: bool) {
     assert(window != nil)
+    window := cast(^Window)window
     wnd.set_cursor_style(&window.backend_window, cast(wnd.Cursor_Style)style)
     return true
 }
 
-_backend_measure_text :: proc(backend: ^gui.Backend, glyphs: ^[dynamic]gui.Text_Glyph, text: string, font: gui.Font) -> (ok: bool) {
-    window := cast(^Window)backend.user_data
+_backend_measure_text :: proc(window: ^gui.Window, glyphs: ^[dynamic]gui.Text_Glyph, text: string, font: gui.Font) -> (ok: bool) {
     assert(window != nil)
+    window := cast(^Window)window
 
     ctx := window.nvg_ctx
     assert(ctx != nil)
@@ -255,9 +242,9 @@ _backend_measure_text :: proc(backend: ^gui.Backend, glyphs: ^[dynamic]gui.Text_
     return true
 }
 
-_backend_font_metrics :: proc(backend: ^gui.Backend, font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
-    window := cast(^Window)backend.user_data
+_backend_font_metrics :: proc(window: ^gui.Window, font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
     assert(window != nil)
+    window := cast(^Window)window
 
     ctx := window.nvg_ctx
     assert(ctx != nil)
@@ -272,20 +259,22 @@ _backend_font_metrics :: proc(backend: ^gui.Backend, font: gui.Font) -> (metrics
     return metrics, true
 }
 
-_backend_get_clipboard :: proc(backend: ^gui.Backend) -> (data: string, ok: bool) {
-    window := cast(^Window)backend.user_data
+_backend_get_clipboard :: proc(window: ^gui.Window) -> (data: string, ok: bool) {
     assert(window != nil)
+    window := cast(^Window)window
     return wnd.get_clipboard(&window.backend_window)
 }
 
-_backend_set_clipboard :: proc(backend: ^gui.Backend, data: string)-> (ok: bool) {
-    window := cast(^Window)backend.user_data
+_backend_set_clipboard :: proc(window: ^gui.Window, data: string)-> (ok: bool) {
     assert(window != nil)
+    window := cast(^Window)window
     return wnd.set_clipboard(&window.backend_window, data)
 }
 
-_backend_render_draw_command :: proc(backend: ^gui.Backend, command: gui.Draw_Command) {
-    window := cast(^Window)backend.user_data
+_backend_render_draw_command :: proc(window: ^gui.Window, command: gui.Draw_Command) {
+    assert(window != nil)
+    window := cast(^Window)window
+
     ctx := window.nvg_ctx
 
     switch c in command {

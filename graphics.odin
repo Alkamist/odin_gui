@@ -40,27 +40,22 @@ Clip_Drawing_Command :: struct {
     size: Vec2,
 }
 
-content_scale :: proc(window := _current_window) -> Vec2 {
-    assert(window != nil)
-    return window.content_scale
+content_scale :: proc() -> Vec2 {
+    return _current_window.content_scale
 }
 
-pixel_size :: proc(window := _current_window) -> Vec2 {
-    assert(window != nil)
-    return 1.0 / window.content_scale
+pixel_size :: proc() -> Vec2 {
+    return 1.0 / _current_window.content_scale
 }
 
-draw_rect :: proc(position, size: Vec2, color: Color, window := _current_window) {
-    assert(window != nil)
-    window.backend->render_draw_command(Draw_Rect_Command{window.current_cached_global_position + position, size, color})
+draw_rect :: proc(position, size: Vec2, color: Color) {
+    append(&get_layer().draw_commands, Draw_Rect_Command{get_offset() + position, size, color})
 }
 
-draw_text :: proc(text: string, position: Vec2, font: Font, color: Color, window := _current_window) {
-    assert(window != nil)
-    window.backend->render_draw_command(Draw_Text_Command{text, window.current_cached_global_position + position, font, color})
+draw_text :: proc(text: string, position: Vec2, font: Font, color: Color) {
+    append(&get_layer().draw_commands, Draw_Text_Command{text, get_offset() + position, font, color})
 }
 
-clip_drawing :: proc(position, size: Vec2, window := _current_window) {
-    assert(window != nil)
-    window.backend->render_draw_command(Clip_Drawing_Command{window.current_cached_global_position + position, size})
+clip_drawing :: proc(position, size: Vec2) {
+    append(&get_layer().draw_commands, Clip_Drawing_Command{get_offset() + position, size})
 }
