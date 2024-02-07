@@ -69,7 +69,7 @@ Keyboard_Key :: enum {
 
 Window :: struct {
     update: proc(window: ^Window),
-    get_tick: proc(window: ^Window) -> (tick: Tick, ok: bool),
+    tick_now: proc(window: ^Window) -> (tick: Tick, ok: bool),
     set_cursor_style: proc(window: ^Window, style: Cursor_Style) -> (ok: bool),
     get_clipboard: proc(window: ^Window) -> (data: string, ok: bool),
     set_clipboard: proc(window: ^Window, data: string) -> (ok: bool),
@@ -101,9 +101,10 @@ Window :: struct {
     key_releases: [dynamic]Keyboard_Key,
     text_input: strings.Builder,
 
-    focus: Id,
+    keyboard_focus: Id,
     mouse_hit: Id,
     mouse_hover: Id,
+    previous_mouse_hover: Id,
     hover_captured: bool,
 
     offset_stack: [dynamic]Vec2,
@@ -141,6 +142,7 @@ destroy_window :: proc(window: ^Window) {
 
 update_window :: proc(window: ^Window) {
     _current_window = window
+    window.tick, _ = tick_now(window)
 
     window.offset_stack = make([dynamic]Vec2, window.temp_allocator)
     window.clip_stack = make([dynamic]Rect, window.temp_allocator)
@@ -168,6 +170,7 @@ update_window :: proc(window: ^Window) {
         return i.z_index < j.z_index
     })
 
+    window.previous_mouse_hover = window.mouse_hover
     window.mouse_hover = 0
     window.mouse_hit = 0
 
@@ -230,7 +233,7 @@ input_mouse_press :: proc(window: ^Window, button: Mouse_Button) {
 
     tick_available := false
     previous_mouse_repeat_tick := window.mouse_repeat_tick
-    window.mouse_repeat_tick, tick_available = _get_tick(window)
+    window.mouse_repeat_tick, tick_available = tick_now(window)
 
     if tick_available {
         delta := time.tick_diff(previous_mouse_repeat_tick, window.mouse_repeat_tick)
@@ -287,6 +290,14 @@ input_content_scale :: proc(window: ^Window, scale: Vec2) {
 }
 
 
+
+temp_allocator :: proc() -> runtime.Allocator {
+    return _current_window.temp_allocator
+}
+
+tick :: proc() -> time.Tick {
+    return _current_window.tick
+}
 
 delta_time_duration :: proc() -> time.Duration {
     return time.tick_diff(_current_window.previous_tick, _current_window.tick)
@@ -381,6 +392,14 @@ text_input :: proc() -> string {
     return strings.to_string(_current_window.text_input)
 }
 
+content_scale :: proc() -> Vec2 {
+    return _current_window.content_scale
+}
+
+pixel_size :: proc() -> Vec2 {
+    return 1.0 / _current_window.content_scale
+}
+
 
 
 Layer :: struct {
@@ -411,6 +430,22 @@ mouse_hover :: proc() -> Id {
     return _current_window.mouse_hover
 }
 
+mouse_hover_entered :: proc() -> Id {
+    if _current_window.mouse_hover != _current_window.previous_mouse_hover {
+        return _current_window.mouse_hover
+    } else {
+        return 0
+    }
+}
+
+mouse_hover_exited :: proc() -> Id {
+    if _current_window.mouse_hover != _current_window.previous_mouse_hover {
+        return _current_window.previous_mouse_hover
+    } else {
+        return 0
+    }
+}
+
 mouse_hit :: proc() -> Id {
     return _current_window.mouse_hit
 }
@@ -425,6 +460,14 @@ capture_mouse_hover :: proc() {
 
 release_mouse_hover :: proc() {
     _current_window.hover_captured = false
+}
+
+set_keyboard_focus :: proc(id: Id) {
+    _current_window.keyboard_focus = id
+}
+
+release_keyboard_focus :: proc() {
+    _current_window.keyboard_focus = 0
 }
 
 begin_offset :: proc(offset: Vec2, global := false) {
@@ -503,6 +546,8 @@ hit_test :: proc(position, size, target: Vec2) -> bool {
     return rect.contains({position, size}, target) && rect.contains(get_clip(), target)
 }
 
+
+
 set_cursor_style :: proc(style: Cursor_Style) -> (ok: bool) {
     if _current_window.set_cursor_style == nil do return false
     return _current_window->set_cursor_style(style)
@@ -528,12 +573,12 @@ font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {
     return _current_window->font_metrics(font)
 }
 
-
-
-_get_tick :: proc(window: ^Window) -> (tick: Tick, ok: bool) {
-    if window.get_tick == nil do return {}, false
-    return window->get_tick()
+tick_now :: proc(window: ^Window) -> (tick: Tick, ok: bool) {
+    if window.tick_now == nil do return {}, false
+    return window->tick_now()
 }
+
+
 
 _remake_input_buffers :: proc(window: ^Window) -> runtime.Allocator_Error {
     window.mouse_presses = make([dynamic]Mouse_Button, window.temp_allocator) or_return

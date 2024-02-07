@@ -37,7 +37,7 @@ init_window :: proc(
     window.backend_window.user_data = window
     window.backend_window.event_proc = _window_event_proc
     gui.init_window(window, position, size, temp_allocator) or_return
-    window.get_tick = _backend_get_tick
+    window.tick_now = _backend_tick_now
     window.set_cursor_style = _backend_set_cursor_style
     window.get_clipboard = _backend_get_clipboard
     window.set_clipboard = _backend_set_clipboard
@@ -53,7 +53,7 @@ destroy_window :: proc(window: ^Window) {
 }
 
 open_window :: proc(window: ^Window) {
-    wnd.open(&window.backend_window)
+    wnd.open(&window.backend_window, window.temp_allocator)
 }
 
 close_window :: proc(window: ^Window) {
@@ -193,7 +193,7 @@ _load_font :: proc(window: ^Window, name: string, font_data: []byte) {
     }
 }
 
-_backend_get_tick :: proc(window: ^gui.Window) -> (tick: gui.Tick, ok: bool) {
+_backend_tick_now :: proc(window: ^gui.Window) -> (tick: gui.Tick, ok: bool) {
     return time.tick_now(), true
 }
 
@@ -223,7 +223,7 @@ _backend_measure_text :: proc(window: ^gui.Window, glyphs: ^[dynamic]gui.Text_Gl
     nvg.FontFace(ctx, font.name)
     nvg.FontSize(ctx, font.size)
 
-    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), context.temp_allocator)
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), window.temp_allocator)
 
     temp_slice := nvg_positions[:]
     position_count := nvg.TextGlyphPositions(ctx, 0, 0, text, &temp_slice)
@@ -268,7 +268,7 @@ _backend_get_clipboard :: proc(window: ^gui.Window) -> (data: string, ok: bool) 
 _backend_set_clipboard :: proc(window: ^gui.Window, data: string)-> (ok: bool) {
     assert(window != nil)
     window := cast(^Window)window
-    return wnd.set_clipboard(&window.backend_window, data)
+    return wnd.set_clipboard(&window.backend_window, data, window.temp_allocator)
 }
 
 _backend_render_draw_command :: proc(window: ^gui.Window, command: gui.Draw_Command) {

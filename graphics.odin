@@ -40,14 +40,6 @@ Clip_Drawing_Command :: struct {
     size: Vec2,
 }
 
-content_scale :: proc() -> Vec2 {
-    return _current_window.content_scale
-}
-
-pixel_size :: proc() -> Vec2 {
-    return 1.0 / _current_window.content_scale
-}
-
 draw_rect :: proc(position, size: Vec2, color: Color) {
     append(&get_layer().draw_commands, Draw_Rect_Command{get_offset() + position, size, color})
 }

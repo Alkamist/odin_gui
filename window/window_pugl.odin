@@ -62,7 +62,7 @@ destroy :: proc(window: ^Window) {
     _force_close(window)
 }
 
-open :: proc(window: ^Window, allocator := context.temp_allocator) -> (ok: bool) {
+open :: proc(window: ^Window, temp_allocator := context.temp_allocator) -> (ok: bool) {
     if window.is_open {
         return true
     }
@@ -76,12 +76,12 @@ open :: proc(window: ^Window, allocator := context.temp_allocator) -> (ok: bool)
         _world = pugl.NewWorld(world_type, {})
 
         world_id := fmt.tprint("WindowThread", _generate_id())
-        world_id_cstring, err := strings.clone_to_cstring(world_id, allocator)
+        world_id_cstring, err := strings.clone_to_cstring(world_id, temp_allocator)
         if err != nil {
             return false
         }
 
-        pugl.SetWorldString(_world, .CLASS_NAME, strings.clone_to_cstring(world_id, allocator))
+        pugl.SetWorldString(_world, .CLASS_NAME, strings.clone_to_cstring(world_id, temp_allocator))
     }
 
     if window.parent_handle != nil && window.child_kind == .None {
@@ -90,7 +90,7 @@ open :: proc(window: ^Window, allocator := context.temp_allocator) -> (ok: bool)
 
     view := pugl.NewView(_world)
 
-    title_cstring, err := strings.clone_to_cstring(window.title, allocator)
+    title_cstring, err := strings.clone_to_cstring(window.title, temp_allocator)
     if err != nil {
         return false
     }
@@ -255,9 +255,8 @@ get_clipboard :: proc(window: ^Window) -> (data: string, ok: bool) {
     return string(clipboard_cstring), true
 }
 
-set_clipboard :: proc(window: ^Window, data: string, allocator := context.temp_allocator) -> (ok: bool) {
-    data_cstring, err := strings.clone_to_cstring(data, allocator)
-    defer delete(data_cstring)
+set_clipboard :: proc(window: ^Window, data: string, temp_allocator := context.temp_allocator) -> (ok: bool) {
+    data_cstring, err := strings.clone_to_cstring(data, temp_allocator)
     if err != nil do return false
     if pugl.SetClipboard(window.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1) != .SUCCESS {
         return false

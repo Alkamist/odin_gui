@@ -6,8 +6,10 @@ import "core:mem"
 import "../../gui"
 import "../widgets"
 
+consola := Font{"Consola", 13}
+
 window: Window
-slider: widgets.Slider
+text: widgets.Text_Line
 
 main :: proc() {
     when ODIN_DEBUG {
@@ -37,11 +39,16 @@ main :: proc() {
     window.background_color = {0.2, 0.2, 0.2, 1}
 
     window.update = proc(window: ^gui.Window) {
-        widgets.update_slider(&slider)
+        widgets.update_text_line(&text)
     }
 
-    widgets.init_slider(&slider)
-    slider.position = {100, 100}
+    widgets.init_text_line(&text)
+    defer widgets.destroy_text_line(&text)
+    text.font = &consola
+    text.position = {100, 100}
+    text.size = {200, 200}
+
+    widgets.input_text(&text, "Hello world. I am here.")
 
     open_window(&window)
     for window_is_open(&window) {
