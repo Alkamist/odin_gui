@@ -22,6 +22,7 @@ Text_Line :: struct {
     builder: strings.Builder,
     color: Color,
     font: gui.Font,
+    alignment: Vec2,
     drag_selecting: bool,
     edit_state: edit.State,
     glyphs: [dynamic]gui.Text_Glyph,
@@ -118,11 +119,12 @@ rune_index_at_x :: proc(text: ^Text_Line, x: f32) -> int {
     if glyph_count == 0 do return 0
 
     x := x + POSITIONAL_SELECTION_HORIZONTAL_BIAS
+    position := text_string_position(text)
 
     // There's almost certainly a better way to do this.
     #reverse for glyph, i in text.glyphs {
-        left := text.position.x + glyph.position
-        right := text.position.x + glyph.position + glyph.width
+        left := position.x + glyph.position
+        right := position.x + glyph.position + glyph.width
 
         if i == glyph_count - 1 && x >= right {
             return len(text.builder.buf)
@@ -159,6 +161,8 @@ update_text_line :: proc(text: ^Text_Line) {
 
     gui.scoped_clip(text.position, text.size)
 
+    gui.draw_rect(text.position, text.size, {0.2, 0, 0, 1})
+
     if text.glyphs_need_remeasure {
         _remeasure_text_line(text)
         text.glyphs_need_remeasure = false
@@ -173,16 +177,15 @@ update_text_line :: proc(text: ^Text_Line) {
     edit_text_with_keyboard(text)
     edit_text_with_mouse(text)
 
-    height := line_height(text.font)
-
-    if left, right, exists := _selection_left_and_right(text); exists {
-        gui.draw_rect({left, text.position.y}, {right - left, height}, SELECTION_COLOR)
+    if selection, exists := text_selection_rect(text); exists {
+        gui.draw_rect(selection.position, selection.size, SELECTION_COLOR)
     }
 
-    str, draw_x := _visible_string(text)
-    gui.draw_text(str, {draw_x, text.position.y}, text.font, text.color)
+    gui.draw_text(text_visible_string(text), {text.position.x, text_string_position(text).y}, text.font, text.color)
 
-    gui.draw_rect({_caret_x(text), text.position.y}, {CARET_WIDTH, height}, CARET_COLOR)
+    // gui.draw_text(text_string(text), text_string_position(text), text.font, text.color)
+
+    gui.draw_rect(text_caret_position(text), {CARET_WIDTH, line_height(text.font)}, CARET_COLOR)
 }
 
 edit_text_with_mouse :: proc(text: ^Text_Line) {
@@ -319,16 +322,76 @@ edit_text_with_keyboard :: proc(text: ^Text_Line) {
     }
 }
 
-
-
-_visible_string :: proc(text: ^Text_Line) -> (str: string, draw_x: f32) {
+text_string_size :: proc(text: ^Text_Line) -> (size: Vec2) {
+    size.y = line_height(text.font)
     glyph_count := len(text.glyphs)
-    if glyph_count <= 0 do return "", text.position.x
+    if glyph_count <= 0 do return
+    final_glyph := text.glyphs[glyph_count - 1]
+    size.x = final_glyph.position + final_glyph.width
+    return
+}
 
-    left, right_exclusive := _visible_glyph_range(text)
-    if right_exclusive - left <= 0 do return "", text.position.x
+text_string_position :: proc(text: ^Text_Line) -> Vec2 {
+    return text.position + (text.size - {CARET_WIDTH, 0} - text_string_size(text)) * text.alignment
+}
 
-    draw_x = text.position.x + text.glyphs[left].position
+text_caret_position :: proc(text: ^Text_Line) -> (position: Vec2) {
+    glyph_count := len(text.glyphs)
+
+    position = text_string_position(text)
+
+    if glyph_count == 0 do return
+
+    head := text.edit_state.selection[0]
+    caret_glyph_index, caret_oob := _rune_index_to_glyph_index(text, head)
+
+    if caret_oob {
+        position.x += text.glyphs[glyph_count - 1].position + text.glyphs[glyph_count - 1].width
+    } else {
+        position.x += text.glyphs[caret_glyph_index].position
+    }
+
+    return
+}
+
+text_selection_rect :: proc(text: ^Text_Line) -> (rect: rect.Rect, exists: bool) {
+    glyph_count := len(text.glyphs)
+
+    if glyph_count == 0 do return
+
+    height := line_height(text.font)
+
+    low, high := sorted_text_selection(text)
+    if high > low {
+        left_glyph_index, left_oob := _rune_index_to_glyph_index(text, low)
+        if left_oob do left_glyph_index = glyph_count - 1
+
+        right_glyph_index, right_oob := _rune_index_to_glyph_index(text, high)
+        if right_oob {
+            right_glyph_index = glyph_count - 1
+        } else {
+            right_glyph_index -= 1
+        }
+
+        left := text.glyphs[left_glyph_index].position
+        right := text.glyphs[right_glyph_index].position + text.glyphs[right_glyph_index].width
+
+        rect.position = text_string_position(text) + {left, 0}
+        rect.size = {right - left, height}
+
+        exists = true
+    }
+
+    return
+}
+
+text_visible_string :: proc(text: ^Text_Line) -> (str: string) {
+    glyph_count := len(text.glyphs)
+    if glyph_count <= 0 do return ""
+
+    left, right_exclusive := text_visible_glyph_range(text)
+    if right_exclusive - left <= 0 do return ""
+
     left_rune_index := text.glyphs[left].rune_index
 
     if right_exclusive >= len(text.glyphs) {
@@ -345,19 +408,21 @@ _visible_string :: proc(text: ^Text_Line) -> (str: string, draw_x: f32) {
     return
 }
 
-_visible_glyph_range :: proc(text: ^Text_Line) -> (left, right_exclusive: int) {
+text_visible_glyph_range :: proc(text: ^Text_Line) -> (left, right_exclusive: int) {
     height := line_height(text.font)
     clip_rect := gui.current_clip_rect()
     if clip_rect.size.x <= 0 || clip_rect.size.y <= 0 {
         return 0, 0
     }
 
+    position := text_string_position(text)
+
     // gui.draw_rect(clip_rect.position, clip_rect.size, {0.2, 0, 0, 1})
 
     left_set := false
 
     for glyph, i in text.glyphs {
-        glyph_rect := rect.Rect{text.position + {glyph.position, 0}, {glyph.width, height}}
+        glyph_rect := rect.Rect{position + {glyph.position, 0}, {glyph.width, height}}
         glyph_visible := rect.intersects(clip_rect, glyph_rect, include_borders = false)
 
         // if glyph_visible {
@@ -384,50 +449,7 @@ _visible_glyph_range :: proc(text: ^Text_Line) -> (left, right_exclusive: int) {
     return
 }
 
-_selection_left_and_right :: proc(text: ^Text_Line) -> (left, right: f32, exists: bool) {
-    glyph_count := len(text.glyphs)
 
-    if glyph_count == 0 do return
-
-    low, high := sorted_text_selection(text)
-    if high > low {
-        left_glyph_index, left_oob := _rune_index_to_glyph_index(text, low)
-        if left_oob do left_glyph_index = glyph_count - 1
-
-        right_glyph_index, right_oob := _rune_index_to_glyph_index(text, high)
-        if right_oob {
-            right_glyph_index = glyph_count - 1
-        } else {
-            right_glyph_index -= 1
-        }
-
-        x := text.position.x
-        left = x + text.glyphs[left_glyph_index].position
-        right = x + text.glyphs[right_glyph_index].position + text.glyphs[right_glyph_index].width
-        exists = true
-    }
-
-    return
-}
-
-_caret_x :: proc(text: ^Text_Line) -> (x: f32) {
-    glyph_count := len(text.glyphs)
-
-    x = text.position.x
-
-    if glyph_count == 0 do return
-
-    head := text.edit_state.selection[0]
-    caret_glyph_index, caret_oob := _rune_index_to_glyph_index(text, head)
-
-    if caret_oob {
-        x += text.glyphs[glyph_count - 1].position + text.glyphs[glyph_count - 1].width
-    } else {
-        x += text.glyphs[caret_glyph_index].position
-    }
-
-    return
-}
 
 _rune_index_to_glyph_index :: proc(text: ^Text_Line, rune_index: int) -> (glyph_index: int, out_of_bounds: bool) {
     if rune_index >= len(text.builder.buf) {

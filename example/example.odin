@@ -27,6 +27,7 @@ consola := Font{"Consola", 13}
 
 window: Window
 text: widgets.Text_Line
+slider: widgets.Slider
 
 main :: proc() {
     when ODIN_DEBUG {
@@ -59,7 +60,11 @@ main :: proc() {
         // gui.scoped_clip(gui.mouse_position(), {50, 50})
         // gui.draw_rect(gui.mouse_position(), {50, 50}, {0, 0.4, 0, 1})
 
+        text.alignment = {slider.value, slider.value}
+
         widgets.update_text_line(&text)
+
+        widgets.update_slider(&slider)
     }
 
     widgets.init_text_line(&text)
@@ -68,7 +73,9 @@ main :: proc() {
     text.position = {100, 100}
     text.size = {200, 200}
 
-    widgets.input_text(&text, SAMPLE_TEXT)
+    widgets.input_text(&text, "Hello world.")
+
+    widgets.init_slider(&slider)
 
     open_window(&window)
     for window_is_open(&window) {
