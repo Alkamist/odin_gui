@@ -56,6 +56,9 @@ main :: proc() {
     window.background_color = {0.2, 0.2, 0.2, 1}
 
     window.update = proc(window: ^gui.Window) {
+        // gui.scoped_clip(gui.mouse_position(), {50, 50})
+        // gui.draw_rect(gui.mouse_position(), {50, 50}, {0, 0.4, 0, 1})
+
         widgets.update_text_line(&text)
     }
 
@@ -65,7 +68,7 @@ main :: proc() {
     text.position = {100, 100}
     text.size = {200, 200}
 
-    widgets.input_text(&text, "Οὐχὶ ταὐτὰ παρίσταταί")
+    widgets.input_text(&text, SAMPLE_TEXT)
 
     open_window(&window)
     for window_is_open(&window) {

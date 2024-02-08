@@ -308,7 +308,7 @@ delta_time :: proc() -> f32 {
 }
 
 mouse_position :: proc() -> Vec2 {
-    return _current_window.global_mouse_position - get_offset()
+    return _current_window.global_mouse_position - current_offset()
 }
 
 global_mouse_position :: proc() -> Vec2 {
@@ -408,21 +408,21 @@ Layer :: struct {
     final_mouse_hover_request: Id,
 }
 
-get_layer :: proc() -> ^Layer {
+current_layer :: proc() -> ^Layer {
     return &_current_window.layer_stack[len(_current_window.layer_stack) - 1]
 }
 
-get_z_index :: proc() -> int {
-    return get_layer().z_index
+current_z_index :: proc() -> int {
+    return current_layer().z_index
 }
 
-get_offset :: proc() -> Vec2 {
+current_offset :: proc() -> Vec2 {
     return _current_window.offset_stack[len(_current_window.offset_stack) - 1]
 }
 
-get_clip :: proc() -> Rect {
+current_clip_rect :: proc() -> Rect {
     clip := _current_window.clip_stack[len(_current_window.clip_stack) - 1]
-    clip.position -= get_offset()
+    clip.position -= current_offset()
     return clip
 }
 
@@ -451,7 +451,7 @@ mouse_hit :: proc() -> Id {
 }
 
 request_mouse_hover :: proc(id: Id) {
-    get_layer().final_mouse_hover_request = id
+    current_layer().final_mouse_hover_request = id
 }
 
 capture_mouse_hover :: proc() {
@@ -474,7 +474,7 @@ begin_offset :: proc(offset: Vec2, global := false) {
     if global {
         append(&_current_window.offset_stack, offset)
     } else {
-        append(&_current_window.offset_stack, get_offset() + offset)
+        append(&_current_window.offset_stack, current_offset() + offset)
     }
 }
 
@@ -491,7 +491,7 @@ begin_clip :: proc(position, size: Vec2, global := false, intersect := true) {
     r := Rect{position = position, size = size}
 
     if !global {
-        r.position += get_offset()
+        r.position += current_offset()
     }
 
     if intersect {
@@ -499,7 +499,7 @@ begin_clip :: proc(position, size: Vec2, global := false, intersect := true) {
     }
 
     append(&_current_window.clip_stack, r)
-    append(&get_layer().draw_commands, Clip_Drawing_Command{
+    append(&current_layer().draw_commands, Clip_Drawing_Command{
         position = r.position,
         size = r.size,
     })
@@ -513,7 +513,7 @@ end_clip :: proc() {
     }
 
     clip_rect := _current_window.clip_stack[len(_current_window.clip_stack) - 1]
-    append(&get_layer().draw_commands, Clip_Drawing_Command{
+    append(&current_layer().draw_commands, Clip_Drawing_Command{
         position = clip_rect.position,
         size = clip_rect.size,
     })
@@ -528,7 +528,7 @@ begin_z_index :: proc(z_index: int, global := false) {
     layer: Layer
     layer.draw_commands = make([dynamic]Draw_Command, _current_window.temp_allocator)
     if global do layer.z_index = z_index
-    else do layer.z_index = get_z_index() + z_index
+    else do layer.z_index = current_z_index() + z_index
     append(&_current_window.layer_stack, layer)
 }
 
@@ -543,7 +543,8 @@ scoped_z_index :: proc(z_index: int, global := false) {
 }
 
 hit_test :: proc(position, size, target: Vec2) -> bool {
-    return rect.contains({position, size}, target) && rect.contains(get_clip(), target)
+    return rect.contains({position, size}, target, include_borders = false) &&
+           rect.contains(current_clip_rect(), target, include_borders = false)
 }
 
 
@@ -563,7 +564,7 @@ set_clipboard :: proc(data: string) -> (ok: bool) {
     return _current_window->set_clipboard(data)
 }
 
-measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, rune_index_to_glyph_index: ^map[int]int) -> (ok: bool) {
+measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, rune_index_to_glyph_index: ^map[int]int = nil) -> (ok: bool) {
     if _current_window.measure_text == nil do return false
     return _current_window->measure_text(text, font, glyphs, rune_index_to_glyph_index)
 }

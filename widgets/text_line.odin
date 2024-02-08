@@ -6,8 +6,7 @@ import "core:unicode/utf8"
 import "core:text/edit"
 import "core:strings"
 import "../../gui"
-
-// Todo: only draw string segments that arent clipped
+import "../rect"
 
 POSITIONAL_SELECTION_HORIZONTAL_BIAS :: 3 // Bias positional selection to the right a little for feel.
 CARET_WIDTH :: 2
@@ -180,7 +179,9 @@ update_text_line :: proc(text: ^Text_Line) {
         gui.draw_rect({left, text.position.y}, {right - left, height}, SELECTION_COLOR)
     }
 
-    gui.draw_text(text_string(text), text.position, text.font, text.color)
+    str, draw_x := _visible_string(text)
+    gui.draw_text(str, {draw_x, text.position.y}, text.font, text.color)
+
     gui.draw_rect({_caret_x(text), text.position.y}, {CARET_WIDTH, height}, CARET_COLOR)
 }
 
@@ -319,6 +320,69 @@ edit_text_with_keyboard :: proc(text: ^Text_Line) {
 }
 
 
+
+_visible_string :: proc(text: ^Text_Line) -> (str: string, draw_x: f32) {
+    glyph_count := len(text.glyphs)
+    if glyph_count <= 0 do return "", text.position.x
+
+    left, right_exclusive := _visible_glyph_range(text)
+    if right_exclusive - left <= 0 do return "", text.position.x
+
+    draw_x = text.position.x + text.glyphs[left].position
+    left_rune_index := text.glyphs[left].rune_index
+
+    if right_exclusive >= len(text.glyphs) {
+        str = text_string(text)[left_rune_index:]
+    } else {
+        right_rune_index := text.glyphs[right_exclusive].rune_index
+        if right_rune_index < len(text.builder.buf) {
+            str = text_string(text)[left_rune_index:right_rune_index]
+        } else {
+            str = text_string(text)[left_rune_index:]
+        }
+    }
+
+    return
+}
+
+_visible_glyph_range :: proc(text: ^Text_Line) -> (left, right_exclusive: int) {
+    height := line_height(text.font)
+    clip_rect := gui.current_clip_rect()
+    if clip_rect.size.x <= 0 || clip_rect.size.y <= 0 {
+        return 0, 0
+    }
+
+    // gui.draw_rect(clip_rect.position, clip_rect.size, {0.2, 0, 0, 1})
+
+    left_set := false
+
+    for glyph, i in text.glyphs {
+        glyph_rect := rect.Rect{text.position + {glyph.position, 0}, {glyph.width, height}}
+        glyph_visible := rect.intersects(clip_rect, glyph_rect, include_borders = false)
+
+        // if glyph_visible {
+        //     gui.draw_rect(glyph_rect.position, glyph_rect.size, {0, 0, 0.4, 1})
+        // }
+
+        if !left_set {
+            if glyph_visible {
+                left = i
+                left_set = true
+            }
+        } else {
+            if !glyph_visible {
+                right_exclusive = max(0, i)
+                return
+            }
+        }
+    }
+
+    if left_set {
+        right_exclusive = len(text.glyphs)
+    }
+
+    return
+}
 
 _selection_left_and_right :: proc(text: ^Text_Line) -> (left, right: f32, exists: bool) {
     glyph_count := len(text.glyphs)
