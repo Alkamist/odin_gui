@@ -1,5 +1,6 @@
 package widgets
 
+import "core:fmt"
 import "base:runtime"
 import "core:unicode/utf8"
 import "core:text/edit"

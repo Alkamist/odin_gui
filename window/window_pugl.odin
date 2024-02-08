@@ -428,7 +428,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         // Filter out unnecessary characters.
         skip := false
         switch event.character {
-        case 0..<32: skip = true
+        case 0..<32, 127: skip = true
         }
 
         if !skip {
