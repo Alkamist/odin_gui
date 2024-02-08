@@ -181,9 +181,11 @@ update_text_line :: proc(text: ^Text_Line) {
         gui.draw_rect(selection.position, selection.size, SELECTION_COLOR)
     }
 
-    gui.draw_text(text_visible_string(text), {text.position.x, text_string_position(text).y}, text.font, text.color)
-
-    // gui.draw_text(text_string(text), text_string_position(text), text.font, text.color)
+    // This got kind of messy but it works.
+    str, x_compensation := text_visible_string(text)
+    position := text_string_position(text)
+    position.x += x_compensation
+    gui.draw_text(str, position, text.font, text.color)
 
     gui.draw_rect(text_caret_position(text), {CARET_WIDTH, line_height(text.font)}, CARET_COLOR)
 }
@@ -385,20 +387,24 @@ text_selection_rect :: proc(text: ^Text_Line) -> (rect: rect.Rect, exists: bool)
     return
 }
 
-text_visible_string :: proc(text: ^Text_Line) -> (str: string) {
+text_visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f32) {
     glyph_count := len(text.glyphs)
-    if glyph_count <= 0 do return ""
+    if glyph_count <= 0 do return "", 0
 
     left, right_exclusive := text_visible_glyph_range(text)
-    if right_exclusive - left <= 0 do return ""
+    if right_exclusive - left <= 0 do return "", 0
 
     left_rune_index := text.glyphs[left].rune_index
+    rune_count := len(text.builder.buf)
+    if left_rune_index >= rune_count do return "", 0
 
-    if right_exclusive >= len(text.glyphs) {
+    x_compensation = text.glyphs[left].position
+
+    if right_exclusive >= glyph_count {
         str = text_string(text)[left_rune_index:]
     } else {
         right_rune_index := text.glyphs[right_exclusive].rune_index
-        if right_rune_index < len(text.builder.buf) {
+        if right_rune_index < rune_count {
             str = text_string(text)[left_rune_index:right_rune_index]
         } else {
             str = text_string(text)[left_rune_index:]
