@@ -73,7 +73,7 @@ Window :: struct {
     set_cursor_style: proc(window: ^Window, style: Cursor_Style) -> (ok: bool),
     get_clipboard: proc(window: ^Window) -> (data: string, ok: bool),
     set_clipboard: proc(window: ^Window, data: string) -> (ok: bool),
-    measure_text: proc(window: ^Window, glyphs: ^[dynamic]Text_Glyph, text: string, font: Font) -> (ok: bool),
+    measure_text: proc(window: ^Window, text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, rune_index_to_glyph_index: ^map[int]int) -> (ok: bool),
     font_metrics: proc(window: ^Window, font: Font) -> (metrics: Font_Metrics, ok: bool),
     render_draw_command: proc(window: ^Window, command: Draw_Command),
 
@@ -563,9 +563,9 @@ set_clipboard :: proc(data: string) -> (ok: bool) {
     return _current_window->set_clipboard(data)
 }
 
-measure_text :: proc(glyphs: ^[dynamic]Text_Glyph, text: string, font: Font) -> (ok: bool) {
+measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, rune_index_to_glyph_index: ^map[int]int) -> (ok: bool) {
     if _current_window.measure_text == nil do return false
-    return _current_window->measure_text(glyphs, text, font)
+    return _current_window->measure_text(text, font, glyphs, rune_index_to_glyph_index)
 }
 
 font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {

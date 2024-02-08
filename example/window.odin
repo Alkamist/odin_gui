@@ -204,7 +204,13 @@ _backend_set_cursor_style :: proc(window: ^gui.Window, style: gui.Cursor_Style) 
     return true
 }
 
-_backend_measure_text :: proc(window: ^gui.Window, glyphs: ^[dynamic]gui.Text_Glyph, text: string, font: gui.Font) -> (ok: bool) {
+_backend_measure_text :: proc(
+    window: ^gui.Window,
+    text: string,
+    font: gui.Font,
+    glyphs: ^[dynamic]gui.Text_Glyph,
+    rune_index_to_glyph_index: ^map[int]int,
+) -> (ok: bool) {
     assert(window != nil)
     window := cast(^Window)window
 
@@ -231,6 +237,9 @@ _backend_measure_text :: proc(window: ^gui.Window, glyphs: ^[dynamic]gui.Text_Gl
     resize(glyphs, position_count)
 
     for i in 0 ..< position_count {
+        if rune_index_to_glyph_index != nil {
+            rune_index_to_glyph_index[nvg_positions[i].str] = i
+        }
         glyphs[i] = gui.Text_Glyph{
             rune_index = nvg_positions[i].str,
             position = nvg_positions[i].x,
