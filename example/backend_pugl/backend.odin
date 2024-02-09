@@ -1,4 +1,4 @@
-package pugl_backend
+package backend_pugl
 
 import "core:fmt"
 import "core:time"

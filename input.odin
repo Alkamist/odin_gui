@@ -227,8 +227,12 @@ key_released :: proc(key: Keyboard_Key) -> bool {
     return slice.contains(_current_ctx.key_releases[:], key)
 }
 
-any_key_pressed :: proc() -> bool {
-    return len(_current_ctx.key_presses) > 0
+any_key_pressed :: proc(repeating := false) -> bool {
+    if repeating {
+        return len(_current_ctx.key_repeats) > 0
+    } else {
+        return len(_current_ctx.key_presses) > 0
+    }
 }
 
 any_key_released :: proc() -> bool {
