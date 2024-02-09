@@ -13,8 +13,21 @@ open_gl_is_loaded: bool
 
 Font :: struct {
     name: string,
-    size: f32,
+    size: int,
 }
+
+load_font_from_data :: proc(font: ^Font, data: []byte, font_size: int) -> (ok: bool) {
+    if len(data) <= 0 do return false
+    ctx := cast(^Context)gui.current_context()
+    if nvg.CreateFontMem(ctx.nvg_ctx, font.name, data, false) == -1 {
+        fmt.eprintf("Failed to load font: %v\n", font.name)
+        return false
+    }
+    font.size = font_size
+    return true
+}
+
+font_destroy :: proc(font: ^Font) {}
 
 update :: wnd.update
 
@@ -35,13 +48,13 @@ init :: proc(
     ctx.backend_window.user_data = ctx
     ctx.backend_window.event_proc = _event_proc
     gui.init(ctx, position, size, temp_allocator) or_return
-    ctx.tick_now = _backend_tick_now
-    ctx.set_cursor_style = _backend_set_cursor_style
-    ctx.get_clipboard = _backend_get_clipboard
-    ctx.set_clipboard = _backend_set_clipboard
-    ctx.measure_text = _backend_measure_text
-    ctx.font_metrics = _backend_font_metrics
-    ctx.render_draw_command = _backend_render_draw_command
+    ctx.tick_now = _tick_now
+    ctx.set_mouse_cursor_style = _set_mouse_cursor_style
+    ctx.get_clipboard = _get_clipboard
+    ctx.set_clipboard = _set_clipboard
+    ctx.measure_text = _measure_text
+    ctx.font_metrics = _font_metrics
+    ctx.render_draw_command = _render_draw_command
     return nil
 }
 
@@ -75,8 +88,6 @@ _event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
             open_gl_is_loaded = true
         }
         ctx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
-
-        _load_font(ctx, "Consola", #load("../consola.ttf"))
 
         gui.input_open(ctx)
         _update_content_scale(ctx)
@@ -184,30 +195,23 @@ _update_content_scale :: proc(ctx: ^Context) {
     gui.input_content_scale(ctx, {scale, scale})
 }
 
-_load_font :: proc(ctx: ^Context, name: string, font_data: []byte) {
-    if nvg.CreateFontMem(ctx.nvg_ctx, name, font_data, false) == -1 {
-        fmt.eprintf("Failed to load font: %v\n", name)
-        return
-    }
-}
-
-_backend_tick_now :: proc(ctx: ^gui.Context) -> (tick: gui.Tick, ok: bool) {
+_tick_now :: proc(ctx: ^gui.Context) -> (tick: gui.Tick, ok: bool) {
     return time.tick_now(), true
 }
 
-_backend_set_cursor_style :: proc(ctx: ^gui.Context, style: gui.Cursor_Style) -> (ok: bool) {
+_set_mouse_cursor_style :: proc(ctx: ^gui.Context, style: gui.Mouse_Cursor_Style) -> (ok: bool) {
     assert(ctx != nil)
     ctx := cast(^Context)ctx
-    wnd.set_cursor_style(&ctx.backend_window, cast(wnd.Cursor_Style)style)
+    wnd.set_mouse_cursor_style(&ctx.backend_window, cast(wnd.Mouse_Cursor_Style)style)
     return true
 }
 
-_backend_measure_text :: proc(
+_measure_text :: proc(
     ctx: ^gui.Context,
     text: string,
     font: gui.Font,
     glyphs: ^[dynamic]gui.Text_Glyph,
-    rune_index_to_glyph_index: ^map[int]int,
+    byte_index_to_rune_index: ^map[int]int,
 ) -> (ok: bool) {
     assert(ctx != nil)
     ctx := cast(^Context)ctx
@@ -225,7 +229,7 @@ _backend_measure_text :: proc(
 
     nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
     nvg.FontFace(nvg_ctx, font.name)
-    nvg.FontSize(nvg_ctx, font.size)
+    nvg.FontSize(nvg_ctx, f32(font.size))
 
     nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), ctx.temp_allocator)
 
@@ -235,11 +239,11 @@ _backend_measure_text :: proc(
     resize(glyphs, position_count)
 
     for i in 0 ..< position_count {
-        if rune_index_to_glyph_index != nil {
-            rune_index_to_glyph_index[nvg_positions[i].str] = i
+        if byte_index_to_rune_index != nil {
+            byte_index_to_rune_index[nvg_positions[i].str] = i
         }
         glyphs[i] = gui.Text_Glyph{
-            rune_index = nvg_positions[i].str,
+            byte_index = nvg_positions[i].str,
             position = nvg_positions[i].x,
             width = nvg_positions[i].maxx - nvg_positions[i].minx,
             kerning = (nvg_positions[i].x - nvg_positions[i].minx),
@@ -249,7 +253,7 @@ _backend_measure_text :: proc(
     return true
 }
 
-_backend_font_metrics :: proc(ctx: ^gui.Context, font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
+_font_metrics :: proc(ctx: ^gui.Context, font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
     assert(ctx != nil)
     ctx := cast(^Context)ctx
 
@@ -259,26 +263,26 @@ _backend_font_metrics :: proc(ctx: ^gui.Context, font: gui.Font) -> (metrics: gu
     font := cast(^Font)font
 
     nvg.FontFace(nvg_ctx, font.name)
-    nvg.FontSize(nvg_ctx, font.size)
+    nvg.FontSize(nvg_ctx, f32(font.size))
 
     metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(nvg_ctx)
 
     return metrics, true
 }
 
-_backend_get_clipboard :: proc(ctx: ^gui.Context) -> (data: string, ok: bool) {
+_get_clipboard :: proc(ctx: ^gui.Context) -> (data: string, ok: bool) {
     assert(ctx != nil)
     ctx := cast(^Context)ctx
     return wnd.get_clipboard(&ctx.backend_window)
 }
 
-_backend_set_clipboard :: proc(ctx: ^gui.Context, data: string)-> (ok: bool) {
+_set_clipboard :: proc(ctx: ^gui.Context, data: string)-> (ok: bool) {
     assert(ctx != nil)
     ctx := cast(^Context)ctx
     return wnd.set_clipboard(&ctx.backend_window, data, ctx.temp_allocator)
 }
 
-_backend_render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Command) {
+_render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Command) {
     assert(ctx != nil)
     ctx := cast(^Context)ctx
 
@@ -295,7 +299,7 @@ _backend_render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Comman
         font := cast(^Font)c.font
         nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
         nvg.FontFace(nvg_ctx, font.name)
-        nvg.FontSize(nvg_ctx, font.size)
+        nvg.FontSize(nvg_ctx, f32(font.size))
         nvg.FillColor(nvg_ctx, c.color)
         nvg.Text(nvg_ctx, c.position.x, c.position.y, c.text)
 

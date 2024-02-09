@@ -16,6 +16,21 @@ Font :: struct {
     rune_to_glyph_index: map[rune]int,
 }
 
+load_font_from_data :: proc(font: ^Font, data: []byte, font_size: int) -> (ok: bool) {
+    if len(data) <= 0 do return
+
+    CODEPOINT_COUNT :: 95
+
+    font.rl_font = rl.LoadFontFromMemory(".ttf", raw_data(data), i32(len(data)), i32(font_size), nil, CODEPOINT_COUNT)
+
+    for i in 0 ..< CODEPOINT_COUNT {
+        font.rune_to_glyph_index[font.rl_font.chars[i].value] = i
+    }
+
+    ok = true
+    return
+}
+
 font_destroy :: proc(font: ^Font) {
     delete(font.rune_to_glyph_index)
 }
@@ -102,6 +117,7 @@ open :: proc(ctx: ^Context) {
     if ctx != _ctx do return
     rl.SetConfigFlags({.WINDOW_RESIZABLE})
     rl.InitWindow(i32(ctx.size.x), i32(ctx.size.y), "Raylib Window")
+    rl.SetWindowPosition(i32(ctx.position.x), i32(ctx.position.y))
     rl.SetTargetFPS(240)
     gui.input_open(ctx)
     gui.input_mouse_enter(ctx)
@@ -117,21 +133,6 @@ close :: proc(ctx: ^Context) {
 is_open :: proc(ctx: ^Context) -> bool {
     if ctx != _ctx do return false
     return ctx.is_open
-}
-
-load_font_from_data :: proc(font: ^Font, data: []byte, font_size: int) -> (ok: bool) {
-    if len(data) <= 0 do return
-
-    CODEPOINT_COUNT :: 95
-
-    font.rl_font = rl.LoadFontFromMemory(".ttf", raw_data(data), i32(len(data)), i32(font_size), nil, CODEPOINT_COUNT)
-
-    for i in 0 ..< CODEPOINT_COUNT {
-        font.rune_to_glyph_index[font.rl_font.chars[i].value] = i
-    }
-
-    ok = true
-    return
 }
 
 

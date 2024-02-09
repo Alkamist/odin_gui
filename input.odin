@@ -167,7 +167,7 @@ delta_time :: proc() -> f32 {
 }
 
 mouse_position :: proc() -> Vec2 {
-    return _current_ctx.global_mouse_position - position_offset()
+    return _current_ctx.global_mouse_position - offset()
 }
 
 global_mouse_position :: proc() -> Vec2 {

@@ -32,13 +32,13 @@ z_index :: proc() -> int {
     return _current_layer().z_index
 }
 
-position_offset :: proc() -> Vec2 {
-    return _current_ctx.position_offset_stack[len(_current_ctx.position_offset_stack) - 1]
+offset :: proc() -> Vec2 {
+    return _current_ctx.offset_stack[len(_current_ctx.offset_stack) - 1]
 }
 
 clip_rect :: proc() -> Rect {
     clip := _current_ctx.clip_rect_stack[len(_current_ctx.clip_rect_stack) - 1]
-    clip.position -= position_offset()
+    clip.position -= offset()
     return clip
 }
 
@@ -86,28 +86,28 @@ release_keyboard_focus :: proc() {
     _current_ctx.keyboard_focus = 0
 }
 
-begin_position_offset :: proc(offset: Vec2, global := false) {
+begin_offset :: proc(offset: Vec2, global := false) {
     if global {
-        append(&_current_ctx.position_offset_stack, offset)
+        append(&_current_ctx.offset_stack, offset)
     } else {
-        append(&_current_ctx.position_offset_stack, position_offset() + offset)
+        append(&_current_ctx.offset_stack, _offset() + offset)
     }
 }
 
-end_position_offset :: proc() {
-    pop(&_current_ctx.position_offset_stack)
+end_offset :: proc() {
+    pop(&_current_ctx.offset_stack)
 }
 
-@(deferred_none=end_position_offset)
-scoped_position_offset :: proc(offset: Vec2, global := false) {
-    begin_position_offset(offset, global = global)
+@(deferred_none=end_offset)
+scoped_offset :: proc(offset: Vec2, global := false) {
+    begin_offset(offset, global = global)
 }
 
 begin_clip :: proc(position, size: Vec2, global := false, intersect := true) {
     r := Rect{position = position, size = size}
 
     if !global {
-        r.position += position_offset()
+        r.position += offset()
     }
 
     if intersect {
@@ -166,6 +166,7 @@ hit_test :: proc(position, size, target: Vec2) -> bool {
 
 
 _z_index :: z_index
+_offset :: offset
 
 _current_layer :: proc() -> ^Layer {
     return &_current_ctx.layer_stack[len(_current_ctx.layer_stack) - 1]

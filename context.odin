@@ -49,7 +49,7 @@ Context :: struct {
     previous_mouse_hover: Id,
     mouse_hover_capture: Id,
 
-    position_offset_stack: [dynamic]Vec2,
+    offset_stack: [dynamic]Vec2,
     clip_rect_stack: [dynamic]Rect,
     layer_stack: [dynamic]Layer,
     layers: [dynamic]Layer,
@@ -86,13 +86,13 @@ update :: proc(ctx: ^Context) {
     _current_ctx = ctx
     ctx.tick, _ = _tick_now(ctx)
 
-    ctx.position_offset_stack = make([dynamic]Vec2, ctx.temp_allocator)
+    ctx.offset_stack = make([dynamic]Vec2, ctx.temp_allocator)
     ctx.clip_rect_stack = make([dynamic]Rect, ctx.temp_allocator)
     ctx.layer_stack = make([dynamic]Layer, ctx.temp_allocator)
     ctx.layers = make([dynamic]Layer, ctx.temp_allocator)
 
     begin_z_index(0, global = true)
-    begin_position_offset({0, 0}, global = true)
+    begin_offset({0, 0}, global = true)
     begin_clip({0, 0}, ctx.size, global = true, intersect = false)
 
     if ctx.update != nil {
@@ -100,10 +100,10 @@ update :: proc(ctx: ^Context) {
     }
 
     end_clip()
-    end_position_offset()
+    end_offset()
     end_z_index()
 
-    assert(len(ctx.position_offset_stack) == 0)
+    assert(len(ctx.offset_stack) == 0)
     assert(len(ctx.clip_rect_stack) == 0)
     assert(len(ctx.layer_stack) == 0)
 
@@ -142,6 +142,10 @@ update :: proc(ctx: ^Context) {
 
     free_all(ctx.temp_allocator)
     _remake_input_buffers(ctx)
+}
+
+current_context :: proc() -> ^Context {
+    return _current_ctx
 }
 
 set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) -> (ok: bool) {

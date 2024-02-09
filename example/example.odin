@@ -5,7 +5,8 @@ import "core:fmt"
 import "core:mem"
 import "../../gui"
 import "../widgets"
-import backend "backend_raylib"
+// import backend "backend_raylib"
+import backend "backend_pugl_nanovg"
 
 consola_13: backend.Font
 
@@ -57,11 +58,7 @@ main :: proc() {
     text.position = {0, slider.position.y + slider.size.y + 20}
     text.size = {slider.size.x, 200}
     text.font = &consola_13
-    widgets.input_string(&text, "ὐ")
-
-    for r, i in "ὐa" {
-        fmt.println(i)
-    }
+    widgets.input_string(&text, "abcdefg ði ntənæʃənəl 1234567")
 
     backend.open(&ctx)
     for backend.is_open(&ctx) {
@@ -76,8 +73,7 @@ update :: proc(ctx: ^gui.Context) {
         backend.load_font_from_data(&consola_13, #load("consola.ttf"), 13)
     }
 
-    // gui.scoped_clip(gui.mouse_position() - {25, 25}, {50, 50})
-    // gui.draw_rect(gui.mouse_position() - {25, 25}, {50, 50}, {0, 0.4, 0, 1}
+    // gui.scoped_clip(gui.mouse_position() - {125, 125}, {250, 250})
 
     if button.is_down && gui.mouse_moved() {
         button.position += gui.mouse_delta()
@@ -85,7 +81,7 @@ update :: proc(ctx: ^gui.Context) {
     widgets.update(&button)
     widgets.draw(&button)
 
-    gui.scoped_position_offset(button.position)
+    gui.scoped_offset(button.position)
 
     text.alignment = {slider.value, slider.value}
     widgets.update(&text)

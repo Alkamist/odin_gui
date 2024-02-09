@@ -11,7 +11,7 @@ Child_Kind :: enum {
     Transient,
 }
 
-Cursor_Style :: enum {
+Mouse_Cursor_Style :: enum {
     Arrow,
     I_Beam,
     Crosshair,

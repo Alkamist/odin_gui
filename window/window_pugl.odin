@@ -242,7 +242,7 @@ mouse_position :: proc(window: ^Window) -> Vec2 {
     return window.last_mouse_position
 }
 
-set_cursor_style :: proc(window: ^Window, style: Cursor_Style) {
+set_mouse_cursor_style :: proc(window: ^Window, style: Mouse_Cursor_Style) {
     pugl.SetCursor(window.view, _cursor_style_to_pugl_cursor(style))
 }
 
@@ -580,7 +580,7 @@ _pugl_button_to_mouse_button :: proc(button: u32) -> Mouse_Button {
     }
 }
 
-_cursor_style_to_pugl_cursor :: proc(style: Cursor_Style) -> pugl.Cursor {
+_cursor_style_to_pugl_cursor :: proc(style: Mouse_Cursor_Style) -> pugl.Cursor {
     switch style {
     case .Arrow: return .ARROW
     case .I_Beam: return .CARET

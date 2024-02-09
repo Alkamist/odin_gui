@@ -479,7 +479,6 @@ _quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
     }
 
     resize(&bytes, keep_position)
-
     return string(bytes[:])
 }
 

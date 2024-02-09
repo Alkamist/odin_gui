@@ -42,13 +42,13 @@ Clip_Drawing_Command :: struct {
 
 draw_rect :: proc(position, size: Vec2, color: Color) {
     if size.x <= 0 || size.y <= 0 do return
-    append(&_current_layer().draw_commands, Draw_Rect_Command{position_offset() + position, size, color})
+    append(&_current_layer().draw_commands, Draw_Rect_Command{offset() + position, size, color})
 }
 
 draw_text :: proc(text: string, position: Vec2, font: Font, color: Color) {
-    append(&_current_layer().draw_commands, Draw_Text_Command{text, position_offset() + position, font, color})
+    append(&_current_layer().draw_commands, Draw_Text_Command{text, offset() + position, font, color})
 }
 
 clip_drawing :: proc(position, size: Vec2) {
-    append(&_current_layer().draw_commands, Clip_Drawing_Command{position_offset() + position, size})
+    append(&_current_layer().draw_commands, Clip_Drawing_Command{offset() + position, size})
 }
