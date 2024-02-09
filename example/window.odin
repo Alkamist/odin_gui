@@ -27,7 +27,7 @@ Window :: struct {
     backend_window: wnd.Window,
 }
 
-init_window :: proc(
+window_init :: proc(
     window: ^Window,
     position: Vec2,
     size: Vec2,
@@ -36,7 +36,7 @@ init_window :: proc(
     wnd.init(&window.backend_window, position, size)
     window.backend_window.user_data = window
     window.backend_window.event_proc = _window_event_proc
-    gui.init_window(window, position, size, temp_allocator) or_return
+    gui.window_init(window, position, size, temp_allocator) or_return
     window.tick_now = _backend_tick_now
     window.set_cursor_style = _backend_set_cursor_style
     window.get_clipboard = _backend_get_clipboard
@@ -47,16 +47,16 @@ init_window :: proc(
     return nil
 }
 
-destroy_window :: proc(window: ^Window) {
-    gui.destroy_window(window)
+window_destroy :: proc(window: ^Window) {
+    gui.window_destroy(window)
     wnd.destroy(&window.backend_window)
 }
 
-open_window :: proc(window: ^Window) {
+window_open :: proc(window: ^Window) {
     wnd.open(&window.backend_window, window.temp_allocator)
 }
 
-close_window :: proc(window: ^Window) {
+window_close :: proc(window: ^Window) {
     wnd.close(&window.backend_window)
 }
 
@@ -104,7 +104,7 @@ _window_event_proc :: proc(backend_window: ^wnd.Window, event: wnd.Event) {
 
         nvg.BeginFrame(window.nvg_ctx, size.x, size.y, wnd.content_scale(backend_window))
 
-        gui.update_window(window)
+        gui.window_update(window)
 
         nvg.EndFrame(window.nvg_ctx)
 

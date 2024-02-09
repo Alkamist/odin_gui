@@ -1,9 +1,8 @@
 package widgets
 
-import "core:fmt"
 import "base:runtime"
 import "core:unicode/utf8"
-import "core:text/edit"
+import text_edit "core:text/edit"
 import "core:strings"
 import "../../gui"
 import "../rect"
@@ -13,7 +12,7 @@ CARET_WIDTH :: 2
 CARET_COLOR :: Color{0.7, .9, 1, 1}
 SELECTION_COLOR :: Color{0, .4, 0.8, 0.7}
 
-Text_Edit_Command :: edit.Command
+Text_Edit_Command :: text_edit.Command
 
 Text_Line :: struct {
     id: gui.Id,
@@ -24,21 +23,21 @@ Text_Line :: struct {
     font: gui.Font,
     alignment: Vec2,
     drag_selecting: bool,
-    edit_state: edit.State,
+    edit_state: text_edit.State,
     glyphs: [dynamic]gui.Text_Glyph,
     rune_index_to_glyph_index: map[int]int,
     glyphs_need_remeasure: bool,
 }
 
-init_text_line :: proc(text: ^Text_Line, allocator := context.allocator) -> runtime.Allocator_Error {
+text_line_init :: proc(text: ^Text_Line, allocator := context.allocator) -> runtime.Allocator_Error {
     strings.builder_init(&text.builder, allocator = allocator) or_return
     text.glyphs = make([dynamic]gui.Text_Glyph, allocator = allocator)
     text.rune_index_to_glyph_index = make(map[int]int, allocator = allocator)
     text.id = gui.get_id()
     text.size = {96, 32}
     text.color = {1, 1, 1, 1}
-    edit.init(&text.edit_state, allocator, allocator)
-    edit.setup_once(&text.edit_state, &text.builder)
+    text_edit.init(&text.edit_state, allocator, allocator)
+    text_edit.setup_once(&text.edit_state, &text.builder)
     text.edit_state.selection = {0, 0}
     text.edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
         return gui.get_clipboard()
@@ -50,57 +49,95 @@ init_text_line :: proc(text: ^Text_Line, allocator := context.allocator) -> runt
     return nil
 }
 
-destroy_text_line :: proc(text: ^Text_Line) {
+text_line_destroy :: proc(text: ^Text_Line) {
     strings.builder_destroy(&text.builder)
-    edit.destroy(&text.edit_state)
+    text_edit.destroy(&text.edit_state)
     delete(text.glyphs)
     delete(text.rune_index_to_glyph_index)
 }
 
-text_string :: proc(text: ^Text_Line) -> string {
+text_line_update :: proc(text: ^Text_Line) {
+    assert(text.font != nil, "text_line_update called with nil font.")
+
+    gui.scoped_clip(text.position, text.size)
+
+    if text.glyphs_need_remeasure {
+        _remeasure(text)
+        text.glyphs_need_remeasure = false
+    }
+
+    // Update the undo state timeout manually.
+    text.edit_state.current_time = gui.tick()
+    if text.edit_state.undo_timeout <= 0 {
+        text.edit_state.undo_timeout = text_edit.DEFAULT_UNDO_TIMEOUT
+    }
+
+    edit_with_keyboard(text)
+    edit_with_mouse(text)
+}
+
+text_line_draw :: proc(text: ^Text_Line) {
+    assert(text.font != nil, "text_line_draw called with nil font.")
+
+    gui.scoped_clip(text.position, text.size)
+
+    if selection, exists := selection_rect(text); exists {
+        gui.draw_rect(selection.position, selection.size, SELECTION_COLOR)
+    }
+
+    // This got kind of messy but it works.
+    str, x_compensation := visible_string(text)
+    position := string_position(text)
+    position.x += x_compensation
+    gui.draw_text(str, position, text.font, text.color)
+
+    gui.draw_rect(caret_position(text), {CARET_WIDTH, line_height(text.font)}, CARET_COLOR)
+}
+
+to_string :: proc(text: ^Text_Line) -> string {
     return strings.to_string(text.builder)
 }
 
-input_text :: proc(text: ^Text_Line, str: string) {
-    edit.input_text(&text.edit_state, str)
+input_string :: proc(text: ^Text_Line, str: string) {
+    text_edit.input_text(&text.edit_state, str)
     text.glyphs_need_remeasure = true
 }
 
 input_runes :: proc(text: ^Text_Line, runes: []rune) {
     str := utf8.runes_to_string(runes, gui.temp_allocator())
-    edit.input_runes(&text.edit_state, runes)
+    text_edit.input_runes(&text.edit_state, runes)
     text.glyphs_need_remeasure = true
 }
 
 input_rune :: proc(text: ^Text_Line, r: rune) {
-    edit.input_rune(&text.edit_state, r)
+    text_edit.input_rune(&text.edit_state, r)
     text.glyphs_need_remeasure = true
 }
 
-insert_text :: proc(text: ^Text_Line, at: int, str: string) {
-    edit.insert(&text.edit_state, at, str)
+insert_string :: proc(text: ^Text_Line, at: int, str: string) {
+    text_edit.insert(&text.edit_state, at, str)
     text.glyphs_need_remeasure = true
 }
 
 remove_text_range :: proc(text: ^Text_Line, lo, hi: int) {
-    edit.remove(&text.edit_state, lo, hi)
+    text_edit.remove(&text.edit_state, lo, hi)
     text.glyphs_need_remeasure = true
 }
 
-text_has_selection :: proc(text: ^Text_Line) -> bool {
-    return edit.has_selection(&text.edit_state)
+has_selection :: proc(text: ^Text_Line) -> bool {
+    return text_edit.has_selection(&text.edit_state)
 }
 
-sorted_text_selection :: proc(text: ^Text_Line) -> (lo, hi: int) {
-    return edit.sorted_selection(&text.edit_state)
+sorted_selection :: proc(text: ^Text_Line) -> (lo, hi: int) {
+    return text_edit.sorted_selection(&text.edit_state)
 }
 
-delete_text_selection :: proc(text: ^Text_Line) {
-    edit.selection_delete(&text.edit_state)
+delete_selection :: proc(text: ^Text_Line) {
+    text_edit.selection_delete(&text.edit_state)
     text.glyphs_need_remeasure = true
 }
 
-edit_text :: proc(text: ^Text_Line, command: Text_Edit_Command) {
+edit :: proc(text: ^Text_Line, command: Text_Edit_Command) {
     #partial switch command {
     case .New_Line:
         return
@@ -111,7 +148,7 @@ edit_text :: proc(text: ^Text_Line, command: Text_Edit_Command) {
          .Paste, .Cut, .Undo, .Redo:
         text.glyphs_need_remeasure = true
     }
-    edit.perform_command(&text.edit_state, command)
+    text_edit.perform_command(&text.edit_state, command)
 }
 
 rune_index_at_x :: proc(text: ^Text_Line, x: f32) -> int {
@@ -119,7 +156,7 @@ rune_index_at_x :: proc(text: ^Text_Line, x: f32) -> int {
     if glyph_count == 0 do return 0
 
     x := x + POSITIONAL_SELECTION_HORIZONTAL_BIAS
-    position := text_string_position(text)
+    position := string_position(text)
 
     // There's almost certainly a better way to do this.
     #reverse for glyph, i in text.glyphs {
@@ -156,41 +193,7 @@ end_drag_selection :: proc(text: ^Text_Line) {
     text.drag_selecting = false
 }
 
-update_text_line :: proc(text: ^Text_Line) {
-    assert(text.font != nil, "update_text_line called with nil font.")
-
-    gui.scoped_clip(text.position, text.size)
-
-    gui.draw_rect(text.position, text.size, {0.2, 0, 0, 1})
-
-    if text.glyphs_need_remeasure {
-        _remeasure_text_line(text)
-        text.glyphs_need_remeasure = false
-    }
-
-    // Update the undo state timeout manually.
-    text.edit_state.current_time = gui.tick()
-    if text.edit_state.undo_timeout <= 0 {
-        text.edit_state.undo_timeout = edit.DEFAULT_UNDO_TIMEOUT
-    }
-
-    edit_text_with_keyboard(text)
-    edit_text_with_mouse(text)
-
-    if selection, exists := text_selection_rect(text); exists {
-        gui.draw_rect(selection.position, selection.size, SELECTION_COLOR)
-    }
-
-    // This got kind of messy but it works.
-    str, x_compensation := text_visible_string(text)
-    position := text_string_position(text)
-    position.x += x_compensation
-    gui.draw_text(str, position, text.font, text.color)
-
-    gui.draw_rect(text_caret_position(text), {CARET_WIDTH, line_height(text.font)}, CARET_COLOR)
-}
-
-edit_text_with_mouse :: proc(text: ^Text_Line) {
+edit_with_mouse :: proc(text: ^Text_Line) {
     if gui.hit_test(text.position, text.size, gui.mouse_position()) {
         gui.request_mouse_hover(text.id)
     }
@@ -214,17 +217,17 @@ edit_text_with_mouse :: proc(text: ^Text_Line) {
             start_drag_selection(text, gui.mouse_position(), only_head = shift)
 
         case 2: // Double click
-            edit_text(text, .Word_Right)
-            edit_text(text, .Word_Left)
-            edit_text(text, .Select_Word_Right)
+            edit(text, .Word_Right)
+            edit(text, .Word_Left)
+            edit(text, .Select_Word_Right)
 
         case 3: // Triple click
-            edit_text(text, .Line_Start)
-            edit_text(text, .Select_Line_End)
+            edit(text, .Line_Start)
+            edit(text, .Select_Line_End)
 
         case 4: // Quadruple click
-            edit_text(text, .Start)
-            edit_text(text, .Select_End)
+            edit(text, .Start)
+            edit(text, .Select_End)
         }
     }
 
@@ -238,10 +241,10 @@ edit_text_with_mouse :: proc(text: ^Text_Line) {
     }
 }
 
-edit_text_with_keyboard :: proc(text: ^Text_Line) {
+edit_with_keyboard :: proc(text: ^Text_Line) {
     text_input := gui.text_input()
     if len(text_input) > 0 {
-        input_text(text, text_input)
+        input_string(text, text_input)
     }
 
     ctrl := gui.key_down(.Left_Control) || gui.key_down(.Right_Control)
@@ -250,81 +253,81 @@ edit_text_with_keyboard :: proc(text: ^Text_Line) {
     for key in gui.key_presses(repeating = true) {
         #partial switch key {
         case .Escape: gui.release_keyboard_focus()
-        // case .Enter, .Pad_Enter: edit_text(text, .New_Line)
-        case .A: if ctrl do edit_text(text, .Select_All)
-        case .C: if ctrl do edit_text(text, .Copy)
-        case .V: if ctrl do edit_text(text, .Paste)
-        case .X: if ctrl do edit_text(text, .Cut)
-        case .Y: if ctrl do edit_text(text, .Redo)
-        case .Z: if ctrl do edit_text(text, .Undo)
+        // case .Enter, .Pad_Enter: edit(text, .New_Line)
+        case .A: if ctrl do edit(text, .Select_All)
+        case .C: if ctrl do edit(text, .Copy)
+        case .V: if ctrl do edit(text, .Paste)
+        case .X: if ctrl do edit(text, .Cut)
+        case .Y: if ctrl do edit(text, .Redo)
+        case .Z: if ctrl do edit(text, .Undo)
 
         case .Home:
             switch {
-            case ctrl && shift: edit_text(text, .Select_Start)
-            case shift: edit_text(text, .Select_Line_Start)
-            case ctrl: edit_text(text, .Start)
-            case: edit_text(text, .Line_Start)
+            case ctrl && shift: edit(text, .Select_Start)
+            case shift: edit(text, .Select_Line_Start)
+            case ctrl: edit(text, .Start)
+            case: edit(text, .Line_Start)
             }
 
         case .End:
             switch {
-            case ctrl && shift: edit_text(text, .Select_End)
-            case shift: edit_text(text, .Select_Line_End)
-            case ctrl: edit_text(text, .End)
-            case: edit_text(text, .Line_End)
+            case ctrl && shift: edit(text, .Select_End)
+            case shift: edit(text, .Select_Line_End)
+            case ctrl: edit(text, .End)
+            case: edit(text, .Line_End)
             }
 
         case .Insert:
             switch {
-            case ctrl: edit_text(text, .Copy)
-            case shift: edit_text(text, .Paste)
+            case ctrl: edit(text, .Copy)
+            case shift: edit(text, .Paste)
             }
 
         case .Backspace:
             switch {
-            case ctrl: edit_text(text, .Delete_Word_Left)
-            case: edit_text(text, .Backspace)
+            case ctrl: edit(text, .Delete_Word_Left)
+            case: edit(text, .Backspace)
             }
 
         case .Delete:
             switch {
-            case ctrl: edit_text(text, .Delete_Word_Right)
-            case shift: edit_text(text, .Cut)
-            case: edit_text(text, .Delete)
+            case ctrl: edit(text, .Delete_Word_Right)
+            case shift: edit(text, .Cut)
+            case: edit(text, .Delete)
             }
 
         case .Left_Arrow:
             switch {
-            case ctrl && shift: edit_text(text, .Select_Word_Left)
-            case shift: edit_text(text, .Select_Left)
-            case ctrl: edit_text(text, .Word_Left)
-            case: edit_text(text, .Left)
+            case ctrl && shift: edit(text, .Select_Word_Left)
+            case shift: edit(text, .Select_Left)
+            case ctrl: edit(text, .Word_Left)
+            case: edit(text, .Left)
             }
 
         case .Right_Arrow:
             switch {
-            case ctrl && shift: edit_text(text, .Select_Word_Right)
-            case shift: edit_text(text, .Select_Right)
-            case ctrl: edit_text(text, .Word_Right)
-            case: edit_text(text, .Right)
+            case ctrl && shift: edit(text, .Select_Word_Right)
+            case shift: edit(text, .Select_Right)
+            case ctrl: edit(text, .Word_Right)
+            case: edit(text, .Right)
             }
 
         // case .Up_Arrow:
         //     switch {
-        //     case shift: edit_text(text, .Select_Up)
-        //     case: edit_text(text, .Up)
+        //     case shift: edit(text, .Select_Up)
+        //     case: edit(text, .Up)
         //     }
 
         // case .Down_Arrow:
         //     switch {
-        //     case shift: edit_text(text, .Select_Down)
-        //     case: edit_text(text, .Down)
+        //     case shift: edit(text, .Select_Down)
+        //     case: edit(text, .Down)
         //     }
         }
     }
 }
 
-text_string_size :: proc(text: ^Text_Line) -> (size: Vec2) {
+string_size :: proc(text: ^Text_Line) -> (size: Vec2) {
     size.y = line_height(text.font)
     glyph_count := len(text.glyphs)
     if glyph_count <= 0 do return
@@ -333,14 +336,14 @@ text_string_size :: proc(text: ^Text_Line) -> (size: Vec2) {
     return
 }
 
-text_string_position :: proc(text: ^Text_Line) -> Vec2 {
-    return text.position + (text.size - {CARET_WIDTH, 0} - text_string_size(text)) * text.alignment
+string_position :: proc(text: ^Text_Line) -> Vec2 {
+    return text.position + (text.size - {CARET_WIDTH, 0} - string_size(text)) * text.alignment
 }
 
-text_caret_position :: proc(text: ^Text_Line) -> (position: Vec2) {
+caret_position :: proc(text: ^Text_Line) -> (position: Vec2) {
     glyph_count := len(text.glyphs)
 
-    position = text_string_position(text)
+    position = string_position(text)
 
     if glyph_count == 0 do return
 
@@ -356,14 +359,14 @@ text_caret_position :: proc(text: ^Text_Line) -> (position: Vec2) {
     return
 }
 
-text_selection_rect :: proc(text: ^Text_Line) -> (rect: rect.Rect, exists: bool) {
+selection_rect :: proc(text: ^Text_Line) -> (rect: rect.Rect, exists: bool) {
     glyph_count := len(text.glyphs)
 
     if glyph_count == 0 do return
 
     height := line_height(text.font)
 
-    low, high := sorted_text_selection(text)
+    low, high := sorted_selection(text)
     if high > low {
         left_glyph_index, left_oob := _rune_index_to_glyph_index(text, low)
         if left_oob do left_glyph_index = glyph_count - 1
@@ -378,7 +381,7 @@ text_selection_rect :: proc(text: ^Text_Line) -> (rect: rect.Rect, exists: bool)
         left := text.glyphs[left_glyph_index].position
         right := text.glyphs[right_glyph_index].position + text.glyphs[right_glyph_index].width
 
-        rect.position = text_string_position(text) + {left, 0}
+        rect.position = string_position(text) + {left, 0}
         rect.size = {right - left, height}
 
         exists = true
@@ -387,11 +390,11 @@ text_selection_rect :: proc(text: ^Text_Line) -> (rect: rect.Rect, exists: bool)
     return
 }
 
-text_visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f32) {
+visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f32) {
     glyph_count := len(text.glyphs)
     if glyph_count <= 0 do return "", 0
 
-    left, right_exclusive := text_visible_glyph_range(text)
+    left, right_exclusive := visible_glyph_range(text)
     if right_exclusive - left <= 0 do return "", 0
 
     left_rune_index := text.glyphs[left].rune_index
@@ -401,27 +404,27 @@ text_visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f
     x_compensation = text.glyphs[left].position
 
     if right_exclusive >= glyph_count {
-        str = text_string(text)[left_rune_index:]
+        str = to_string(text)[left_rune_index:]
     } else {
         right_rune_index := text.glyphs[right_exclusive].rune_index
         if right_rune_index < rune_count {
-            str = text_string(text)[left_rune_index:right_rune_index]
+            str = to_string(text)[left_rune_index:right_rune_index]
         } else {
-            str = text_string(text)[left_rune_index:]
+            str = to_string(text)[left_rune_index:]
         }
     }
 
     return
 }
 
-text_visible_glyph_range :: proc(text: ^Text_Line) -> (left, right_exclusive: int) {
+visible_glyph_range :: proc(text: ^Text_Line) -> (left, right_exclusive: int) {
     height := line_height(text.font)
-    clip_rect := gui.current_clip_rect()
+    clip_rect := gui.clip_rect()
     if clip_rect.size.x <= 0 || clip_rect.size.y <= 0 {
         return 0, 0
     }
 
-    position := text_string_position(text)
+    position := string_position(text)
 
     // gui.draw_rect(clip_rect.position, clip_rect.size, {0.2, 0, 0, 1})
 
@@ -465,8 +468,8 @@ _rune_index_to_glyph_index :: proc(text: ^Text_Line, rune_index: int) -> (glyph_
     }
 }
 
-_remeasure_text_line :: proc(text: ^Text_Line) {
-    gui.measure_text(text_string(text), text.font, &text.glyphs, &text.rune_index_to_glyph_index)
+_remeasure :: proc(text: ^Text_Line) {
+    gui.measure_text(to_string(text), text.font, &text.glyphs, &text.rune_index_to_glyph_index)
     _update_edit_state_line_start_and_end(text)
 }
 

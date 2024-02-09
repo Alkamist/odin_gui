@@ -1,25 +1,22 @@
 package widgets
 
-import "base:runtime"
 import "../../gui"
 
-Button_State :: struct {
+Button_Base :: struct {
     id: gui.Id,
     position: Vec2,
     size: Vec2,
-    mouse_button: gui.Mouse_Button,
     down: bool,
     pressed: bool,
     released: bool,
     clicked: bool,
 }
 
-init_button_state :: proc(button: ^Button_State) {
+button_base_init :: proc(button: ^Button_Base) {
     button.id = gui.get_id()
-    button.mouse_button = .Left
 }
 
-update_button_state :: proc(button: ^Button_State) {
+button_base_update :: proc(button: ^Button_Base, press, release: bool) {
     button.pressed = false
     button.released = false
     button.clicked = false
@@ -28,13 +25,13 @@ update_button_state :: proc(button: ^Button_State) {
         gui.request_mouse_hover(button.id)
     }
 
-    if !button.down && gui.mouse_pressed(button.mouse_button) && gui.mouse_hover() == button.id {
+    if !button.down && press && gui.mouse_hover() == button.id {
         gui.capture_mouse_hover()
         button.down = true
         button.pressed = true
     }
 
-    if button.down && gui.mouse_released(button.mouse_button) {
+    if button.down && release {
         gui.release_mouse_hover()
         button.down = false
         button.released = true
@@ -46,19 +43,26 @@ update_button_state :: proc(button: ^Button_State) {
 }
 
 Button :: struct {
-    using state: Button_State,
+    using base: Button_Base,
+    mouse_button: gui.Mouse_Button,
     color: Color,
 }
 
-init_button :: proc(button: ^Button) {
-    init_button_state(button)
+button_init :: proc(button: ^Button) {
+    button_base_init(button)
     button.size = {96, 32}
+    button.mouse_button = .Left
     button.color = {0.5, 0.5, 0.5, 1}
 }
 
-update_button :: proc(button: ^Button) {
-    update_button_state(button)
+button_update :: proc(button: ^Button) {
+    button_base_update(button,
+        press = gui.mouse_pressed(button.mouse_button),
+        release = gui.mouse_released(button.mouse_button),
+    )
+}
 
+button_draw :: proc(button: ^Button) {
     gui.draw_rect(button.position, button.size, button.color)
     if button.down {
         gui.draw_rect(button.position, button.size, {0, 0, 0, 0.2})

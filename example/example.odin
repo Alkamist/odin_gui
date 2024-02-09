@@ -52,32 +52,35 @@ main :: proc() {
         }
     }
 
-    init_window(&window, {50, 50}, {400, 300})
-    defer destroy_window(&window)
+    window_init(&window, {50, 50}, {400, 300})
+    defer window_destroy(&window)
     window.background_color = {0.2, 0.2, 0.2, 1}
 
     window.update = proc(window: ^gui.Window) {
-        // gui.scoped_clip(gui.mouse_position(), {50, 50})
-        // gui.draw_rect(gui.mouse_position(), {50, 50}, {0, 0.4, 0, 1})
+        // gui.scoped_clip(gui.mouse_position() - {25, 25}, {50, 50})
+        // gui.draw_rect(gui.mouse_position() - {25, 25}, {50, 50}, {0, 0.4, 0, 1})
+
+        gui.draw_rect(text.position, text.size, {0.2, 0, 0, 1})
 
         text.alignment = {slider.value, slider.value}
+        widgets.update(&text)
+        widgets.draw(&text)
 
-        widgets.update_text_line(&text)
-
-        widgets.update_slider(&slider)
+        widgets.update(&slider)
+        widgets.draw(&slider)
     }
 
-    widgets.init_text_line(&text)
-    defer widgets.destroy_text_line(&text)
+    widgets.init(&text)
+    defer widgets.destroy(&text)
     text.font = &consola
     text.position = {100, 100}
     text.size = {200, 200}
 
-    widgets.input_text(&text, "Hello world.")
+    widgets.input_string(&text, SAMPLE_TEXT)
 
-    widgets.init_slider(&slider)
+    widgets.init(&slider)
 
-    open_window(&window)
+    window_open(&window)
     for window_is_open(&window) {
         update()
     }
