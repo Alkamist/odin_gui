@@ -209,6 +209,11 @@ _font_metrics :: proc(ctx: ^gui.Context, font: gui.Font) -> (metrics: gui.Font_M
 
 _render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Command) {
     switch c in command {
+    case gui.Draw_Custom_Command:
+        if c.custom != nil {
+            c.custom()
+        }
+
     case gui.Draw_Rect_Command:
         rl.DrawRectangleV(c.position, c.size, _to_rl_color(c.color))
 

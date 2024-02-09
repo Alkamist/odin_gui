@@ -5,8 +5,12 @@ import "core:fmt"
 import "core:mem"
 import "../../gui"
 import "../widgets"
-// import backend "backend_raylib"
-import backend "backend_pugl_nanovg"
+
+// import backend "backend_pugl_nanovg"
+// import nvg "vendor:nanovg"
+
+import backend "backend_raylib"
+import rl "vendor:raylib"
 
 consola_13: backend.Font
 
@@ -81,12 +85,19 @@ update :: proc(ctx: ^gui.Context) {
     widgets.update(&button)
     widgets.draw(&button)
 
+    gui.scoped_clip({100, 100}, {400, 400})
     gui.scoped_offset(button.position)
 
     text.alignment = {slider.value, slider.value}
     widgets.update(&text)
     gui.draw_rect(text.position, text.size, {0.2, 0, 0, 1})
     widgets.draw(&text)
+
+    gui.draw_custom(proc() {
+        offset := gui.offset()
+        rl.DrawRectangle(i32(offset.x) + 350, i32(offset.y) + 250, 100, 100, {0, 0, 255, 255})
+        rl.DrawText("A custom draw call", i32(offset.x) + 350, i32(offset.y) + 250, 10, {255, 255, 255, 255})
+    })
 
     widgets.update(&slider)
     widgets.draw(&slider)

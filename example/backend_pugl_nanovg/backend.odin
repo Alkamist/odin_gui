@@ -18,7 +18,7 @@ Font :: struct {
 
 load_font_from_data :: proc(font: ^Font, data: []byte, font_size: int) -> (ok: bool) {
     if len(data) <= 0 do return false
-    ctx := cast(^Context)gui.current_context()
+    ctx := gui.current_context(Context)
     if nvg.CreateFontMem(ctx.nvg_ctx, font.name, data, false) == -1 {
         fmt.eprintf("Failed to load font: %v\n", font.name)
         return false
@@ -289,6 +289,11 @@ _render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Command) {
     nvg_ctx := ctx.nvg_ctx
 
     switch c in command {
+    case gui.Draw_Custom_Command:
+        if c.custom != nil {
+            c.custom()
+        }
+
     case gui.Draw_Rect_Command:
         nvg.BeginPath(nvg_ctx)
         nvg.Rect(nvg_ctx, c.position.x, c.position.y, max(0, c.size.x), max(0, c.size.y))

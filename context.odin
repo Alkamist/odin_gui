@@ -1,5 +1,6 @@
 package gui
 
+import "core:fmt"
 import "base:runtime"
 import "base:intrinsics"
 import "core:time"
@@ -54,6 +55,8 @@ Context :: struct {
     layer_stack: [dynamic]Layer,
     layers: [dynamic]Layer,
 
+    is_in_render_phase: bool,
+
     was_open: bool,
     previous_tick: Tick,
     previous_global_mouse_position: Vec2,
@@ -83,6 +86,8 @@ destroy :: proc(ctx: ^Context) {
 }
 
 update :: proc(ctx: ^Context) {
+    // Update phase
+
     _current_ctx = ctx
     ctx.tick, _ = _tick_now(ctx)
 
@@ -99,41 +104,52 @@ update :: proc(ctx: ^Context) {
         ctx->update()
     }
 
-    end_clip()
-    end_offset()
-    end_z_index()
-
-    assert(len(ctx.offset_stack) == 0)
-    assert(len(ctx.clip_rect_stack) == 0)
-    assert(len(ctx.layer_stack) == 0)
+    end_clip();    assert(len(ctx.clip_rect_stack) == 0)
+    end_offset();  assert(len(ctx.offset_stack) == 0)
+    end_z_index(); assert(len(ctx.layer_stack) == 0)
 
     slice.reverse(ctx.layers[:])
     slice.stable_sort_by(ctx.layers[:], proc(i, j: Layer) -> bool {
         return i.z_index < j.z_index
     })
 
-    ctx.previous_mouse_hover = ctx.mouse_hover
-    ctx.mouse_hover = 0
-    ctx.mouse_hit = 0
+    _update_hover(ctx)
+
+    // Render phase
+
+    ctx.is_in_render_phase = true
+
+    begin_z_index(0, global = true)
+    begin_offset({0, 0}, global = true)
+    begin_clip({0, 0}, ctx.size, global = true, intersect = false)
 
     for layer in ctx.layers {
         for command in layer.draw_commands {
             render := ctx.render_draw_command
             if render != nil {
+                c, is_custom := command.(Draw_Custom_Command)
+                if is_custom {
+                    begin_offset(c.offset)
+                    begin_clip(c.clip_rect.position, c.clip_rect.size, global = true)
+                }
+
                 render(ctx, command)
+
+                if is_custom {
+                    end_clip()
+                    end_offset()
+                }
             }
         }
-
-        mouse_hover_request := layer.final_mouse_hover_request
-        if mouse_hover_request != 0 {
-            ctx.mouse_hover = mouse_hover_request
-            ctx.mouse_hit = mouse_hover_request
-        }
     }
 
-    if ctx.mouse_hover_capture != 0 {
-        ctx.mouse_hover = ctx.mouse_hover_capture
-    }
+    ctx.is_in_render_phase = false
+
+    end_clip();    assert(len(ctx.clip_rect_stack) == 0)
+    end_offset();  assert(len(ctx.offset_stack) == 0)
+    end_z_index(); assert(len(ctx.layer_stack) == 0)
+
+    // Cleanup for next frame
 
     ctx.mouse_wheel = {0, 0}
     ctx.was_open = ctx.is_open
@@ -144,8 +160,8 @@ update :: proc(ctx: ^Context) {
     _remake_input_buffers(ctx)
 }
 
-current_context :: proc() -> ^Context {
-    return _current_ctx
+current_context :: proc($T: typeid) -> ^T {
+    return cast(^T)_current_ctx
 }
 
 set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) -> (ok: bool) {
@@ -188,4 +204,22 @@ _remake_input_buffers :: proc(ctx: ^Context) -> runtime.Allocator_Error {
     ctx.key_releases = make([dynamic]Keyboard_Key, ctx.temp_allocator) or_return
     strings.builder_init(&ctx.text_input, ctx.temp_allocator) or_return
     return nil
+}
+
+_update_hover :: proc(ctx: ^Context) {
+    ctx.previous_mouse_hover = ctx.mouse_hover
+    ctx.mouse_hover = 0
+    ctx.mouse_hit = 0
+
+    for layer in ctx.layers {
+        mouse_hover_request := layer.final_mouse_hover_request
+        if mouse_hover_request != 0 {
+            ctx.mouse_hover = mouse_hover_request
+            ctx.mouse_hit = mouse_hover_request
+        }
+    }
+
+    if ctx.mouse_hover_capture != 0 {
+        ctx.mouse_hover = ctx.mouse_hover_capture
+    }
 }
