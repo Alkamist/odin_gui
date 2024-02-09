@@ -4,7 +4,7 @@ import "core:time"
 import "core:slice"
 import "core:strings"
 
-Cursor_Style :: enum {
+Mouse_Cursor_Style :: enum {
     Arrow,
     I_Beam,
     Crosshair,

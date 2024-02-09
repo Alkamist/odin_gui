@@ -12,7 +12,7 @@ import "rect"
 Context :: struct {
     update: proc(ctx: ^Context),
     tick_now: proc(ctx: ^Context) -> (tick: Tick, ok: bool),
-    set_cursor_style: proc(ctx: ^Context, style: Cursor_Style) -> (ok: bool),
+    set_mouse_cursor_style: proc(ctx: ^Context, style: Mouse_Cursor_Style) -> (ok: bool),
     get_clipboard: proc(ctx: ^Context) -> (data: string, ok: bool),
     set_clipboard: proc(ctx: ^Context, data: string) -> (ok: bool),
     measure_text: proc(ctx: ^Context, text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, rune_index_to_glyph_index: ^map[int]int) -> (ok: bool),
@@ -47,7 +47,7 @@ Context :: struct {
     mouse_hit: Id,
     mouse_hover: Id,
     previous_mouse_hover: Id,
-    mouse_hover_is_captured: bool,
+    mouse_hover_capture: Id,
 
     position_offset_stack: [dynamic]Vec2,
     clip_rect_stack: [dynamic]Rect,
@@ -131,6 +131,10 @@ update :: proc(ctx: ^Context) {
         }
     }
 
+    if ctx.mouse_hover_capture != 0 {
+        ctx.mouse_hover = ctx.mouse_hover_capture
+    }
+
     ctx.mouse_wheel = {0, 0}
     ctx.was_open = ctx.is_open
     ctx.previous_tick = ctx.tick
@@ -140,9 +144,9 @@ update :: proc(ctx: ^Context) {
     _remake_input_buffers(ctx)
 }
 
-set_cursor_style :: proc(style: Cursor_Style) -> (ok: bool) {
-    if _current_ctx.set_cursor_style == nil do return false
-    return _current_ctx->set_cursor_style(style)
+set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) -> (ok: bool) {
+    if _current_ctx.set_mouse_cursor_style == nil do return false
+    return _current_ctx->set_mouse_cursor_style(style)
 }
 
 get_clipboard :: proc() -> (data: string, ok: bool) {

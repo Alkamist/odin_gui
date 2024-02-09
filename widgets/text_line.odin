@@ -199,11 +199,11 @@ edit_with_mouse :: proc(text: ^Text_Line) {
     }
 
     if gui.mouse_hover_entered() == text.id {
-        gui.set_cursor_style(.I_Beam)
+        gui.set_mouse_cursor_style(.I_Beam)
     }
 
     if gui.mouse_hover_exited() == text.id {
-        gui.set_cursor_style(.Arrow)
+        gui.set_mouse_cursor_style(.Arrow)
     }
 
     if gui.mouse_hover() == text.id &&

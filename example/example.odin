@@ -38,14 +38,17 @@ main :: proc() {
 
     backend.init(&ctx, {50, 50}, {400, 300})
     defer backend.destroy(&ctx)
-    ctx.background_color = {0.2, 0.2, 0.2, 1}
+
     ctx.update = update
+    ctx.background_color = {0.2, 0.2, 0.2, 1}
 
     widgets.init(&text)
     defer widgets.destroy(&text)
+
     text.position = {100, 100}
     text.size = {200, 200}
     text.font = &consola_13
+
     widgets.input_string(&text, "Hello world.")
 
     widgets.init(&slider)
@@ -60,15 +63,13 @@ main :: proc() {
 
 update :: proc(ctx: ^gui.Context) {
     if gui.opened() {
-        if !backend.load_font_from_data(&consola_13, #load("consola.ttf"), 13) {
-            fmt.eprintln("Failed to load font: consola.ttf")
-        }
+        backend.load_font_from_data(&consola_13, #load("consola.ttf"), 13)
     }
 
     // gui.scoped_clip(gui.mouse_position() - {25, 25}, {50, 50})
     // gui.draw_rect(gui.mouse_position() - {25, 25}, {50, 50}, {0, 0.4, 0, 1})
 
-    // gui.draw_rect(text.position, text.size, {0.2, 0, 0, 1})
+    gui.draw_rect(text.position, text.size, {0.2, 0, 0, 1})
 
     text.alignment = {slider.value, slider.value}
     widgets.update(&text)
@@ -76,15 +77,4 @@ update :: proc(ctx: ^gui.Context) {
 
     widgets.update(&slider)
     widgets.draw(&slider)
-
-    // glyphs := make([dynamic]gui.Text_Glyph, allocator = gui.temp_allocator())
-    // gui.measure_text("Vi", &consola_13, &glyphs)
-
-    // gui.draw_rect({100, 100}, {200, 200}, {0.2, 0, 0, 1})
-
-    // for glyph in glyphs {
-    //     gui.draw_rect({100 + glyph.position, 100}, {glyph.width, 13}, {0, 0.5, 0, 1})
-    // }
-
-    // gui.draw_text("Vi", {100, 100}, &consola_13, {1, 1, 1, 1})
 }

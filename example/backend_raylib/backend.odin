@@ -32,6 +32,8 @@ update :: proc() {
         return
     }
 
+    gui.input_content_scale(_ctx, rl.GetWindowScaleDPI())
+
     gui.input_move(_ctx, rl.GetWindowPosition())
     gui.input_resize(_ctx, {f32(rl.GetRenderWidth()), f32(rl.GetRenderHeight())})
 
@@ -81,7 +83,7 @@ init :: proc(
     gui.init(ctx, position, size, temp_allocator) or_return
     _ctx = ctx
     ctx.tick_now = _tick_now
-    ctx.set_cursor_style = _set_cursor_style
+    ctx.set_mouse_cursor_style = _set_mouse_cursor_style
     ctx.get_clipboard = _get_clipboard
     ctx.set_clipboard = _set_clipboard
     ctx.measure_text = _measure_text
@@ -138,7 +140,7 @@ _tick_now :: proc(ctx: ^gui.Context) -> (tick: gui.Tick, ok: bool) {
     return time.tick_now(), true
 }
 
-_set_cursor_style :: proc(ctx: ^gui.Context, style: gui.Cursor_Style) -> (ok: bool) {
+_set_mouse_cursor_style :: proc(ctx: ^gui.Context, style: gui.Mouse_Cursor_Style) -> (ok: bool) {
     rl.SetMouseCursor(_to_rl_mouse_cursor(style))
     return true
 }
@@ -203,9 +205,6 @@ _font_metrics :: proc(ctx: ^gui.Context, font: gui.Font) -> (metrics: gui.Font_M
 }
 
 _render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Command) {
-    assert(ctx != nil)
-    ctx := cast(^Context)ctx
-
     switch c in command {
     case gui.Draw_Rect_Command:
         rl.DrawRectangleV(c.position, c.size, _to_rl_color(c.color))
@@ -223,7 +222,7 @@ _render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Command) {
     }
 }
 
-_to_rl_mouse_cursor :: proc(cursor: gui.Cursor_Style) -> rl.MouseCursor {
+_to_rl_mouse_cursor :: proc(cursor: gui.Mouse_Cursor_Style) -> rl.MouseCursor {
     #partial switch cursor {
     case .Arrow: return .ARROW
     case .I_Beam: return .IBEAM

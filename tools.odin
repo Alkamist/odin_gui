@@ -71,11 +71,11 @@ request_mouse_hover :: proc(id: Id) {
 }
 
 capture_mouse_hover :: proc() {
-    _current_ctx.mouse_hover_is_captured = true
+    _current_ctx.mouse_hover_capture = _current_layer().final_mouse_hover_request
 }
 
 release_mouse_hover :: proc() {
-    _current_ctx.mouse_hover_is_captured = false
+    _current_ctx.mouse_hover_capture = 0
 }
 
 set_keyboard_focus :: proc(id: Id) {
