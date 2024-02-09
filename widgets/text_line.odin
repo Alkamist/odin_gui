@@ -25,14 +25,14 @@ Text_Line :: struct {
     drag_selecting: bool,
     edit_state: text_edit.State,
     glyphs: [dynamic]gui.Text_Glyph,
-    rune_index_to_glyph_index: map[int]int,
+    byte_index_to_rune_index: map[int]int,
     glyphs_need_remeasure: bool,
 }
 
 text_line_init :: proc(text: ^Text_Line, allocator := context.allocator) -> runtime.Allocator_Error {
     strings.builder_init(&text.builder, allocator = allocator) or_return
     text.glyphs = make([dynamic]gui.Text_Glyph, allocator = allocator)
-    text.rune_index_to_glyph_index = make(map[int]int, allocator = allocator)
+    text.byte_index_to_rune_index = make(map[int]int, allocator = allocator)
     text.id = gui.get_id()
     text.size = {96, 32}
     text.color = {1, 1, 1, 1}
@@ -40,7 +40,9 @@ text_line_init :: proc(text: ^Text_Line, allocator := context.allocator) -> runt
     text_edit.setup_once(&text.edit_state, &text.builder)
     text.edit_state.selection = {0, 0}
     text.edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
-        return gui.get_clipboard()
+        data, ok = gui.get_clipboard()
+        if !ok do return "", false
+        return _quick_remove_line_ends_UNSAFE(data), true
     }
     text.edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
         return gui.set_clipboard(data)
@@ -53,7 +55,7 @@ text_line_destroy :: proc(text: ^Text_Line) {
     strings.builder_destroy(&text.builder)
     text_edit.destroy(&text.edit_state)
     delete(text.glyphs)
-    delete(text.rune_index_to_glyph_index)
+    delete(text.byte_index_to_rune_index)
 }
 
 text_line_update :: proc(text: ^Text_Line) {
@@ -99,23 +101,23 @@ to_string :: proc(text: ^Text_Line) -> string {
 }
 
 input_string :: proc(text: ^Text_Line, str: string) {
-    text_edit.input_text(&text.edit_state, str)
+    text_edit.input_text(&text.edit_state, _quick_remove_line_ends_UNSAFE(str))
     text.glyphs_need_remeasure = true
 }
 
 input_runes :: proc(text: ^Text_Line, runes: []rune) {
     str := utf8.runes_to_string(runes, gui.temp_allocator())
-    text_edit.input_runes(&text.edit_state, runes)
-    text.glyphs_need_remeasure = true
+    input_string(text, str)
 }
 
 input_rune :: proc(text: ^Text_Line, r: rune) {
+    if r == '\n' || r == '\r' do return
     text_edit.input_rune(&text.edit_state, r)
     text.glyphs_need_remeasure = true
 }
 
 insert_string :: proc(text: ^Text_Line, at: int, str: string) {
-    text_edit.insert(&text.edit_state, at, str)
+    text_edit.insert(&text.edit_state, at, _quick_remove_line_ends_UNSAFE(str))
     text.glyphs_need_remeasure = true
 }
 
@@ -151,7 +153,7 @@ edit :: proc(text: ^Text_Line, command: Text_Edit_Command) {
     text_edit.perform_command(&text.edit_state, command)
 }
 
-rune_index_at_x :: proc(text: ^Text_Line, x: f32) -> int {
+byte_index_at_x :: proc(text: ^Text_Line, x: f32) -> int {
     glyph_count := len(text.glyphs)
     if glyph_count == 0 do return 0
 
@@ -168,7 +170,7 @@ rune_index_at_x :: proc(text: ^Text_Line, x: f32) -> int {
         }
 
         if x >= left && x < right {
-            return glyph.rune_index
+            return glyph.byte_index
         }
     }
 
@@ -177,7 +179,7 @@ rune_index_at_x :: proc(text: ^Text_Line, x: f32) -> int {
 
 start_drag_selection :: proc(text: ^Text_Line, position: Vec2, only_head := false) {
     gui.set_keyboard_focus(text.id)
-    index := rune_index_at_x(text, position.x)
+    index := byte_index_at_x(text, position.x)
     text.drag_selecting = true
     text.edit_state.selection[0] = index
     if !only_head do text.edit_state.selection[1] = index
@@ -185,7 +187,7 @@ start_drag_selection :: proc(text: ^Text_Line, position: Vec2, only_head := fals
 
 move_drag_selection :: proc(text: ^Text_Line, position: Vec2) {
     if !text.drag_selecting do return
-    text.edit_state.selection[0] = rune_index_at_x(text, position.x)
+    text.edit_state.selection[0] = byte_index_at_x(text, position.x)
 }
 
 end_drag_selection :: proc(text: ^Text_Line) {
@@ -348,12 +350,12 @@ caret_position :: proc(text: ^Text_Line) -> (position: Vec2) {
     if glyph_count == 0 do return
 
     head := text.edit_state.selection[0]
-    caret_glyph_index, caret_oob := _rune_index_to_glyph_index(text, head)
+    caret_rune_index, caret_oob := _byte_index_to_rune_index(text, head)
 
     if caret_oob {
         position.x += text.glyphs[glyph_count - 1].position + text.glyphs[glyph_count - 1].width
     } else {
-        position.x += text.glyphs[caret_glyph_index].position
+        position.x += text.glyphs[caret_rune_index].position
     }
 
     return
@@ -368,18 +370,18 @@ selection_rect :: proc(text: ^Text_Line) -> (rect: rect.Rect, exists: bool) {
 
     low, high := sorted_selection(text)
     if high > low {
-        left_glyph_index, left_oob := _rune_index_to_glyph_index(text, low)
-        if left_oob do left_glyph_index = glyph_count - 1
+        left_rune_index, left_oob := _byte_index_to_rune_index(text, low)
+        if left_oob do left_rune_index = glyph_count - 1
 
-        right_glyph_index, right_oob := _rune_index_to_glyph_index(text, high)
+        right_rune_index, right_oob := _byte_index_to_rune_index(text, high)
         if right_oob {
-            right_glyph_index = glyph_count - 1
+            right_rune_index = glyph_count - 1
         } else {
-            right_glyph_index -= 1
+            right_rune_index -= 1
         }
 
-        left := text.glyphs[left_glyph_index].position
-        right := text.glyphs[right_glyph_index].position + text.glyphs[right_glyph_index].width
+        left := text.glyphs[left_rune_index].position
+        right := text.glyphs[right_rune_index].position + text.glyphs[right_rune_index].width
 
         rect.position = string_position(text) + {left, 0}
         rect.size = {right - left, height}
@@ -397,20 +399,20 @@ visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f32) {
     left, right_exclusive := visible_glyph_range(text)
     if right_exclusive - left <= 0 do return "", 0
 
-    left_rune_index := text.glyphs[left].rune_index
-    rune_count := len(text.builder.buf)
-    if left_rune_index >= rune_count do return "", 0
+    left_byte_index := text.glyphs[left].byte_index
+    byte_count := len(text.builder.buf)
+    if left_byte_index >= byte_count do return "", 0
 
     x_compensation = text.glyphs[left].position
 
     if right_exclusive >= glyph_count {
-        str = to_string(text)[left_rune_index:]
+        str = to_string(text)[left_byte_index:]
     } else {
-        right_rune_index := text.glyphs[right_exclusive].rune_index
-        if right_rune_index < rune_count {
-            str = to_string(text)[left_rune_index:right_rune_index]
+        right_byte_index := text.glyphs[right_exclusive].byte_index
+        if right_byte_index < byte_count {
+            str = to_string(text)[left_byte_index:right_byte_index]
         } else {
-            str = to_string(text)[left_rune_index:]
+            str = to_string(text)[left_byte_index:]
         }
     }
 
@@ -460,16 +462,37 @@ visible_glyph_range :: proc(text: ^Text_Line) -> (left, right_exclusive: int) {
 
 
 
-_rune_index_to_glyph_index :: proc(text: ^Text_Line, rune_index: int) -> (glyph_index: int, out_of_bounds: bool) {
-    if rune_index >= len(text.builder.buf) {
+_quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
+    bytes := make([dynamic]byte, len(str), allocator = gui.temp_allocator())
+    copy_from_string(bytes[:], str)
+
+    keep_position := 0
+
+    for i in 0 ..< len(bytes) {
+        should_keep := bytes[i] != '\n' && bytes[i] != '\r'
+        if should_keep {
+            if keep_position != i {
+                bytes[keep_position] = bytes[i]
+            }
+            keep_position += 1
+        }
+    }
+
+    resize(&bytes, keep_position)
+
+    return string(bytes[:])
+}
+
+_byte_index_to_rune_index :: proc(text: ^Text_Line, byte_index: int) -> (rune_index: int, out_of_bounds: bool) {
+    if byte_index >= len(text.builder.buf) {
         return 0, true
     } else {
-        return text.rune_index_to_glyph_index[rune_index], false
+        return text.byte_index_to_rune_index[byte_index], false
     }
 }
 
 _remeasure :: proc(text: ^Text_Line) {
-    gui.measure_text(to_string(text), text.font, &text.glyphs, &text.rune_index_to_glyph_index)
+    gui.measure_text(to_string(text), text.font, &text.glyphs, &text.byte_index_to_rune_index)
     _update_edit_state_line_start_and_end(text)
 }
 

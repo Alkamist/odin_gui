@@ -13,11 +13,11 @@ import "../../../gui"
 
 Font :: struct {
     rl_font: rl.Font,
-    glyph_indices: map[rune]int,
+    rune_to_glyph_index: map[rune]int,
 }
 
 font_destroy :: proc(font: ^Font) {
-    delete(font.glyph_indices)
+    delete(font.rune_to_glyph_index)
 }
 
 Context :: struct {
@@ -127,7 +127,7 @@ load_font_from_data :: proc(font: ^Font, data: []byte, font_size: int) -> (ok: b
     font.rl_font = rl.LoadFontFromMemory(".ttf", raw_data(data), i32(len(data)), i32(font_size), nil, CODEPOINT_COUNT)
 
     for i in 0 ..< CODEPOINT_COUNT {
-        font.glyph_indices[font.rl_font.chars[i].value] = i
+        font.rune_to_glyph_index[font.rl_font.chars[i].value] = i
     }
 
     ok = true
@@ -162,36 +162,38 @@ _measure_text :: proc(
     text: string,
     font: gui.Font,
     glyphs: ^[dynamic]gui.Text_Glyph,
-    rune_index_to_glyph_index: ^map[int]int,
+    byte_index_to_rune_index: ^map[int]int,
 ) -> (ok: bool) {
     assert(font != nil)
     font := cast(^Font)font
 
-    resize(glyphs, len(text))
-    if rune_index_to_glyph_index != nil {
-        clear(rune_index_to_glyph_index)
+    clear(glyphs)
+    if byte_index_to_rune_index != nil {
+        clear(byte_index_to_rune_index)
     }
 
     x := f32(0)
     rune_index := 0
 
-    for r, i in text {
-        rl_glyph := font.rl_font.chars[font.glyph_indices[r]]
+    for r, byte_index in text {
+        glyph_index := font.rune_to_glyph_index[r] or_else font.rune_to_glyph_index['?']
+
+        rl_glyph := font.rl_font.chars[glyph_index]
         width := f32(rl_glyph.advanceX)
 
-        if rune_index_to_glyph_index != nil {
-            rune_index_to_glyph_index[rune_index] = i
+        if byte_index_to_rune_index != nil {
+            byte_index_to_rune_index[byte_index] = rune_index
         }
 
-        glyphs[i] = gui.Text_Glyph{
-            rune_index = rune_index,
+        append(glyphs, gui.Text_Glyph{
+            byte_index = byte_index,
             position = x,
             width = width,
             kerning = -f32(rl_glyph.offsetX),
-        }
+        })
 
         x += width
-        rune_index += utf8.rune_size(r)
+        rune_index += 1
     }
 
     return true

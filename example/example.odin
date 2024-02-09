@@ -10,8 +10,10 @@ import backend "backend_raylib"
 consola_13: backend.Font
 
 ctx: backend.Context
-text: widgets.Text_Line
+
+button: widgets.Button
 slider: widgets.Slider
+text: widgets.Text_Line
 
 main :: proc() {
     when ODIN_DEBUG {
@@ -36,22 +38,30 @@ main :: proc() {
         }
     }
 
-    backend.init(&ctx, {50, 50}, {400, 300})
+    backend.init(&ctx, {50, 50}, {800, 600})
     defer backend.destroy(&ctx)
 
     ctx.update = update
     ctx.background_color = {0.2, 0.2, 0.2, 1}
 
-    widgets.init(&text)
-    defer widgets.destroy(&text)
-
-    text.position = {100, 100}
-    text.size = {200, 200}
-    text.font = &consola_13
-
-    widgets.input_string(&text, "Hello world.")
+    widgets.init(&button)
+    button.position = {20, 20}
+    button.size = {400, 32}
 
     widgets.init(&slider)
+    slider.position = {0, button.size.y + 20}
+    slider.size = {button.size.x, 24}
+
+    widgets.init(&text)
+    defer widgets.destroy(&text)
+    text.position = {0, slider.position.y + slider.size.y + 20}
+    text.size = {slider.size.x, 200}
+    text.font = &consola_13
+    widgets.input_string(&text, "ὐ")
+
+    for r, i in "ὐa" {
+        fmt.println(i)
+    }
 
     backend.open(&ctx)
     for backend.is_open(&ctx) {
@@ -67,12 +77,19 @@ update :: proc(ctx: ^gui.Context) {
     }
 
     // gui.scoped_clip(gui.mouse_position() - {25, 25}, {50, 50})
-    // gui.draw_rect(gui.mouse_position() - {25, 25}, {50, 50}, {0, 0.4, 0, 1})
+    // gui.draw_rect(gui.mouse_position() - {25, 25}, {50, 50}, {0, 0.4, 0, 1}
 
-    gui.draw_rect(text.position, text.size, {0.2, 0, 0, 1})
+    if button.is_down && gui.mouse_moved() {
+        button.position += gui.mouse_delta()
+    }
+    widgets.update(&button)
+    widgets.draw(&button)
+
+    gui.scoped_position_offset(button.position)
 
     text.alignment = {slider.value, slider.value}
     widgets.update(&text)
+    gui.draw_rect(text.position, text.size, {0.2, 0, 0, 1})
     widgets.draw(&text)
 
     widgets.update(&slider)

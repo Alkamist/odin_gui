@@ -15,7 +15,7 @@ Context :: struct {
     set_mouse_cursor_style: proc(ctx: ^Context, style: Mouse_Cursor_Style) -> (ok: bool),
     get_clipboard: proc(ctx: ^Context) -> (data: string, ok: bool),
     set_clipboard: proc(ctx: ^Context, data: string) -> (ok: bool),
-    measure_text: proc(ctx: ^Context, text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, rune_index_to_glyph_index: ^map[int]int) -> (ok: bool),
+    measure_text: proc(ctx: ^Context, text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int) -> (ok: bool),
     font_metrics: proc(ctx: ^Context, font: Font) -> (metrics: Font_Metrics, ok: bool),
     render_draw_command: proc(ctx: ^Context, command: Draw_Command),
 
@@ -159,9 +159,9 @@ set_clipboard :: proc(data: string) -> (ok: bool) {
     return _current_ctx->set_clipboard(data)
 }
 
-measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, rune_index_to_glyph_index: ^map[int]int = nil) -> (ok: bool) {
+measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) -> (ok: bool) {
     if _current_ctx.measure_text == nil do return false
-    return _current_ctx->measure_text(text, font, glyphs, rune_index_to_glyph_index)
+    return _current_ctx->measure_text(text, font, glyphs, byte_index_to_rune_index)
 }
 
 font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {

@@ -10,7 +10,7 @@ Font_Metrics :: struct {
 }
 
 Text_Glyph :: struct {
-    rune_index: int,
+    byte_index: int,
     position: f32,
     width: f32,
     kerning: f32,
