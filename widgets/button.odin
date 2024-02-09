@@ -6,7 +6,7 @@ Button_Base :: struct {
     id: gui.Id,
     position: Vec2,
     size: Vec2,
-    down: bool,
+    is_down: bool,
     pressed: bool,
     released: bool,
     clicked: bool,
@@ -25,18 +25,18 @@ button_base_update :: proc(button: ^Button_Base, press, release: bool) {
         gui.request_mouse_hover(button.id)
     }
 
-    if !button.down && press && gui.mouse_hover() == button.id {
+    if !button.is_down && press && gui.mouse_hover() == button.id {
         gui.capture_mouse_hover()
-        button.down = true
+        button.is_down = true
         button.pressed = true
     }
 
-    if button.down && release {
+    if button.is_down && release {
         gui.release_mouse_hover()
-        button.down = false
+        button.is_down = false
         button.released = true
         if gui.mouse_hit() == button.id {
-            button.down = false
+            button.is_down = false
             button.clicked = true
         }
     }
@@ -64,7 +64,7 @@ button_update :: proc(button: ^Button) {
 
 button_draw :: proc(button: ^Button) {
     gui.draw_rect(button.position, button.size, button.color)
-    if button.down {
+    if button.is_down {
         gui.draw_rect(button.position, button.size, {0, 0, 0, 0.2})
     } else if gui.mouse_hover() == button.id {
         gui.draw_rect(button.position, button.size, {1, 1, 1, 0.05})
