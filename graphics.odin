@@ -1,5 +1,7 @@
 package gui
 
+import "core:math"
+
 Color :: [4]f32
 Font :: rawptr
 
@@ -45,6 +47,21 @@ Draw_Text_Command :: struct {
 Clip_Drawing_Command :: struct {
     position: Vec2,
     size: Vec2,
+}
+
+vec2_snap :: proc(position, increment: Vec2) -> Vec2 {
+    return {
+        math.round(position.x / increment.x) * increment.x,
+        math.round(position.y / increment.y) * increment.y,
+    }
+}
+
+pixel_size :: proc() -> Vec2 {
+    return 1.0 / _current_ctx.content_scale
+}
+
+pixel_snap :: proc(position: Vec2) -> Vec2 {
+    return vec2_snap(position, pixel_size())
 }
 
 draw_custom :: proc(custom: proc()) {

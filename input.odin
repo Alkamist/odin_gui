@@ -258,7 +258,3 @@ text_input :: proc() -> string {
 content_scale :: proc() -> Vec2 {
     return _current_ctx.content_scale
 }
-
-pixel_size :: proc() -> Vec2 {
-    return 1.0 / _current_ctx.content_scale
-}

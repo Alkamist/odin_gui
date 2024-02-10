@@ -1,6 +1,5 @@
 package gui
 
-import "core:fmt"
 import "base:runtime"
 import "base:intrinsics"
 import "core:time"
@@ -50,8 +49,8 @@ Context :: struct {
     previous_mouse_hover: Id,
     mouse_hover_capture: Id,
 
-    offset_stack: [dynamic]Vec2,
-    clip_rect_stack: [dynamic]Rect,
+    offset_stack: [dynamic]Vec2, // Stored in global coordinates
+    clip_rect_stack: [dynamic]Rect, // Stored in global coordinates
     layer_stack: [dynamic]Layer,
     layers: [dynamic]Layer,
 

@@ -215,18 +215,20 @@ _render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Command) {
         }
 
     case gui.Draw_Rect_Command:
-        rl.DrawRectangleV(c.position, c.size, _to_rl_color(c.color))
+        rl.DrawRectangleV(gui.pixel_snap(c.position), gui.pixel_snap(c.size), _to_rl_color(c.color))
 
     case gui.Draw_Text_Command:
         font := cast(^rl.Font)c.font
         text, err := strings.clone_to_cstring(c.text, gui.temp_allocator())
         if err == nil {
-            rl.DrawTextEx(font^, text, c.position, f32(font.baseSize), 0, _to_rl_color(c.color))
+            rl.DrawTextEx(font^, text, gui.pixel_snap(c.position), f32(font.baseSize), 0, _to_rl_color(c.color))
         }
 
     case gui.Clip_Drawing_Command:
+        position := gui.pixel_snap(c.position)
+        size := gui.pixel_snap(c.size)
         rl.EndScissorMode()
-		rl.BeginScissorMode(i32(c.position.x), i32(c.position.y), i32(c.size.x), i32(c.size.y))
+		rl.BeginScissorMode(i32(position.x), i32(position.y), i32(size.x), i32(size.y))
     }
 }
 

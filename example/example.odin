@@ -20,6 +20,23 @@ button: widgets.Button
 slider: widgets.Slider
 text: widgets.Text_Line
 
+controlling_camera: bool
+camera_button: widgets.Button
+camera := rl.Camera3D{
+    position = {10, 10, 10},
+    target = {0, 0, 0},
+    up = {0, 1, 0},
+    fovy = 45,
+    projection = .PERSPECTIVE,
+}
+
+cube: rl.Vector3
+
+scene_texture: rl.RenderTexture2D
+
+VIEW_WIDTH :: 600
+VIEW_HEIGHT :: 500
+
 main :: proc() {
     when ODIN_DEBUG {
         track: mem.Tracking_Allocator
@@ -43,7 +60,7 @@ main :: proc() {
         }
     }
 
-    backend.init(&ctx, {50, 50}, {800, 600})
+    backend.init(&ctx, {200, 100}, {1280, 800})
     defer backend.destroy(&ctx)
 
     ctx.update = update
@@ -51,18 +68,23 @@ main :: proc() {
 
     widgets.init(&button)
     button.position = {20, 20}
-    button.size = {400, 32}
+    button.size = {VIEW_WIDTH, 32}
 
     widgets.init(&slider)
-    slider.position = {0, button.size.y + 20}
-    slider.size = {button.size.x, 24}
+    slider.position = {0, button.size.y + 10}
+    slider.size = {VIEW_WIDTH, 24}
+    slider.value = 0.5
+
+    widgets.init(&camera_button)
+    camera_button.position = {0, slider.position.y + slider.size.y + 10}
+    camera_button.size = {VIEW_WIDTH, VIEW_HEIGHT}
 
     widgets.init(&text)
     defer widgets.destroy(&text)
-    text.position = {0, slider.position.y + slider.size.y + 20}
-    text.size = {slider.size.x, 200}
+    text.position = {0, camera_button.position.y + camera_button.size.y + 10}
+    text.size = {VIEW_WIDTH, 96}
     text.font = &consola_13
-    widgets.input_string(&text, "abcdefg ði ntənæʃənəl 1234567")
+    widgets.input_string(&text, "Hello world. Type here: ")
 
     backend.open(&ctx)
     for backend.is_open(&ctx) {
@@ -75,9 +97,9 @@ main :: proc() {
 update :: proc(ctx: ^gui.Context) {
     if gui.opened() {
         backend.load_font_from_data(&consola_13, #load("consola.ttf"), 13)
+        scene_texture = rl.LoadRenderTexture(VIEW_WIDTH, VIEW_HEIGHT)
+        rl.SetExitKey(.KEY_NULL)
     }
-
-    // gui.scoped_clip(gui.mouse_position() - {125, 125}, {250, 250})
 
     if button.is_down && gui.mouse_moved() {
         button.position += gui.mouse_delta()
@@ -85,20 +107,54 @@ update :: proc(ctx: ^gui.Context) {
     widgets.update(&button)
     widgets.draw(&button)
 
-    gui.scoped_clip({100, 100}, {400, 400})
     gui.scoped_offset(button.position)
-
-    text.alignment = {slider.value, slider.value}
-    widgets.update(&text)
-    gui.draw_rect(text.position, text.size, {0.2, 0, 0, 1})
-    widgets.draw(&text)
-
-    gui.draw_custom(proc() {
-        offset := gui.offset()
-        rl.DrawRectangle(i32(offset.x) + 350, i32(offset.y) + 250, 100, 100, {0, 0, 255, 255})
-        rl.DrawText("A custom draw call", i32(offset.x) + 350, i32(offset.y) + 250, 10, {255, 255, 255, 255})
-    })
 
     widgets.update(&slider)
     widgets.draw(&slider)
+
+    widgets.update(&camera_button)
+
+    cube.y = (slider.value - 0.5) * 10
+
+    if !controlling_camera && camera_button.pressed {
+        controlling_camera = true
+        rl.DisableCursor()
+    }
+
+    if controlling_camera && gui.key_pressed(.Escape) {
+        controlling_camera = false
+        rl.EnableCursor()
+    }
+
+    if controlling_camera {
+        rl.UpdateCamera(&camera, .FREE)
+    }
+
+    gui.draw_custom(proc() {
+        rl.BeginTextureMode(scene_texture)
+
+        rl.ClearBackground({0, 0, 0, 255})
+        rl.BeginMode3D(camera)
+        rl.DrawCube(cube, 2, 2, 2, rl.RED)
+        rl.DrawCubeWires(cube, 2, 2, 2, rl.MAROON)
+        rl.DrawGrid(10, 1)
+        rl.EndMode3D()
+
+        rl.EndTextureMode()
+
+        rl.DrawTextureRec(
+            scene_texture.texture,
+            {0, 0, f32(scene_texture.texture.width), -f32(scene_texture.texture.height)},
+            gui.offset() + {0, slider.position.y + slider.size.y + 10},
+            rl.WHITE,
+        )
+    })
+
+    text.alignment = slider.value
+
+    if !controlling_camera {
+        widgets.update(&text)
+    }
+    gui.draw_rect(text.position, text.size, {0.2, 0, 0, 1})
+    widgets.draw(&text)
 }
