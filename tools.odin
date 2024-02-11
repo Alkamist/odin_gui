@@ -3,12 +3,12 @@ package gui
 import "base:runtime"
 import "base:intrinsics"
 import "core:time"
-import "rect"
+import "rects"
 
 Id :: u64
 
 Vec2 :: [2]f32
-Rect :: rect.Rect
+Rect :: rects.Rect
 
 Tick :: time.Tick
 Duration :: time.Duration
@@ -95,6 +95,7 @@ begin_offset :: proc(offset: Vec2, global := false) {
 }
 
 end_offset :: proc() {
+    if len(_current_ctx.offset_stack) <= 0 do return
     pop(&_current_ctx.offset_stack)
 }
 
@@ -103,25 +104,23 @@ scoped_offset :: proc(offset: Vec2, global := false) {
     begin_offset(offset, global = global)
 }
 
-begin_clip :: proc(position, size: Vec2, global := false, intersect := true) {
-    r := Rect{position = position, size = size}
+begin_clip :: proc(rect: Rect, global := false, intersect := true) {
+    rect := rect
 
     if !global {
-        r.position += offset()
+        rect.position += offset()
     }
 
     if intersect {
-        r = rect.intersection(r, _current_ctx.clip_rect_stack[len(_current_ctx.clip_rect_stack) - 1])
+        rect = rects.intersection(rect, _current_ctx.clip_rect_stack[len(_current_ctx.clip_rect_stack) - 1])
     }
 
-    append(&_current_ctx.clip_rect_stack, r)
-    append(&_current_layer().draw_commands, Clip_Drawing_Command{
-        position = r.position,
-        size = r.size,
-    })
+    append(&_current_ctx.clip_rect_stack, rect)
+    append(&_current_layer().draw_commands, Clip_Drawing_Command{rect})
 }
 
 end_clip :: proc() {
+    if len(_current_ctx.clip_rect_stack) <= 0 do return
     pop(&_current_ctx.clip_rect_stack)
 
     if len(_current_ctx.clip_rect_stack) == 0 {
@@ -129,15 +128,12 @@ end_clip :: proc() {
     }
 
     clip_rect := _current_ctx.clip_rect_stack[len(_current_ctx.clip_rect_stack) - 1]
-    append(&_current_layer().draw_commands, Clip_Drawing_Command{
-        position = clip_rect.position,
-        size = clip_rect.size,
-    })
+    append(&_current_layer().draw_commands, Clip_Drawing_Command{clip_rect})
 }
 
 @(deferred_none=end_clip)
-scoped_clip :: proc(position, size: Vec2, global := false, intersect := true) {
-    begin_clip(position, size, global = global, intersect = intersect)
+scoped_clip :: proc(rect: Rect, global := false, intersect := true) {
+    begin_clip(rect, global = global, intersect = intersect)
 }
 
 begin_z_index :: proc(z_index: int, global := false) {
@@ -149,6 +145,7 @@ begin_z_index :: proc(z_index: int, global := false) {
 }
 
 end_z_index :: proc() {
+    if len(_current_ctx.layer_stack) <= 0 do return
     layer := pop(&_current_ctx.layer_stack)
     append(&_current_ctx.layers, layer)
 }
@@ -158,9 +155,9 @@ scoped_z_index :: proc(z_index: int, global := false) {
     begin_z_index(z_index, global = global)
 }
 
-hit_test :: proc(position, size, target: Vec2) -> bool {
-    return rect.contains({position, size}, target, include_borders = false) &&
-           rect.contains(clip_rect(), target, include_borders = false)
+hit_test :: proc(rect: Rect, target: Vec2) -> bool {
+    return rects.encloses(rect, target, include_borders = false) &&
+           rects.encloses(clip_rect(), target, include_borders = false)
 }
 
 

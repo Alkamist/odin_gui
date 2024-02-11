@@ -1,6 +1,7 @@
 package gui
 
 import "core:math"
+import "rects"
 
 Color :: [4]f32
 Font :: rawptr
@@ -32,8 +33,7 @@ Draw_Custom_Command :: struct {
 }
 
 Draw_Rect_Command :: struct {
-    position: Vec2,
-    size: Vec2,
+    rect: Rect,
     color: Color,
 }
 
@@ -45,40 +45,49 @@ Draw_Text_Command :: struct {
 }
 
 Clip_Drawing_Command :: struct {
-    position: Vec2,
-    size: Vec2,
-}
-
-vec2_snap :: proc(position, increment: Vec2) -> Vec2 {
-    return {
-        math.round(position.x / increment.x) * increment.x,
-        math.round(position.y / increment.y) * increment.y,
-    }
+    rect: Rect,
 }
 
 pixel_size :: proc() -> Vec2 {
     return 1.0 / _current_ctx.content_scale
 }
 
-pixel_snap :: proc(position: Vec2) -> Vec2 {
-    return vec2_snap(position, pixel_size())
+pixel_snapped :: proc{
+    vec2_pixel_snapped,
+    rect_pixel_snapped,
+}
+
+vec2_pixel_snapped :: proc(position: Vec2) -> Vec2 {
+    pixel := pixel_size()
+    return {
+        math.round(position.x / pixel.x) * pixel.x,
+        math.round(position.y / pixel.y) * pixel.y,
+    }
+}
+
+rect_pixel_snapped :: proc(rect: Rect) -> Rect {
+    return rects.snapped(rect, pixel_size())
 }
 
 draw_custom :: proc(custom: proc()) {
     _process_draw_command(Draw_Custom_Command{custom, offset(), clip_rect()})
 }
 
-draw_rect :: proc(position, size: Vec2, color: Color) {
-    if size.x <= 0 || size.y <= 0 do return
-    _process_draw_command(Draw_Rect_Command{offset() + position, size, color})
+draw_rect :: proc(rect: Rect, color: Color) {
+    if rect.size.x <= 0 || rect.size.y <= 0 do return
+    rect := rect
+    rect.position += offset()
+    _process_draw_command(Draw_Rect_Command{rect, color})
 }
 
 draw_text :: proc(text: string, position: Vec2, font: Font, color: Color) {
     _process_draw_command(Draw_Text_Command{text, offset() + position, font, color})
 }
 
-clip_drawing :: proc(position, size: Vec2) {
-    _process_draw_command(Clip_Drawing_Command{offset() + position, size})
+clip_drawing :: proc(rect: Rect) {
+    rect := rect
+    rect.position += offset()
+    _process_draw_command(Clip_Drawing_Command{rect})
 }
 
 

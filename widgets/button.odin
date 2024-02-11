@@ -4,8 +4,7 @@ import "../../gui"
 
 Button_Base :: struct {
     id: gui.Id,
-    position: Vec2,
-    size: Vec2,
+    using rect: Rect,
     is_down: bool,
     pressed: bool,
     released: bool,
@@ -21,7 +20,7 @@ button_base_update :: proc(button: ^Button_Base, press, release: bool) {
     button.released = false
     button.clicked = false
 
-    if gui.hit_test(button.position, button.size, gui.mouse_position()) {
+    if gui.hit_test(button, gui.mouse_position()) {
         gui.request_mouse_hover(button.id)
     }
 
@@ -63,10 +62,10 @@ button_update :: proc(button: ^Button) {
 }
 
 button_draw :: proc(button: ^Button) {
-    gui.draw_rect(button.position, button.size, button.color)
+    gui.draw_rect(button, button.color)
     if button.is_down {
-        gui.draw_rect(button.position, button.size, {0, 0, 0, 0.2})
+        gui.draw_rect(button, {0, 0, 0, 0.2})
     } else if gui.mouse_hover() == button.id {
-        gui.draw_rect(button.position, button.size, {1, 1, 1, 0.05})
+        gui.draw_rect(button, {1, 1, 1, 0.05})
     }
 }

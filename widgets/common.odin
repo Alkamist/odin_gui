@@ -2,8 +2,10 @@ package widgets
 
 import "core:math"
 import "../../gui"
+import "../rects"
 
 Vec2 :: gui.Vec2
+Rect :: gui.Rect
 Color :: gui.Color
 
 line_height :: proc(font: gui.Font) -> f32 {

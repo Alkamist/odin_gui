@@ -4,8 +4,7 @@ import "../../gui"
 
 Slider :: struct {
     id: gui.Id,
-    position: Vec2,
-    size: Vec2,
+    using rect: Rect,
     held: bool,
     value: f32,
     min_value: f32,
@@ -26,15 +25,17 @@ slider_init :: proc(slider: ^Slider) {
     slider.precision_key = .Left_Shift
 }
 
-handle_position :: proc(slider: ^Slider) -> Vec2 {
-    return slider.position + {
-        (slider.size.x - slider.handle_length) * (slider.value - slider.min_value) / (slider.max_value - slider.min_value),
-        0,
+handle_rect :: proc(slider: ^Slider) -> Rect {
+    return {
+        slider.position + {
+            (slider.size.x - slider.handle_length) * (slider.value - slider.min_value) / (slider.max_value - slider.min_value),
+            0,
+        },
+        {
+            slider.handle_length,
+            slider.size.y,
+        },
     }
-}
-
-handle_size :: proc(slider: ^Slider) -> Vec2 {
-    return {slider.handle_length, slider.size.y}
 }
 
 set_value :: proc(slider: ^Slider, value: f32) {
@@ -53,7 +54,7 @@ set_max_value :: proc(slider: ^Slider, max_value: f32) {
 }
 
 slider_update :: proc(slider: ^Slider) {
-    if gui.hit_test(slider.position, slider.size, gui.mouse_position()) {
+    if gui.hit_test(slider, gui.mouse_position()) {
         gui.request_mouse_hover(slider.id)
     }
 
@@ -86,15 +87,14 @@ slider_update :: proc(slider: ^Slider) {
 }
 
 slider_draw :: proc(slider: ^Slider) {
-    handle_position := handle_position(slider)
-    handle_size := handle_size(slider)
+    gui.draw_rect(slider, {0.05, 0.05, 0.05, 1})
 
-    gui.draw_rect(slider.position, slider.size, {0.05, 0.05, 0.05, 1})
-    gui.draw_rect(handle_position, handle_size, {0.4, 0.4, 0.4, 1})
+    handle_rect := handle_rect(slider)
+    gui.draw_rect(handle_rect, {0.4, 0.4, 0.4, 1})
     if slider.held {
-        gui.draw_rect(handle_position, handle_size, {0, 0, 0, 0.2})
+        gui.draw_rect(handle_rect, {0, 0, 0, 0.2})
     } else if gui.mouse_hover() == slider.id {
-        gui.draw_rect(handle_position, handle_size, {1, 1, 1, 0.05})
+        gui.draw_rect(handle_rect, {1, 1, 1, 0.05})
     }
 }
 

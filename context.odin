@@ -5,7 +5,7 @@ import "base:intrinsics"
 import "core:time"
 import "core:slice"
 import "core:strings"
-import "rect"
+import "rects"
 
 @(thread_local) _current_ctx: ^Context
 
@@ -21,8 +21,7 @@ Context :: struct {
 
     is_open: bool,
     tick: Tick,
-    position: Vec2,
-    size: Vec2,
+    using rect: Rect,
     content_scale: Vec2,
 
     client_area_hovered: bool,
@@ -97,15 +96,15 @@ update :: proc(ctx: ^Context) {
 
     begin_z_index(0, global = true)
     begin_offset({0, 0}, global = true)
-    begin_clip({0, 0}, ctx.size, global = true, intersect = false)
+    begin_clip({{0, 0}, ctx.size}, global = true, intersect = false)
 
     if ctx.update != nil {
         ctx->update()
     }
 
-    end_clip();    assert(len(ctx.clip_rect_stack) == 0)
-    end_offset();  assert(len(ctx.offset_stack) == 0)
-    end_z_index(); assert(len(ctx.layer_stack) == 0)
+    end_clip()
+    end_offset()
+    end_z_index()
 
     slice.reverse(ctx.layers[:])
     slice.stable_sort_by(ctx.layers[:], proc(i, j: Layer) -> bool {
@@ -120,7 +119,7 @@ update :: proc(ctx: ^Context) {
 
     begin_z_index(0, global = true)
     begin_offset({0, 0}, global = true)
-    begin_clip({0, 0}, ctx.size, global = true, intersect = false)
+    begin_clip({{0, 0}, ctx.size}, global = true, intersect = false)
 
     for layer in ctx.layers {
         for command in layer.draw_commands {
@@ -129,7 +128,7 @@ update :: proc(ctx: ^Context) {
                 c, is_custom := command.(Draw_Custom_Command)
                 if is_custom {
                     begin_offset(c.offset)
-                    begin_clip(c.clip_rect.position, c.clip_rect.size, global = true)
+                    begin_clip(c.clip_rect, global = true)
                 }
 
                 render(ctx, command)
@@ -144,9 +143,9 @@ update :: proc(ctx: ^Context) {
 
     ctx.is_in_render_phase = false
 
-    end_clip();    assert(len(ctx.clip_rect_stack) == 0)
-    end_offset();  assert(len(ctx.offset_stack) == 0)
-    end_z_index(); assert(len(ctx.layer_stack) == 0)
+    end_clip()
+    end_offset()
+    end_z_index()
 
     // Cleanup for next frame
 

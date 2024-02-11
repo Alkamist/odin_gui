@@ -5,7 +5,7 @@ import "core:unicode/utf8"
 import text_edit "core:text/edit"
 import "core:strings"
 import "../../gui"
-import "../rect"
+import "../rects"
 
 POSITIONAL_SELECTION_HORIZONTAL_BIAS :: 3 // Bias positional selection to the right a little for feel.
 CARET_WIDTH :: 2
@@ -16,8 +16,7 @@ Text_Edit_Command :: text_edit.Command
 
 Text_Line :: struct {
     id: gui.Id,
-    position: Vec2,
-    size: Vec2,
+    using rect: Rect,
     builder: strings.Builder,
     color: Color,
     font: gui.Font,
@@ -61,7 +60,7 @@ text_line_destroy :: proc(text: ^Text_Line) {
 text_line_update :: proc(text: ^Text_Line) {
     assert(text.font != nil, "text_line_update called with nil font.")
 
-    gui.scoped_clip(text.position, text.size)
+    gui.scoped_clip(text)
 
     if text.glyphs_need_remeasure {
         _remeasure(text)
@@ -81,10 +80,10 @@ text_line_update :: proc(text: ^Text_Line) {
 text_line_draw :: proc(text: ^Text_Line) {
     assert(text.font != nil, "text_line_draw called with nil font.")
 
-    gui.scoped_clip(text.position, text.size)
+    gui.scoped_clip(text)
 
     if selection, exists := selection_rect(text); exists {
-        gui.draw_rect(selection.position, selection.size, SELECTION_COLOR)
+        gui.draw_rect(selection, SELECTION_COLOR)
     }
 
     // This got kind of messy but it works.
@@ -93,7 +92,10 @@ text_line_draw :: proc(text: ^Text_Line) {
     position.x += x_compensation
     gui.draw_text(str, position, text.font, text.color)
 
-    gui.draw_rect(caret_position(text), {CARET_WIDTH, line_height(text.font)}, CARET_COLOR)
+    gui.draw_rect({
+        caret_position(text),
+        {CARET_WIDTH, line_height(text.font)},
+    }, CARET_COLOR)
 }
 
 to_string :: proc(text: ^Text_Line) -> string {
@@ -196,7 +198,7 @@ end_drag_selection :: proc(text: ^Text_Line) {
 }
 
 edit_with_mouse :: proc(text: ^Text_Line) {
-    if gui.hit_test(text.position, text.size, gui.mouse_position()) {
+    if gui.hit_test(text, gui.mouse_position()) {
         gui.request_mouse_hover(text.id)
     }
 
@@ -361,7 +363,7 @@ caret_position :: proc(text: ^Text_Line) -> (position: Vec2) {
     return
 }
 
-selection_rect :: proc(text: ^Text_Line) -> (rect: rect.Rect, exists: bool) {
+selection_rect :: proc(text: ^Text_Line) -> (rect: Rect, exists: bool) {
     glyph_count := len(text.glyphs)
 
     if glyph_count == 0 do return
@@ -433,8 +435,8 @@ visible_glyph_range :: proc(text: ^Text_Line) -> (left, right_exclusive: int) {
     left_set := false
 
     for glyph, i in text.glyphs {
-        glyph_rect := rect.Rect{position + {glyph.position, 0}, {glyph.width, height}}
-        glyph_visible := rect.intersects(clip_rect, glyph_rect, include_borders = false)
+        glyph_rect := Rect{position + {glyph.position, 0}, {glyph.width, height}}
+        glyph_visible := rects.intersects(clip_rect, glyph_rect, include_borders = false)
 
         // if glyph_visible {
         //     gui.draw_rect(glyph_rect.position, glyph_rect.size, {0, 0, 0.4, 1})

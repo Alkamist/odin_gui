@@ -155,6 +155,6 @@ update :: proc(ctx: ^gui.Context) {
     if !controlling_camera {
         widgets.update(&text)
     }
-    gui.draw_rect(text.position, text.size, {0.2, 0, 0, 1})
+    gui.draw_rect(text, {0.2, 0, 0, 1})
     widgets.draw(&text)
 }

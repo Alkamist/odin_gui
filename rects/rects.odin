@@ -1,9 +1,11 @@
-package rect
+package rects
+
+import "core:math"
 
 Vec2 :: [2]f32
 
 Rect :: struct {
-    position: Vec2,
+    using position: Vec2,
     size: Vec2,
 }
 
@@ -102,6 +104,23 @@ pad :: proc(rect: ^Rect, amount: Vec2) {
     rect^ = padded(rect^, amount)
 }
 
+snapped :: proc(rect: Rect, increment: Vec2) -> Rect {
+    return {
+        {
+            math.round(rect.position.x / increment.x) * increment.x,
+            math.round(rect.position.y / increment.y) * increment.y,
+        },
+        {
+            math.round(rect.size.x / increment.x) * increment.x,
+            math.round(rect.size.y / increment.y) * increment.y,
+        },
+    }
+}
+
+snap :: proc(rect: ^Rect, increment: Vec2) {
+    rect^ = snapped(rect^, increment)
+}
+
 intersection :: proc(a, b: Rect) -> Rect {
     assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
 
@@ -154,12 +173,12 @@ intersects :: proc(a, b: Rect, include_borders := false) -> bool {
     return true
 }
 
-contains :: proc{
-    contains_rect,
-    contains_vec2,
+encloses :: proc{
+    encloses_rect,
+    encloses_vec2,
 }
 
-contains_rect :: proc(a, b: Rect, include_borders := false) -> bool {
+encloses_rect :: proc(a, b: Rect, include_borders := false) -> bool {
     assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
     if include_borders {
         return b.position.x >= a.position.x &&
@@ -174,7 +193,7 @@ contains_rect :: proc(a, b: Rect, include_borders := false) -> bool {
     }
 }
 
-contains_vec2 :: proc(a: Rect, b: Vec2, include_borders := false) -> bool {
+encloses_vec2 :: proc(a: Rect, b: Vec2, include_borders := false) -> bool {
     assert(a.size.x >= 0 && a.size.y >= 0)
     if include_borders {
         return b.x >= a.position.x && b.x <= a.position.x + a.size.x &&
