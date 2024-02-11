@@ -3,8 +3,8 @@ package main
 import "base:runtime"
 import "core:fmt"
 import "core:mem"
-import "../../gui"
-import "../widgets"
+import "gui"
+import "gui/widgets"
 
 // import backend "backend_pugl_nanovg"
 // import nvg "vendor:nanovg"

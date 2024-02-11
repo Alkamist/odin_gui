@@ -6,8 +6,8 @@ import "core:runtime"
 import gl "vendor:OpenGL"
 import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
-import wnd "../../window"
-import "../../../gui"
+import wnd "../window"
+import "../gui"
 
 open_gl_is_loaded: bool
 

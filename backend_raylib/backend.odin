@@ -1,13 +1,11 @@
 package backend_raylib
 
 import "base:runtime"
-import "core:fmt"
 import "core:math"
 import "core:time"
 import "core:strings"
-import "core:unicode/utf8"
 import rl "vendor:raylib"
-import "../../../gui"
+import "../gui"
 
 @(thread_local) _ctx: ^Context
 
