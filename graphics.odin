@@ -93,6 +93,7 @@ clip_drawing :: proc(rect: Rect) {
 
 
 _process_draw_command :: proc(command: Draw_Command) {
+    if !_current_ctx.is_visible do return
     if _current_ctx.is_in_render_phase {
         if _current_ctx.render_draw_command != nil {
             _current_ctx->render_draw_command(command)

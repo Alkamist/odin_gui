@@ -20,11 +20,12 @@ Context :: struct {
     render_draw_command: proc(ctx: ^Context, command: Draw_Command),
 
     is_open: bool,
+    is_visible: bool,
     tick: Tick,
     using rect: Rect,
     content_scale: Vec2,
 
-    client_area_hovered: bool,
+    mouse_is_hovering: bool,
     global_mouse_position: Vec2,
     mouse_down: [Mouse_Button]bool,
     mouse_presses: [dynamic]Mouse_Button,
@@ -56,6 +57,7 @@ Context :: struct {
     is_in_render_phase: bool,
 
     was_open: bool,
+    was_visible: bool,
     previous_tick: Tick,
     previous_global_mouse_position: Vec2,
 
@@ -85,7 +87,6 @@ destroy :: proc(ctx: ^Context) {
 
 update :: proc(ctx: ^Context) {
     // Update phase
-
     _current_ctx = ctx
     ctx.tick, _ = _tick_now(ctx)
 
@@ -151,6 +152,7 @@ update :: proc(ctx: ^Context) {
 
     ctx.mouse_wheel = {0, 0}
     ctx.was_open = ctx.is_open
+    ctx.was_visible = ctx.is_visible
     ctx.previous_tick = ctx.tick
     ctx.previous_global_mouse_position = ctx.global_mouse_position
 

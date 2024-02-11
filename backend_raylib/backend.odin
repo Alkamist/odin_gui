@@ -34,7 +34,7 @@ font_destroy :: proc(font: ^Font) {
 }
 
 Context :: struct {
-    using ctx: gui.Context,
+    using gui_ctx: gui.Context,
     background_color: gui.Color,
 }
 
@@ -91,7 +91,7 @@ init :: proc(
     position: gui.Vec2,
     size: gui.Vec2,
     temp_allocator := context.temp_allocator,
-) -> runtime.Allocator_Error{
+) -> runtime.Allocator_Error {
     if _ctx != nil do return nil
     gui.init(ctx, position, size, temp_allocator) or_return
     _ctx = ctx
@@ -126,11 +126,6 @@ close :: proc(ctx: ^Context) {
     gui.input_mouse_exit(ctx)
     gui.input_close(ctx)
     rl.CloseWindow()
-}
-
-is_open :: proc(ctx: ^Context) -> bool {
-    if ctx != _ctx do return false
-    return ctx.is_open
 }
 
 

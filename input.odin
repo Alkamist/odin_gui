@@ -50,14 +50,6 @@ Keyboard_Key :: enum {
 //==============================================================
 //==============================================================
 
-input_open :: proc(ctx: ^Context) {
-    ctx.is_open = true
-}
-
-input_close :: proc(ctx: ^Context) {
-    ctx.is_open = false
-}
-
 input_move :: proc(ctx: ^Context, position: Vec2) {
     ctx.position = position
 }
@@ -67,11 +59,11 @@ input_resize :: proc(ctx: ^Context, size: Vec2) {
 }
 
 input_mouse_enter :: proc(ctx: ^Context) {
-    ctx.client_area_hovered = true
+    ctx.mouse_is_hovering = true
 }
 
 input_mouse_exit :: proc(ctx: ^Context) {
-    ctx.client_area_hovered = false
+    ctx.mouse_is_hovering = false
 }
 
 input_mouse_move :: proc(ctx: ^Context, position: Vec2) {
@@ -152,6 +144,14 @@ opened :: proc() -> bool {
 
 closed :: proc() -> bool {
     return _current_ctx.was_open && !_current_ctx.is_open
+}
+
+shown :: proc() -> bool {
+    return _current_ctx.is_visible && !_current_ctx.was_visible
+}
+
+hidden :: proc() -> bool {
+    return _current_ctx.was_visible && !_current_ctx.is_visible
 }
 
 tick :: proc() -> time.Tick {
