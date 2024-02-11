@@ -54,7 +54,7 @@ set_max_value :: proc(slider: ^Slider, max_value: f32) {
 }
 
 slider_update :: proc(slider: ^Slider) {
-    if gui.hit_test(slider, gui.mouse_position()) {
+    if gui.mouse_hit_test(slider) {
         gui.request_mouse_hover(slider.id)
     }
 

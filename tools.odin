@@ -78,6 +78,10 @@ release_mouse_hover :: proc() {
     _current_ctx.mouse_hover_capture = 0
 }
 
+keyboard_focus :: proc() -> Id {
+    return _current_ctx.keyboard_focus
+}
+
 set_keyboard_focus :: proc(id: Id) {
     _current_ctx.keyboard_focus = id
 }
@@ -159,6 +163,11 @@ hit_test :: proc(rect: Rect, target: Vec2) -> bool {
     return rects.encloses(rect, target, include_borders = false) &&
            rects.encloses(clip_rect(), target, include_borders = false)
 }
+
+mouse_hit_test :: proc(rect: Rect) -> bool {
+    return hit_test(rect, mouse_position())
+}
+
 
 
 

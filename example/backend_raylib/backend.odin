@@ -56,7 +56,7 @@ update :: proc() {
 
     for button in gui.Mouse_Button {
         rl_button := _to_rl_mouse_button(button)
-        if rl.IsMouseButtonDown(rl_button) {
+        if rl.IsMouseButtonPressed(rl_button) {
             gui.input_mouse_press(_ctx, button)
         } else if rl.IsMouseButtonReleased(rl_button) {
             gui.input_mouse_release(_ctx, button)

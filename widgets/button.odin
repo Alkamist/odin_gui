@@ -20,7 +20,7 @@ button_base_update :: proc(button: ^Button_Base, press, release: bool) {
     button.released = false
     button.clicked = false
 
-    if gui.hit_test(button, gui.mouse_position()) {
+    if gui.mouse_hit_test(button) {
         gui.request_mouse_hover(button.id)
     }
 

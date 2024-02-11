@@ -18,7 +18,7 @@ ctx: backend.Context
 
 button: widgets.Button
 slider: widgets.Slider
-text: widgets.Text_Line
+text: widgets.Editable_Text_Line
 
 controlling_camera: bool
 camera_button: widgets.Button
@@ -81,8 +81,6 @@ main :: proc() {
 
     widgets.init(&text)
     defer widgets.destroy(&text)
-    text.position = {0, camera_button.position.y + camera_button.size.y + 10}
-    text.size = {VIEW_WIDTH, 96}
     text.font = &consola_13
     widgets.input_string(&text, "Hello world. Type here: ")
 
@@ -150,11 +148,19 @@ update :: proc(ctx: ^gui.Context) {
         )
     })
 
-    text.alignment = slider.value
+    {
+        text_box := gui.Rect{
+            {0, camera_button.y + camera_button.size.y + 10},
+            {VIEW_WIDTH, 100},
+        }
 
-    if !controlling_camera {
+        gui.scoped_clip(text_box)
+        gui.draw_rect(text_box, {0.2, 0, 0, 1})
+
+        alignment := gui.Vec2{slider.value, slider.value}
+        text.position = text_box.position + (text_box.size - text.size - {widgets.CARET_WIDTH, 0}) * alignment
+
         widgets.update(&text)
+        widgets.draw(&text)
     }
-    gui.draw_rect(text, {0.2, 0, 0, 1})
-    widgets.draw(&text)
 }
