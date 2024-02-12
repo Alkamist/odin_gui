@@ -26,20 +26,13 @@ update :: proc() {
     }
 
     if gui.window_update(&window1) {
-        nvg_ctx := window1.nvg_ctx
-        nvg.BeginPath(nvg_ctx)
-        nvg.Rect(nvg_ctx, position.x, position.y, 100, 100)
-        nvg.FillColor(nvg_ctx, {0, 1, 0, 1})
-        nvg.Fill(nvg_ctx)
+        gui.draw_rect({{0, 0}, {100, 100}}, {0, 1, 0, 1})
+        gui.draw_rect({gui.mouse_position(), {100, 100}}, {0, 1, 0, 1})
     }
 
     if gui.window_update(&window2) {
-        nvg_ctx := window2.nvg_ctx
-        nvg.BeginPath(nvg_ctx)
-        nvg.Rect(nvg_ctx, position.x, position.y, 100, 100)
-        nvg.FillColor(nvg_ctx, {1, 0, 0, 1})
-        nvg.Fill(nvg_ctx)
-
+        gui.draw_rect({{0, 0}, {100, 100}}, {1, 0, 0, 1})
+        gui.draw_rect({gui.mouse_position(), {100, 100}}, {1, 0, 0, 1})
         if gui.mouse_released(.Right) {
             window1.is_open = true
         }

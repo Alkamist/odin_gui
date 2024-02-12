@@ -33,6 +33,7 @@ z_index :: proc() -> int {
 }
 
 offset :: proc() -> Vec2 {
+    if len(ctx.offset_stack) <= 0 do return {0, 0}
     return ctx.offset_stack[len(ctx.offset_stack) - 1]
 }
 

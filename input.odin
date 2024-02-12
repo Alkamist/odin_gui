@@ -130,8 +130,20 @@ delta_time :: proc() -> f32 {
     return f32(time.duration_seconds(time.tick_diff(ctx.previous_tick, ctx.tick)))
 }
 
-mouse_position :: proc() -> Vec2 {
-    return ctx.global_mouse_position - offset()
+mouse_position :: proc() -> (res: Vec2) {
+    res = ctx.global_mouse_position - offset()
+    if window := current_window(); window != nil {
+        res -= window.position
+    }
+    return
+}
+
+window_mouse_position :: proc() -> (res: Vec2) {
+    res = ctx.global_mouse_position
+    if window := current_window(); window != nil {
+        res -= window.position
+    }
+    return
 }
 
 global_mouse_position :: proc() -> Vec2 {

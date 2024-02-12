@@ -58,7 +58,10 @@ window_begin_update :: proc(window: ^Window) -> bool {
     window.previous_rect = window.rect
 
     if window.is_open {
+        append(&ctx.window_stack, window)
         ctx.window_vtable.begin_frame(window)
+        // begin_offset(window.position, global = true)
+        // begin_clip(window.rect, global = true, intersect = false)
         return true
     } else {
         return false
@@ -67,7 +70,10 @@ window_begin_update :: proc(window: ^Window) -> bool {
 
 window_end_update :: proc(window: ^Window) {
     if window.is_open {
+        // end_clip()
+        // end_offset()
         ctx.window_vtable.end_frame(window)
+        pop(&ctx.window_stack)
     }
 }
 

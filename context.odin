@@ -57,7 +57,7 @@ Context :: struct {
     layer_stack: [dynamic]Layer,
     layers: [dynamic]Layer,
 
-    is_in_render_phase: bool,
+    // is_in_render_phase: bool,
     is_first_frame: bool,
 
     previous_tick: Tick,
@@ -97,6 +97,7 @@ context_update :: proc() {
         ctx.previous_global_mouse_position = ctx.global_mouse_position
     }
 
+    ctx.window_stack = make([dynamic]^Window, ctx.temp_allocator)
     ctx.offset_stack = make([dynamic]Vec2, ctx.temp_allocator)
     ctx.clip_rect_stack = make([dynamic]Rect, ctx.temp_allocator)
     ctx.layer_stack = make([dynamic]Layer, ctx.temp_allocator)
@@ -112,42 +113,42 @@ context_update :: proc() {
     // end_offset()
     // end_z_index()
 
-    slice.reverse(ctx.layers[:])
-    slice.stable_sort_by(ctx.layers[:], proc(i, j: Layer) -> bool {
-        return i.z_index < j.z_index
-    })
+    // slice.reverse(ctx.layers[:])
+    // slice.stable_sort_by(ctx.layers[:], proc(i, j: Layer) -> bool {
+    //     return i.z_index < j.z_index
+    // })
 
     _update_hover()
 
     // Render phase
 
-    ctx.is_in_render_phase = true
+    // ctx.is_in_render_phase = true
 
     // begin_z_index(0, global = true)
     // begin_offset({0, 0}, global = true)
     // begin_clip({{0, 0}, _current_window().size}, global = true, intersect = false)
 
-    for layer in ctx.layers {
-        for command in layer.draw_commands {
-            render := ctx.backend_vtable.render_draw_command
-            if render != nil {
-                c, is_custom := command.(Draw_Custom_Command)
-                if is_custom {
-                    begin_offset(c.offset)
-                    begin_clip(c.clip_rect, global = true)
-                }
+    // for layer in ctx.layers {
+    //     for command in layer.draw_commands {
+    //         render := ctx.backend_vtable.render_draw_command
+    //         if render != nil {
+    //             c, is_custom := command.(Draw_Custom_Command)
+    //             if is_custom {
+    //                 begin_offset(c.offset)
+    //                 begin_clip(c.clip_rect, global = true)
+    //             }
 
-                render(command)
+    //             render(command)
 
-                if is_custom {
-                    end_clip()
-                    end_offset()
-                }
-            }
-        }
-    }
+    //             if is_custom {
+    //                 end_clip()
+    //                 end_offset()
+    //             }
+    //         }
+    //     }
+    // }
 
-    ctx.is_in_render_phase = false
+    // ctx.is_in_render_phase = false
 
     // end_clip()
     // end_offset()
