@@ -4,77 +4,45 @@ import "base:runtime"
 import "core:fmt"
 import "core:mem"
 import "../../gui"
-import "../../gui/widgets"
 import backend "../../gui/backend_pugl_nanovg"
 
-consola_13: backend.Font
+import nvg "vendor:nanovg"
 
-ctx1: Context
-ctx2: Context
+window1: backend.Window
+window2: backend.Window
 
-Context :: struct {
-    using backend_ctx: backend.Context,
-    button: widgets.Button,
-    slider: widgets.Slider,
-    text: widgets.Editable_Text_Line,
-}
+starting_velocity := gui.Vec2{1000, 0}
+velocity := starting_velocity
 
-init :: proc(
-    ctx: ^Context,
-    position: gui.Vec2,
-    size: gui.Vec2,
-    temp_allocator := context.temp_allocator,
-) -> runtime.Allocator_Error {
-    backend.init(ctx, position, size, temp_allocator) or_return
-    ctx.update = update
+position: gui.Vec2
 
-    widgets.init(&ctx.button)
-    ctx.button.position = {20, 20}
-
-    widgets.init(&ctx.slider)
-    ctx.slider.position = {0, ctx.button.size.y + 10}
-    ctx.slider.value = 0.5
-
-    widgets.init(&ctx.text)
-    ctx.text.position = {100, 100}
-    ctx.text.font = &consola_13
-    widgets.input_string(&ctx.text, "Hello world. Type here: ")
-
-    return nil
-}
-
-destroy :: proc(ctx: ^Context) {
-    widgets.destroy(&ctx.text)
-    backend.destroy(ctx)
-}
-
-update :: proc(ctx: ^gui.Context) {
-    ctx := cast(^Context)ctx
-
-    if gui.opened() {
-        backend.load_font_from_data(&consola_13, #load("consola.ttf"), 13)
+update :: proc() {
+    position.x += velocity.x * gui.delta_time()
+    if position.x > 200 {
+        velocity.x = -starting_velocity.x
+    }
+    if position.x < 0 {
+        velocity.x = starting_velocity.x
     }
 
-    if gui.key_pressed(.Pad_7) {
-        ctx.is_open = false
+    if gui.window_update(&window1) {
+        nvg_ctx := window1.nvg_ctx
+        nvg.BeginPath(nvg_ctx)
+        nvg.Rect(nvg_ctx, position.x, position.y, 100, 100)
+        nvg.FillColor(nvg_ctx, {0, 1, 0, 1})
+        nvg.Fill(nvg_ctx)
     }
 
-    if ctx.button.is_down && gui.mouse_moved() {
-        ctx.button.position += gui.mouse_delta()
-    }
-    widgets.update(&ctx.button)
-    widgets.draw(&ctx.button)
+    if gui.window_update(&window2) {
+        nvg_ctx := window2.nvg_ctx
+        nvg.BeginPath(nvg_ctx)
+        nvg.Rect(nvg_ctx, position.x, position.y, 100, 100)
+        nvg.FillColor(nvg_ctx, {1, 0, 0, 1})
+        nvg.Fill(nvg_ctx)
 
-    gui.scoped_offset(ctx.button.position)
-
-    widgets.update(&ctx.slider)
-    widgets.draw(&ctx.slider)
-
-    {
-        gui.scoped_clip({ctx.text.position, {200, 200}})
-        gui.draw_rect({ctx.text.position, {200, 200}}, {0.4, 0, 0, 1})
-        widgets.update(&ctx.text)
-        widgets.draw(&ctx.text)
+        if gui.mouse_released(.Right) {
+            window1.is_open = true
+        }
     }
 }
 
@@ -103,19 +71,22 @@ main :: proc() {
         }
     }
 
-    init(&ctx1, {200, 100}, {400, 300})
-    defer destroy(&ctx1)
-    ctx1.background_color = {0.2, 0, 0, 1}
+    gui.init(update)
+    defer gui.shutdown()
 
-    init(&ctx2, {700, 100}, {400, 300})
-    defer destroy(&ctx2)
-    ctx2.background_color = {0, 0.2, 0, 1}
+    backend.init()
+    defer backend.shutdown()
 
-    backend.open(&ctx1)
-    backend.open(&ctx2)
+    gui.window_init(&window1, {{50, 50}, {400, 300}})
+    gui.window_init(&window2, {{500, 50}, {400, 300}})
 
-    for ctx1.is_open || ctx2.is_open {
-        backend.update()
+    window1.is_open = false
+
+    window1.background_color = {0.2, 0, 0, 1}
+    window2.background_color = {0, 0.2, 0, 1}
+
+    for window1.is_open || window2.is_open {
+        gui.update()
     }
 }
 

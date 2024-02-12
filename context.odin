@@ -7,25 +7,27 @@ import "core:slice"
 import "core:strings"
 import "rects"
 
-@(thread_local) _current_ctx: ^Context
+@(thread_local) ctx: Context
+
+Backend_VTable :: struct {
+    update: proc(),
+    tick_now: proc() -> (tick: Tick, ok: bool),
+    set_mouse_cursor_style: proc(style: Mouse_Cursor_Style) -> (ok: bool),
+    get_clipboard: proc() -> (data: string, ok: bool),
+    set_clipboard: proc(data: string) -> (ok: bool),
+    measure_text: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int) -> (ok: bool),
+    font_metrics: proc(font: Font) -> (metrics: Font_Metrics, ok: bool),
+    render_draw_command: proc(command: Draw_Command),
+}
 
 Context :: struct {
-    update: proc(ctx: ^Context),
-    tick_now: proc(ctx: ^Context) -> (tick: Tick, ok: bool),
-    set_mouse_cursor_style: proc(ctx: ^Context, style: Mouse_Cursor_Style) -> (ok: bool),
-    get_clipboard: proc(ctx: ^Context) -> (data: string, ok: bool),
-    set_clipboard: proc(ctx: ^Context, data: string) -> (ok: bool),
-    measure_text: proc(ctx: ^Context, text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int) -> (ok: bool),
-    font_metrics: proc(ctx: ^Context, font: Font) -> (metrics: Font_Metrics, ok: bool),
-    render_draw_command: proc(ctx: ^Context, command: Draw_Command),
+    update: proc(),
 
-    is_open: bool,
-    is_visible: bool,
+    backend_vtable: Backend_VTable,
+    window_vtable: Window_VTable,
+
     tick: Tick,
-    using rect: Rect,
-    content_scale: Vec2,
 
-    mouse_is_hovering: bool,
     global_mouse_position: Vec2,
     mouse_down: [Mouse_Button]bool,
     mouse_presses: [dynamic]Mouse_Button,
@@ -49,82 +51,85 @@ Context :: struct {
     previous_mouse_hover: Id,
     mouse_hover_capture: Id,
 
-    offset_stack: [dynamic]Vec2, // Stored in global coordinates
-    clip_rect_stack: [dynamic]Rect, // Stored in global coordinates
+    window_stack: [dynamic]^Window,
+    offset_stack: [dynamic]Vec2,
+    clip_rect_stack: [dynamic]Rect,
     layer_stack: [dynamic]Layer,
     layers: [dynamic]Layer,
 
     is_in_render_phase: bool,
+    is_first_frame: bool,
 
-    was_open: bool,
-    was_visible: bool,
     previous_tick: Tick,
     previous_global_mouse_position: Vec2,
 
+    odin_context: runtime.Context,
     temp_allocator: runtime.Allocator,
 }
 
-init :: proc(
-    ctx: ^Context,
-    position: Vec2,
-    size: Vec2,
-    temp_allocator := context.temp_allocator,
-) -> runtime.Allocator_Error {
-    _current_ctx = ctx
+init :: proc(update_proc: proc(), temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
+    ctx.update = update_proc
+    ctx.odin_context = context
     ctx.temp_allocator = temp_allocator
-    _remake_input_buffers(ctx) or_return
-    ctx.position = position
-    ctx.size = size
+    _remake_input_buffers() or_return
+    ctx = ctx
     ctx.mouse_repeat_duration = 300 * time.Millisecond
     ctx.mouse_repeat_movement_tolerance = 3
-    ctx.content_scale = Vec2{1, 1}
+    ctx.is_first_frame = true
     return nil
 }
 
-destroy :: proc(ctx: ^Context) {
+shutdown :: proc() {
     free_all(ctx.temp_allocator)
 }
 
-update :: proc(ctx: ^Context) {
+update :: proc() {
+    ctx.backend_vtable.update()
+    context_update()
+}
+
+context_update :: proc() {
     // Update phase
-    _current_ctx = ctx
-    ctx.tick, _ = _tick_now(ctx)
+    ctx.tick, _ = tick_now()
+
+    if ctx.is_first_frame {
+        ctx.previous_tick = ctx.tick
+        ctx.previous_global_mouse_position = ctx.global_mouse_position
+    }
 
     ctx.offset_stack = make([dynamic]Vec2, ctx.temp_allocator)
     ctx.clip_rect_stack = make([dynamic]Rect, ctx.temp_allocator)
     ctx.layer_stack = make([dynamic]Layer, ctx.temp_allocator)
     ctx.layers = make([dynamic]Layer, ctx.temp_allocator)
 
-    begin_z_index(0, global = true)
-    begin_offset({0, 0}, global = true)
-    begin_clip({{0, 0}, ctx.size}, global = true, intersect = false)
+    // begin_z_index(0, global = true)
+    // begin_offset({0, 0}, global = true)
+    // begin_clip({{0, 0}, _current_window().size}, global = true, intersect = false)
 
-    if ctx.update != nil {
-        ctx->update()
-    }
+    ctx.update()
 
-    end_clip()
-    end_offset()
-    end_z_index()
+    // end_clip()
+    // end_offset()
+    // end_z_index()
 
     slice.reverse(ctx.layers[:])
     slice.stable_sort_by(ctx.layers[:], proc(i, j: Layer) -> bool {
         return i.z_index < j.z_index
     })
 
-    _update_hover(ctx)
+    _update_hover()
 
     // Render phase
 
     ctx.is_in_render_phase = true
 
-    begin_z_index(0, global = true)
-    begin_offset({0, 0}, global = true)
-    begin_clip({{0, 0}, ctx.size}, global = true, intersect = false)
+    // begin_z_index(0, global = true)
+    // begin_offset({0, 0}, global = true)
+    // begin_clip({{0, 0}, _current_window().size}, global = true, intersect = false)
 
     for layer in ctx.layers {
         for command in layer.draw_commands {
-            render := ctx.render_draw_command
+            render := ctx.backend_vtable.render_draw_command
             if render != nil {
                 c, is_custom := command.(Draw_Custom_Command)
                 if is_custom {
@@ -132,7 +137,7 @@ update :: proc(ctx: ^Context) {
                     begin_clip(c.clip_rect, global = true)
                 }
 
-                render(ctx, command)
+                render(command)
 
                 if is_custom {
                     end_clip()
@@ -144,59 +149,59 @@ update :: proc(ctx: ^Context) {
 
     ctx.is_in_render_phase = false
 
-    end_clip()
-    end_offset()
-    end_z_index()
+    // end_clip()
+    // end_offset()
+    // end_z_index()
 
     // Cleanup for next frame
 
     ctx.mouse_wheel = {0, 0}
-    ctx.was_open = ctx.is_open
-    ctx.was_visible = ctx.is_visible
     ctx.previous_tick = ctx.tick
     ctx.previous_global_mouse_position = ctx.global_mouse_position
 
+    ctx.is_first_frame = false
+
     free_all(ctx.temp_allocator)
-    _remake_input_buffers(ctx)
+    _remake_input_buffers()
 }
 
-current_context :: proc($T: typeid) -> ^T {
-    return cast(^T)_current_ctx
+odin_context :: proc() -> runtime.Context {
+    return ctx.odin_context
+}
+
+tick_now :: proc() -> (tick: Tick, ok: bool) {
+    if ctx.backend_vtable.tick_now == nil do return {}, false
+    return ctx.backend_vtable.tick_now()
 }
 
 set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) -> (ok: bool) {
-    if _current_ctx.set_mouse_cursor_style == nil do return false
-    return _current_ctx->set_mouse_cursor_style(style)
+    if ctx.backend_vtable.set_mouse_cursor_style == nil do return false
+    return ctx.backend_vtable.set_mouse_cursor_style(style)
 }
 
 get_clipboard :: proc() -> (data: string, ok: bool) {
-    if _current_ctx.get_clipboard == nil do return "", false
-    return _current_ctx->get_clipboard()
+    if ctx.backend_vtable.get_clipboard == nil do return "", false
+    return ctx.backend_vtable.get_clipboard()
 }
 
 set_clipboard :: proc(data: string) -> (ok: bool) {
-    if _current_ctx.set_clipboard == nil do return false
-    return _current_ctx->set_clipboard(data)
+    if ctx.backend_vtable.set_clipboard == nil do return false
+    return ctx.backend_vtable.set_clipboard(data)
 }
 
 measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) -> (ok: bool) {
-    if _current_ctx.measure_text == nil do return false
-    return _current_ctx->measure_text(text, font, glyphs, byte_index_to_rune_index)
+    if ctx.backend_vtable.measure_text == nil do return false
+    return ctx.backend_vtable.measure_text(text, font, glyphs, byte_index_to_rune_index)
 }
 
 font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {
-    if _current_ctx.font_metrics == nil do return {}, false
-    return _current_ctx->font_metrics(font)
+    if ctx.backend_vtable.font_metrics == nil do return {}, false
+    return ctx.backend_vtable.font_metrics(font)
 }
 
 
 
-_tick_now :: proc(ctx: ^Context) -> (tick: Tick, ok: bool) {
-    if ctx.tick_now == nil do return {}, false
-    return ctx->tick_now()
-}
-
-_remake_input_buffers :: proc(ctx: ^Context) -> runtime.Allocator_Error {
+_remake_input_buffers :: proc() -> runtime.Allocator_Error {
     ctx.mouse_presses = make([dynamic]Mouse_Button, ctx.temp_allocator) or_return
     ctx.mouse_releases = make([dynamic]Mouse_Button, ctx.temp_allocator) or_return
     ctx.key_presses = make([dynamic]Keyboard_Key, ctx.temp_allocator) or_return
@@ -206,7 +211,7 @@ _remake_input_buffers :: proc(ctx: ^Context) -> runtime.Allocator_Error {
     return nil
 }
 
-_update_hover :: proc(ctx: ^Context) {
+_update_hover :: proc() {
     ctx.previous_mouse_hover = ctx.mouse_hover
     ctx.mouse_hover = 0
     ctx.mouse_hit = 0

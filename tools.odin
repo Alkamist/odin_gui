@@ -25,7 +25,7 @@ get_id :: proc "contextless" () -> u64 {
 }
 
 temp_allocator :: proc() -> runtime.Allocator {
-    return _current_ctx.temp_allocator
+    return ctx.temp_allocator
 }
 
 z_index :: proc() -> int {
@@ -33,37 +33,37 @@ z_index :: proc() -> int {
 }
 
 offset :: proc() -> Vec2 {
-    return _current_ctx.offset_stack[len(_current_ctx.offset_stack) - 1]
+    return ctx.offset_stack[len(ctx.offset_stack) - 1]
 }
 
 clip_rect :: proc() -> Rect {
-    clip := _current_ctx.clip_rect_stack[len(_current_ctx.clip_rect_stack) - 1]
+    clip := ctx.clip_rect_stack[len(ctx.clip_rect_stack) - 1]
     clip.position -= offset()
     return clip
 }
 
 mouse_hover :: proc() -> Id {
-    return _current_ctx.mouse_hover
+    return ctx.mouse_hover
 }
 
 mouse_hover_entered :: proc() -> Id {
-    if _current_ctx.mouse_hover != _current_ctx.previous_mouse_hover {
-        return _current_ctx.mouse_hover
+    if ctx.mouse_hover != ctx.previous_mouse_hover {
+        return ctx.mouse_hover
     } else {
         return 0
     }
 }
 
 mouse_hover_exited :: proc() -> Id {
-    if _current_ctx.mouse_hover != _current_ctx.previous_mouse_hover {
-        return _current_ctx.previous_mouse_hover
+    if ctx.mouse_hover != ctx.previous_mouse_hover {
+        return ctx.previous_mouse_hover
     } else {
         return 0
     }
 }
 
 mouse_hit :: proc() -> Id {
-    return _current_ctx.mouse_hit
+    return ctx.mouse_hit
 }
 
 request_mouse_hover :: proc(id: Id) {
@@ -71,36 +71,36 @@ request_mouse_hover :: proc(id: Id) {
 }
 
 capture_mouse_hover :: proc() {
-    _current_ctx.mouse_hover_capture = _current_layer().final_mouse_hover_request
+    ctx.mouse_hover_capture = _current_layer().final_mouse_hover_request
 }
 
 release_mouse_hover :: proc() {
-    _current_ctx.mouse_hover_capture = 0
+    ctx.mouse_hover_capture = 0
 }
 
 keyboard_focus :: proc() -> Id {
-    return _current_ctx.keyboard_focus
+    return ctx.keyboard_focus
 }
 
 set_keyboard_focus :: proc(id: Id) {
-    _current_ctx.keyboard_focus = id
+    ctx.keyboard_focus = id
 }
 
 release_keyboard_focus :: proc() {
-    _current_ctx.keyboard_focus = 0
+    ctx.keyboard_focus = 0
 }
 
 begin_offset :: proc(offset: Vec2, global := false) {
     if global {
-        append(&_current_ctx.offset_stack, offset)
+        append(&ctx.offset_stack, offset)
     } else {
-        append(&_current_ctx.offset_stack, _offset() + offset)
+        append(&ctx.offset_stack, _offset() + offset)
     }
 }
 
 end_offset :: proc() {
-    if len(_current_ctx.offset_stack) <= 0 do return
-    pop(&_current_ctx.offset_stack)
+    if len(ctx.offset_stack) <= 0 do return
+    pop(&ctx.offset_stack)
 }
 
 @(deferred_none=end_offset)
@@ -116,22 +116,22 @@ begin_clip :: proc(rect: Rect, global := false, intersect := true) {
     }
 
     if intersect {
-        rect = rects.intersection(rect, _current_ctx.clip_rect_stack[len(_current_ctx.clip_rect_stack) - 1])
+        rect = rects.intersection(rect, ctx.clip_rect_stack[len(ctx.clip_rect_stack) - 1])
     }
 
-    append(&_current_ctx.clip_rect_stack, rect)
+    append(&ctx.clip_rect_stack, rect)
     append(&_current_layer().draw_commands, Clip_Drawing_Command{rect})
 }
 
 end_clip :: proc() {
-    if len(_current_ctx.clip_rect_stack) <= 0 do return
-    pop(&_current_ctx.clip_rect_stack)
+    if len(ctx.clip_rect_stack) <= 0 do return
+    pop(&ctx.clip_rect_stack)
 
-    if len(_current_ctx.clip_rect_stack) == 0 {
+    if len(ctx.clip_rect_stack) == 0 {
         return
     }
 
-    clip_rect := _current_ctx.clip_rect_stack[len(_current_ctx.clip_rect_stack) - 1]
+    clip_rect := ctx.clip_rect_stack[len(ctx.clip_rect_stack) - 1]
     append(&_current_layer().draw_commands, Clip_Drawing_Command{clip_rect})
 }
 
@@ -142,16 +142,16 @@ scoped_clip :: proc(rect: Rect, global := false, intersect := true) {
 
 begin_z_index :: proc(z_index: int, global := false) {
     layer: Layer
-    layer.draw_commands = make([dynamic]Draw_Command, _current_ctx.temp_allocator)
+    layer.draw_commands = make([dynamic]Draw_Command, ctx.temp_allocator)
     if global do layer.z_index = z_index
     else do layer.z_index = _z_index() + z_index
-    append(&_current_ctx.layer_stack, layer)
+    append(&ctx.layer_stack, layer)
 }
 
 end_z_index :: proc() {
-    if len(_current_ctx.layer_stack) <= 0 do return
-    layer := pop(&_current_ctx.layer_stack)
-    append(&_current_ctx.layers, layer)
+    if len(ctx.layer_stack) <= 0 do return
+    layer := pop(&ctx.layer_stack)
+    append(&ctx.layers, layer)
 }
 
 @(deferred_none=end_z_index)
@@ -175,5 +175,5 @@ _z_index :: z_index
 _offset :: offset
 
 _current_layer :: proc() -> ^Layer {
-    return &_current_ctx.layer_stack[len(_current_ctx.layer_stack) - 1]
+    return &ctx.layer_stack[len(ctx.layer_stack) - 1]
 }

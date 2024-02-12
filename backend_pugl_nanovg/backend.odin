@@ -17,27 +17,25 @@ OPENGL_VERSION_MAJOR :: 3
 OPENGL_VERSION_MINOR :: 3
 
 @(thread_local) _open_gl_is_loaded: bool
-@(thread_local) _odin_context: runtime.Context
 @(thread_local) _world: ^pugl.World
-@(thread_local) _window_count: int
 
-Font :: struct {
-    name: string,
-    size: int,
-}
+// Font :: struct {
+//     name: string,
+//     size: int,
+// }
 
-load_font_from_data :: proc(font: ^Font, data: []byte, font_size: int) -> (ok: bool) {
-    if len(data) <= 0 do return false
-    ctx := gui.current_context(Context)
-    if nvg.CreateFontMem(ctx.nvg_ctx, font.name, data, false) == -1 {
-        fmt.eprintf("Failed to load font: %v\n", font.name)
-        return false
-    }
-    font.size = font_size
-    return true
-}
+// load_font_from_data :: proc(font: ^Font, data: []byte, font_size: int) -> (ok: bool) {
+//     if len(data) <= 0 do return false
+//     ctx := gui.current_window(Window)
+//     if nvg.CreateFontMem(ctx.nvg_ctx, font.name, data, false) == -1 {
+//         fmt.eprintf("Failed to load font: %v\n", font.name)
+//         return false
+//     }
+//     font.size = font_size
+//     return true
+// }
 
-font_destroy :: proc(font: ^Font) {}
+// font_destroy :: proc(font: ^Font) {}
 
 Vec2 :: gui.Vec2
 Rect :: gui.Rect
@@ -51,8 +49,8 @@ Child_Kind :: enum {
     Transient,
 }
 
-Context :: struct {
-    using gui_ctx: gui.Context,
+Window :: struct {
+    using gui_window: gui.Window,
     background_color: gui.Color,
 
     title: string,
@@ -60,6 +58,7 @@ Context :: struct {
     max_size: Maybe(Vec2),
     swap_interval: int,
     dark_mode: bool,
+    is_visible: bool,
     is_resizable: bool,
     double_buffer: bool,
     child_kind: Child_Kind,
@@ -71,76 +70,80 @@ Context :: struct {
     nvg_ctx: ^nvg.Context,
 }
 
-update :: proc() {
-    _odin_context = context
-    if _world == nil {
-        return
+init :: proc() {
+    // gui.ctx.window_vtable.poll_events = _poll_events
+    gui.ctx.window_vtable.init = _window_init
+    gui.ctx.window_vtable.open = _window_open
+    gui.ctx.window_vtable.close = _window_close
+    gui.ctx.window_vtable.begin_frame = _window_begin_frame
+    gui.ctx.window_vtable.end_frame = _window_end_frame
+    gui.ctx.backend_vtable.update = _update
+    gui.ctx.backend_vtable.tick_now = _tick_now
+    // gui.ctx.backend_vtable.set_mouse_cursor_style = _set_mouse_cursor_style
+    // gui.ctx.backend_vtable.get_clipboard = _get_clipboard
+    // gui.ctx.backend_vtable.set_clipboard = _set_clipboard
+    // gui.ctx.backend_vtable.measure_text = _measure_text
+    // gui.ctx.backend_vtable.font_metrics = _font_metrics
+    // gui.ctx.backend_vtable.render_draw_command = _render_draw_command
+
+    when ODIN_BUILD_MODE == .Dynamic {
+        world_type := pugl.WorldType.MODULE
+    } else {
+        world_type := pugl.WorldType.PROGRAM
     }
+    _world = pugl.NewWorld(world_type, {})
+
+    _generate_world_id :: proc "contextless" () -> u64 {
+        @(static) id: u64
+        return 1 + intrinsics.atomic_add(&id, 1)
+    }
+
+    world_id := fmt.aprint("WindowThread", _generate_world_id(), gui.temp_allocator())
+    world_id_cstring, err := strings.clone_to_cstring(world_id, gui.temp_allocator())
+    if err != nil do return
+
+    pugl.SetWorldString(_world, .CLASS_NAME, strings.clone_to_cstring(world_id, gui.temp_allocator()))
+}
+
+shutdown :: proc() {
+    pugl.FreeWorld(_world)
+    _world = nil
+}
+
+_update :: proc() {
+    if _world == nil do return
     pugl.Update(_world, 0)
 }
 
-init :: proc(
-    ctx: ^Context,
-    position: gui.Vec2,
-    size: gui.Vec2,
-    temp_allocator := context.temp_allocator,
-) -> runtime.Allocator_Error {
-    gui.init(ctx, position, size, temp_allocator) or_return
-    ctx.dark_mode = true
-    ctx.is_visible = true
-    ctx.is_resizable = true
-    ctx.double_buffer = true
-    ctx.child_kind = .None
-    ctx.tick_now = _tick_now
-    ctx.set_mouse_cursor_style = _set_mouse_cursor_style
-    ctx.get_clipboard = _get_clipboard
-    ctx.set_clipboard = _set_clipboard
-    ctx.measure_text = _measure_text
-    ctx.font_metrics = _font_metrics
-    ctx.render_draw_command = _render_draw_command
-    return nil
+_window_init :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
+    window.dark_mode = true
+    window.is_visible = true
+    window.is_resizable = true
+    window.double_buffer = true
+    window.child_kind = .None
 }
 
-destroy :: proc(ctx: ^Context) {
-    gui.destroy(ctx)
-    if ctx.is_open {
-        close(ctx)
-    }
-}
+_window_open :: proc(window: ^gui.Window) -> (ok: bool) {
+    window := cast(^Window)window
 
-open :: proc(ctx: ^Context) {
-    if _window_count == 0 {
-        when ODIN_BUILD_MODE == .Dynamic {
-            world_type := pugl.WorldType.MODULE
-        } else {
-            world_type := pugl.WorldType.PROGRAM
-        }
-        _world = pugl.NewWorld(world_type, {})
-
-        world_id := fmt.aprint("WindowThread", _generate_id(), ctx.temp_allocator)
-        world_id_cstring, err := strings.clone_to_cstring(world_id, ctx.temp_allocator)
-        if err != nil do return
-
-        pugl.SetWorldString(_world, .CLASS_NAME, strings.clone_to_cstring(world_id, ctx.temp_allocator))
-    }
-
-    if ctx.parent_handle != nil && ctx.child_kind == .None {
-        ctx.child_kind = .Embedded
+    if window.parent_handle != nil && window.child_kind == .None {
+        window.child_kind = .Embedded
     }
 
     view := pugl.NewView(_world)
 
-    title_cstring, err := strings.clone_to_cstring(ctx.title, ctx.temp_allocator)
+    title_cstring, err := strings.clone_to_cstring(window.title, gui.temp_allocator())
     if err != nil do return
 
     pugl.SetViewString(view, .WINDOW_TITLE, title_cstring)
-    pugl.SetSizeHint(view, .DEFAULT_SIZE, u16(ctx.size.x), u16(ctx.size.y))
+    pugl.SetSizeHint(view, .DEFAULT_SIZE, u16(window.size.x), u16(window.size.y))
 
-    if min_size, ok := ctx.min_size.?; ok {
+    if min_size, ok := window.min_size.?; ok {
         pugl.SetSizeHint(view, .MIN_SIZE, u16(min_size.x), u16(min_size.y))
     }
 
-    if max_size, ok := ctx.max_size.?; ok {
+    if max_size, ok := window.max_size.?; ok {
         pugl.SetSizeHint(view, .MAX_SIZE, u16(max_size.x), u16(max_size.y))
     }
 
@@ -148,24 +151,24 @@ open :: proc(ctx: ^Context) {
 
     pugl.SetViewHint(view, .STENCIL_BITS, 8)
 
-    pugl.SetViewHint(view, .DARK_FRAME, ctx.dark_mode ? 1 : 0)
-    pugl.SetViewHint(view, .RESIZABLE, ctx.is_resizable ? 1 : 0)
+    pugl.SetViewHint(view, .DARK_FRAME, window.dark_mode ? 1 : 0)
+    pugl.SetViewHint(view, .RESIZABLE, window.is_resizable ? 1 : 0)
     pugl.SetViewHint(view, .SAMPLES, 1)
-    pugl.SetViewHint(view, .DOUBLE_BUFFER, ctx.double_buffer ? 1 : 0)
-    pugl.SetViewHint(view, .SWAP_INTERVAL, i32(ctx.swap_interval))
+    pugl.SetViewHint(view, .DOUBLE_BUFFER, window.double_buffer ? 1 : 0)
+    pugl.SetViewHint(view, .SWAP_INTERVAL, i32(window.swap_interval))
     pugl.SetViewHint(view, .IGNORE_KEY_REPEAT, 0)
 
     pugl.SetViewHint(view, .CONTEXT_VERSION_MAJOR, OPENGL_VERSION_MAJOR)
     pugl.SetViewHint(view, .CONTEXT_VERSION_MINOR, OPENGL_VERSION_MINOR)
 
-    #partial switch ctx.child_kind {
+    #partial switch window.child_kind {
     case .Embedded:
-        pugl.SetParentWindow(view, cast(uintptr)ctx.parent_handle)
+        pugl.SetParentWindow(view, cast(uintptr)window.parent_handle)
     case .Transient:
-        pugl.SetTransientParent(view, cast(uintptr)ctx.parent_handle)
+        pugl.SetTransientParent(view, cast(uintptr)window.parent_handle)
     }
 
-    pugl.SetHandle(view, ctx)
+    pugl.SetHandle(view, window)
     pugl.SetEventFunc(view, _on_event)
 
     status := pugl.Realize(view)
@@ -175,16 +178,13 @@ open :: proc(ctx: ^Context) {
         return
     }
 
-    pugl.SetPosition(view, c.int(ctx.position.x), c.int(ctx.position.y))
+    pugl.SetPosition(view, c.int(window.position.x), c.int(window.position.y))
 
-    if ctx.is_visible {
+    if window.is_visible {
         pugl.Show(view, .RAISE)
     }
 
-    ctx.view = view
-    ctx.is_open = true
-
-    _window_count += 1
+    window.view = view
 
     pugl.EnterContext(view)
 
@@ -193,241 +193,214 @@ open :: proc(ctx: ^Context) {
         _open_gl_is_loaded = true
     }
 
-    ctx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
+    window.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
+
+    return true
 }
 
-close :: proc(ctx: ^Context) {
-    view := ctx.view
+_window_close :: proc(window: ^gui.Window) -> (ok: bool) {
+    window := cast(^Window)window
+    view := window.view
 
     pugl.EnterContext(view)
 
-    nvg_gl.Destroy(ctx.nvg_ctx)
-    ctx.nvg_ctx = nil
+    nvg_gl.Destroy(window.nvg_ctx)
+    window.nvg_ctx = nil
 
     pugl.Unrealize(view)
     pugl.FreeView(view)
 
-    ctx.view = nil
-    ctx.is_open = false
+    window.view = nil
 
-    _window_count -= 1
-
-    if _window_count == 0 {
-        pugl.FreeWorld(_world)
-        _world = nil
-    }
+    return true
 }
 
+_window_begin_frame :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
+    pugl.EnterContext(window.view)
 
+    size := window.size
+    window.content_scale = f32(pugl.GetScaleFactor(window.view))
 
-_tick_now :: proc(ctx: ^gui.Context) -> (tick: gui.Tick, ok: bool) {
+    c := window.background_color
+    gl.Viewport(0, 0, i32(size.x), i32(size.y))
+    gl.ClearColor(c.r, c.g, c.b, c.a)
+    gl.Clear(gl.COLOR_BUFFER_BIT)
+
+    nvg.BeginFrame(window.nvg_ctx, size.x, size.y, window.content_scale.x)
+}
+
+_window_end_frame :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
+
+    nvg.EndFrame(window.nvg_ctx)
+
+    pugl.LeaveContext(window.view)
+}
+
+_tick_now :: proc() -> (tick: gui.Tick, ok: bool) {
     return time.tick_now(), true
 }
 
-_set_mouse_cursor_style :: proc(ctx: ^gui.Context, style: gui.Mouse_Cursor_Style) -> (ok: bool) {
-    assert(ctx != nil)
-    ctx := cast(^Context)ctx
-    pugl.SetCursor(ctx.view, _cursor_style_to_pugl_cursor(style))
-    return true
-}
+// _set_mouse_cursor_style :: proc(style: gui.Mouse_Cursor_Style) -> (ok: bool) {
+//     window := gui.current_window(Window)
+//     pugl.SetCursor(window.view, _cursor_style_to_pugl_cursor(style))
+//     return true
+// }
 
-_measure_text :: proc(
-    ctx: ^gui.Context,
-    text: string,
-    font: gui.Font,
-    glyphs: ^[dynamic]gui.Text_Glyph,
-    byte_index_to_rune_index: ^map[int]int,
-) -> (ok: bool) {
-    assert(ctx != nil)
-    ctx := cast(^Context)ctx
+// _measure_text :: proc(
+//     text: string,
+//     font: gui.Font,
+//     glyphs: ^[dynamic]gui.Text_Glyph,
+//     byte_index_to_rune_index: ^map[int]int,
+// ) -> (ok: bool) {
+//     window := gui.current_window(Window)
+//     nvg_ctx := window.nvg_ctx
 
-    nvg_ctx := ctx.nvg_ctx
-    assert(ctx != nil)
+//     font := cast(^Font)font
 
-    font := cast(^Font)font
+//     clear(glyphs)
 
-    clear(glyphs)
+//     if len(text) == 0 {
+//         return
+//     }
 
-    if len(text) == 0 {
-        return
-    }
+//     nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
+//     nvg.FontFace(nvg_ctx, font.name)
+//     nvg.FontSize(nvg_ctx, f32(font.size))
 
-    nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
-    nvg.FontFace(nvg_ctx, font.name)
-    nvg.FontSize(nvg_ctx, f32(font.size))
+//     nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), gui.temp_allocator())
 
-    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), ctx.temp_allocator)
+//     temp_slice := nvg_positions[:]
+//     position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, text, &temp_slice)
 
-    temp_slice := nvg_positions[:]
-    position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, text, &temp_slice)
+//     resize(glyphs, position_count)
 
-    resize(glyphs, position_count)
+//     for i in 0 ..< position_count {
+//         if byte_index_to_rune_index != nil {
+//             byte_index_to_rune_index[nvg_positions[i].str] = i
+//         }
+//         glyphs[i] = gui.Text_Glyph{
+//             byte_index = nvg_positions[i].str,
+//             position = nvg_positions[i].x,
+//             width = nvg_positions[i].maxx - nvg_positions[i].minx,
+//             kerning = (nvg_positions[i].x - nvg_positions[i].minx),
+//         }
+//     }
 
-    for i in 0 ..< position_count {
-        if byte_index_to_rune_index != nil {
-            byte_index_to_rune_index[nvg_positions[i].str] = i
-        }
-        glyphs[i] = gui.Text_Glyph{
-            byte_index = nvg_positions[i].str,
-            position = nvg_positions[i].x,
-            width = nvg_positions[i].maxx - nvg_positions[i].minx,
-            kerning = (nvg_positions[i].x - nvg_positions[i].minx),
-        }
-    }
+//     return true
+// }
 
-    return true
-}
+// _font_metrics :: proc(font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
+//     window := gui.current_window(Window)
+//     nvg_ctx := window.nvg_ctx
 
-_font_metrics :: proc(ctx: ^gui.Context, font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
-    assert(ctx != nil)
-    ctx := cast(^Context)ctx
+//     font := cast(^Font)font
 
-    nvg_ctx := ctx.nvg_ctx
-    assert(ctx != nil)
+//     nvg.FontFace(nvg_ctx, font.name)
+//     nvg.FontSize(nvg_ctx, f32(font.size))
 
-    font := cast(^Font)font
+//     metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(nvg_ctx)
 
-    nvg.FontFace(nvg_ctx, font.name)
-    nvg.FontSize(nvg_ctx, f32(font.size))
+//     return metrics, true
+// }
 
-    metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(nvg_ctx)
+// _get_clipboard :: proc() -> (data: string, ok: bool) {
+//     window := gui.current_window(Window)
 
-    return metrics, true
-}
+//     length: uint
+//     clipboard_cstring := cast(cstring)pugl.GetClipboard(window.view, 0, &length)
+//     if clipboard_cstring == nil {
+//         return "", false
+//     }
 
-_get_clipboard :: proc(ctx: ^gui.Context) -> (data: string, ok: bool) {
-    assert(ctx != nil)
-    ctx := cast(^Context)ctx
+//     return string(clipboard_cstring), true
+// }
 
-    length: uint
-    clipboard_cstring := cast(cstring)pugl.GetClipboard(ctx.view, 0, &length)
-    if clipboard_cstring == nil {
-        return "", false
-    }
+// _set_clipboard :: proc(data: string)-> (ok: bool) {
+//     window := gui.current_window(Window)
 
-    return string(clipboard_cstring), true
-}
+//     data_cstring, err := strings.clone_to_cstring(data, gui.temp_allocator())
+//     if err != nil do return false
+//     if pugl.SetClipboard(window.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1) != .SUCCESS {
+//         return false
+//     }
 
-_set_clipboard :: proc(ctx: ^gui.Context, data: string)-> (ok: bool) {
-    assert(ctx != nil)
-    ctx := cast(^Context)ctx
+//     return true
+// }
 
-    data_cstring, err := strings.clone_to_cstring(data, ctx.temp_allocator)
-    if err != nil do return false
-    if pugl.SetClipboard(ctx.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1) != .SUCCESS {
-        return false
-    }
+// _render_draw_command :: proc(command: gui.Draw_Command) {
+//     window := gui.current_window(Window)
+//     nvg_ctx := window.nvg_ctx
 
-    return true
-}
+//     switch c in command {
+//     case gui.Draw_Custom_Command:
+//         if c.custom != nil {
+//             c.custom()
+//         }
 
-_render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Command) {
-    assert(ctx != nil)
-    ctx := cast(^Context)ctx
+//     case gui.Draw_Rect_Command:
+//         rect := gui.pixel_snapped(c.rect)
+//         nvg.BeginPath(nvg_ctx)
+//         nvg.Rect(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
+//         nvg.FillColor(nvg_ctx, c.color)
+//         nvg.Fill(nvg_ctx)
 
-    nvg_ctx := ctx.nvg_ctx
+//     case gui.Draw_Text_Command:
+//         font := cast(^Font)c.font
+//         position := gui.pixel_snapped(c.position)
+//         nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
+//         nvg.FontFace(nvg_ctx, font.name)
+//         nvg.FontSize(nvg_ctx, f32(font.size))
+//         nvg.FillColor(nvg_ctx, c.color)
+//         nvg.Text(nvg_ctx, position.x, position.y, c.text)
 
-    switch c in command {
-    case gui.Draw_Custom_Command:
-        if c.custom != nil {
-            c.custom()
-        }
-
-    case gui.Draw_Rect_Command:
-        rect := gui.pixel_snapped(c.rect)
-        nvg.BeginPath(nvg_ctx)
-        nvg.Rect(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
-        nvg.FillColor(nvg_ctx, c.color)
-        nvg.Fill(nvg_ctx)
-
-    case gui.Draw_Text_Command:
-        font := cast(^Font)c.font
-        position := gui.pixel_snapped(c.position)
-        nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
-        nvg.FontFace(nvg_ctx, font.name)
-        nvg.FontSize(nvg_ctx, f32(font.size))
-        nvg.FillColor(nvg_ctx, c.color)
-        nvg.Text(nvg_ctx, position.x, position.y, c.text)
-
-    case gui.Clip_Drawing_Command:
-        rect := gui.pixel_snapped(c.rect)
-        nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
-    }
-}
-
-_generate_id :: proc "contextless" () -> u64 {
-    @(static) id: u64
-    return 1 + intrinsics.atomic_add(&id, 1)
-}
+//     case gui.Clip_Drawing_Command:
+//         rect := gui.pixel_snapped(c.rect)
+//         nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
+//     }
+// }
 
 _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
-    ctx := cast(^Context)pugl.GetHandle(view)
-    ctx.view = view
-    context = _odin_context
+    window := cast(^Window)pugl.GetHandle(view)
+    window.view = view
+    context = gui.odin_context()
 
     #partial switch event.type {
-    case .EXPOSE:
-        if !ctx.is_visible {
-            pugl.Hide(view)
-            return .SUCCESS
-        }
-
-        size := ctx.size
-        c := ctx.background_color
-        gui.input_content_scale(ctx, f32(pugl.GetScaleFactor(view)))
-
-        gl.Viewport(0, 0, i32(size.x), i32(size.y))
-        gl.ClearColor(c.r, c.g, c.b, c.a)
-        gl.Clear(gl.COLOR_BUFFER_BIT)
-
-        nvg.BeginFrame(ctx.nvg_ctx, size.x, size.y, ctx.content_scale.x)
-
-        gui.update(ctx)
-
-        nvg.EndFrame(ctx.nvg_ctx)
-
-        if !ctx.is_open {
-            event := pugl.EventType.CLOSE
-            pugl.SendEvent(view, cast(^pugl.Event)(&event))
-        }
+    // case .EXPOSE:
 
     case .UPDATE:
         pugl.PostRedisplay(view)
 
     case .LOOP_ENTER:
-        pugl.StartTimer(view, ctx.timer_id, 0)
+        pugl.StartTimer(view, window.timer_id, 0)
 
     case .LOOP_LEAVE:
-        pugl.StopTimer(view, ctx.timer_id)
+        pugl.StopTimer(view, window.timer_id)
 
     case .TIMER:
         event := event.timer
-        if ctx.timer_id == event.id {
-            update()
+        if window.timer_id == event.id {
+            gui.update()
         }
 
     case .CONFIGURE:
         event := event.configure
-        gui.input_move(ctx, {f32(event.x), f32(event.y)})
-        size := Vec2{f32(event.width), f32(event.height)}
-        previous_size := ctx.size
-        gui.input_resize(ctx, {f32(event.width), f32(event.height)})
-        if size != previous_size {
-            pugl.PostRedisplay(view)
+        gui.input_window_move(window, {f32(event.x), f32(event.y)})
+        gui.input_window_size(window, {f32(event.width), f32(event.height)})
+        if !gui.window_opened(window) {
+            gui.context_update()
         }
 
     case .MOTION:
         event := event.motion
-        gui.input_mouse_move(ctx, {f32(event.x), f32(event.y)})
-        pugl.PostRedisplay(view)
+        gui.input_mouse_move({f32(event.x), f32(event.y)})
 
-    case .POINTER_IN:
-        gui.input_mouse_enter(ctx)
-        pugl.PostRedisplay(view)
+    // case .POINTER_IN:
+    //     pugl.PostRedisplay(view)
 
-    case .POINTER_OUT:
-        gui.input_mouse_exit(ctx)
-        pugl.PostRedisplay(view)
+    // case .POINTER_OUT:
+    //     pugl.PostRedisplay(view)
 
     // case .FOCUS_IN:
     //     gui.input_gain_focus(ctx)
@@ -437,28 +410,23 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
     case .SCROLL:
         event := &event.scroll
-        gui.input_mouse_scroll(ctx, {f32(event.dx), f32(event.dy)})
-        pugl.PostRedisplay(view)
+        gui.input_mouse_scroll({f32(event.dx), f32(event.dy)})
 
     case .BUTTON_PRESS:
         event := &event.button
-        gui.input_mouse_press(ctx, _pugl_button_to_mouse_button(event.button))
-        pugl.PostRedisplay(view)
+        gui.input_mouse_press(_pugl_button_to_mouse_button(event.button))
 
     case .BUTTON_RELEASE:
         event := &event.button
-        gui.input_mouse_release(ctx, _pugl_button_to_mouse_button(event.button))
-        pugl.PostRedisplay(view)
+        gui.input_mouse_release(_pugl_button_to_mouse_button(event.button))
 
     case .KEY_PRESS:
         event := &event.key
-        gui.input_key_press(ctx, _pugl_key_event_to_keyboard_key(event))
-        pugl.PostRedisplay(view)
+        gui.input_key_press(_pugl_key_event_to_keyboard_key(event))
 
     case .KEY_RELEASE:
         event := &event.key
-        gui.input_key_release(ctx, _pugl_key_event_to_keyboard_key(event))
-        pugl.PostRedisplay(view)
+        gui.input_key_release(_pugl_key_event_to_keyboard_key(event))
 
     case .TEXT:
         event := &event.text
@@ -471,12 +439,11 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
         if !skip {
             r, len := utf8.decode_rune(event.string[:4])
-            gui.input_text(ctx, r)
-            pugl.PostRedisplay(view)
+            gui.input_text(r)
         }
 
     case .CLOSE:
-        close(ctx)
+        window.is_open = false
     }
 
     return .SUCCESS
@@ -630,344 +597,3 @@ _cursor_style_to_pugl_cursor :: proc(style: gui.Mouse_Cursor_Style) -> pugl.Curs
     }
     return .ARROW
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// open_gl_is_loaded: bool
-
-// Font :: struct {
-//     name: string,
-//     size: int,
-// }
-
-// load_font_from_data :: proc(font: ^Font, data: []byte, font_size: int) -> (ok: bool) {
-//     if len(data) <= 0 do return false
-//     ctx := gui.current_context(Context)
-//     if nvg.CreateFontMem(ctx.nvg_ctx, font.name, data, false) == -1 {
-//         fmt.eprintf("Failed to load font: %v\n", font.name)
-//         return false
-//     }
-//     font.size = font_size
-//     return true
-// }
-
-// font_destroy :: proc(font: ^Font) {}
-
-// update :: wnd.update
-
-// Context :: struct {
-//     using ctx: gui.Context,
-//     background_color: gui.Color,
-//     nvg_ctx: ^nvg.Context,
-//     backend_window: wnd.Context,
-// }
-
-// init :: proc(
-//     ctx: ^Context,
-//     position: gui.Vec2,
-//     size: gui.Vec2,
-//     temp_allocator := context.temp_allocator,
-// ) -> runtime.Allocator_Error{
-//     wnd.init(&ctx.backend_window, position, size)
-//     ctx.backend_window.user_data = ctx
-//     ctx.backend_window.event_proc = _event_proc
-//     gui.init(ctx, position, size, temp_allocator) or_return
-//     ctx.tick_now = _tick_now
-//     ctx.set_mouse_cursor_style = _set_mouse_cursor_style
-//     ctx.get_clipboard = _get_clipboard
-//     ctx.set_clipboard = _set_clipboard
-//     ctx.measure_text = _measure_text
-//     ctx.font_metrics = _font_metrics
-//     ctx.render_draw_command = _render_draw_command
-//     return nil
-// }
-
-// destroy :: proc(ctx: ^Context) {
-//     gui.destroy(ctx)
-//     wnd.destroy(&ctx.backend_window)
-// }
-
-// open :: proc(ctx: ^Context) {
-//     wnd.open(&ctx.backend_window, ctx.temp_allocator)
-// }
-
-// close :: proc(ctx: ^Context) {
-//     wnd.close(&ctx.backend_window)
-// }
-
-// is_open :: proc(ctx: ^Context) -> bool {
-//     return wnd.is_open(&ctx.backend_window)
-// }
-
-
-
-// _event_proc :: proc(backend_window: ^wnd.Context, event: wnd.Event) {
-//     ctx := cast(^Context)backend_window.user_data
-
-//     #partial switch e in event {
-//     case wnd.Open_Event:
-//         wnd.activate_context(backend_window)
-//         if !open_gl_is_loaded {
-//             gl.load_up_to(3, 3, wnd.gl_set_proc_address)
-//             open_gl_is_loaded = true
-//         }
-//         ctx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
-
-//         gui.input_open(ctx)
-//         _update_content_scale(ctx)
-
-//         wnd.display(backend_window)
-
-//     case wnd.Close_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_close(ctx)
-//         nvg_gl.Destroy(ctx.nvg_ctx)
-
-//     case wnd.Display_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-
-//         size := wnd.size(backend_window)
-//         c := ctx.background_color
-
-//         gl.Viewport(0, 0, i32(size.x), i32(size.y))
-//         gl.ClearColor(c.r, c.g, c.b, c.a)
-//         gl.Clear(gl.COLOR_BUFFER_BIT)
-
-//         nvg.BeginFrame(ctx.nvg_ctx, size.x, size.y, wnd.content_scale(backend_window))
-
-//         gui.update(ctx)
-
-//         nvg.EndFrame(ctx.nvg_ctx)
-
-//     case wnd.Update_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         wnd.display(backend_window)
-
-//     case wnd.Move_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_move(ctx, e.position)
-//         wnd.display(backend_window)
-
-//     case wnd.Resize_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_resize(ctx, e.size)
-//         wnd.display(backend_window)
-
-//     case wnd.Mouse_Enter_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_mouse_enter(ctx)
-//         wnd.display(backend_window)
-
-//     case wnd.Mouse_Exit_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_mouse_exit(ctx)
-//         wnd.display(backend_window)
-
-//     case wnd.Mouse_Move_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_mouse_move(ctx, e.position)
-//         wnd.display(backend_window)
-
-//     case wnd.Mouse_Scroll_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_mouse_scroll(ctx, e.amount)
-//         wnd.display(backend_window)
-
-//     case wnd.Mouse_Press_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_mouse_press(ctx, cast(gui.Mouse_Button)e.button)
-//         wnd.display(backend_window)
-
-//     case wnd.Mouse_Release_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_mouse_release(ctx, cast(gui.Mouse_Button)e.button)
-//         wnd.display(backend_window)
-
-//     case wnd.Key_Press_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_key_press(ctx, cast(gui.Keyboard_Key)e.key)
-//         wnd.display(backend_window)
-
-//     case wnd.Key_Release_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_key_release(ctx, cast(gui.Keyboard_Key)e.key)
-//         wnd.display(backend_window)
-
-//     case wnd.Text_Event:
-//         wnd.activate_context(backend_window)
-//         _update_content_scale(ctx)
-//         gui.input_text(ctx, e.text)
-//         wnd.display(backend_window)
-//     }
-// }
-
-// _update_content_scale :: proc(ctx: ^Context) {
-//     scale := wnd.content_scale(&ctx.backend_window)
-//     gui.input_content_scale(ctx, {scale, scale})
-// }
-
-// _tick_now :: proc(ctx: ^gui.Context) -> (tick: gui.Tick, ok: bool) {
-//     return time.tick_now(), true
-// }
-
-// _set_mouse_cursor_style :: proc(ctx: ^gui.Context, style: gui.Mouse_Cursor_Style) -> (ok: bool) {
-//     assert(ctx != nil)
-//     ctx := cast(^Context)ctx
-//     wnd.set_mouse_cursor_style(&ctx.backend_window, cast(wnd.Mouse_Cursor_Style)style)
-//     return true
-// }
-
-// _measure_text :: proc(
-//     ctx: ^gui.Context,
-//     text: string,
-//     font: gui.Font,
-//     glyphs: ^[dynamic]gui.Text_Glyph,
-//     byte_index_to_rune_index: ^map[int]int,
-// ) -> (ok: bool) {
-//     assert(ctx != nil)
-//     ctx := cast(^Context)ctx
-
-//     nvg_ctx := ctx.nvg_ctx
-//     assert(ctx != nil)
-
-//     font := cast(^Font)font
-
-//     clear(glyphs)
-
-//     if len(text) == 0 {
-//         return
-//     }
-
-//     nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
-//     nvg.FontFace(nvg_ctx, font.name)
-//     nvg.FontSize(nvg_ctx, f32(font.size))
-
-//     nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), ctx.temp_allocator)
-
-//     temp_slice := nvg_positions[:]
-//     position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, text, &temp_slice)
-
-//     resize(glyphs, position_count)
-
-//     for i in 0 ..< position_count {
-//         if byte_index_to_rune_index != nil {
-//             byte_index_to_rune_index[nvg_positions[i].str] = i
-//         }
-//         glyphs[i] = gui.Text_Glyph{
-//             byte_index = nvg_positions[i].str,
-//             position = nvg_positions[i].x,
-//             width = nvg_positions[i].maxx - nvg_positions[i].minx,
-//             kerning = (nvg_positions[i].x - nvg_positions[i].minx),
-//         }
-//     }
-
-//     return true
-// }
-
-// _font_metrics :: proc(ctx: ^gui.Context, font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
-//     assert(ctx != nil)
-//     ctx := cast(^Context)ctx
-
-//     nvg_ctx := ctx.nvg_ctx
-//     assert(ctx != nil)
-
-//     font := cast(^Font)font
-
-//     nvg.FontFace(nvg_ctx, font.name)
-//     nvg.FontSize(nvg_ctx, f32(font.size))
-
-//     metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(nvg_ctx)
-
-//     return metrics, true
-// }
-
-// _get_clipboard :: proc(ctx: ^gui.Context) -> (data: string, ok: bool) {
-//     assert(ctx != nil)
-//     ctx := cast(^Context)ctx
-//     return wnd.get_clipboard(&ctx.backend_window)
-// }
-
-// _set_clipboard :: proc(ctx: ^gui.Context, data: string)-> (ok: bool) {
-//     assert(ctx != nil)
-//     ctx := cast(^Context)ctx
-//     return wnd.set_clipboard(&ctx.backend_window, data, ctx.temp_allocator)
-// }
-
-// _render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Command) {
-//     assert(ctx != nil)
-//     ctx := cast(^Context)ctx
-
-//     nvg_ctx := ctx.nvg_ctx
-
-//     switch c in command {
-//     case gui.Draw_Custom_Command:
-//         if c.custom != nil {
-//             c.custom()
-//         }
-
-//     case gui.Draw_Rect_Command:
-//         rect := gui.pixel_snapped(c.rect)
-//         nvg.BeginPath(nvg_ctx)
-//         nvg.Rect(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
-//         nvg.FillColor(nvg_ctx, c.color)
-//         nvg.Fill(nvg_ctx)
-
-//     case gui.Draw_Text_Command:
-//         font := cast(^Font)c.font
-//         position := gui.pixel_snapped(c.position)
-//         nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
-//         nvg.FontFace(nvg_ctx, font.name)
-//         nvg.FontSize(nvg_ctx, f32(font.size))
-//         nvg.FillColor(nvg_ctx, c.color)
-//         nvg.Text(nvg_ctx, position.x, position.y, c.text)
-
-//     case gui.Clip_Drawing_Command:
-//         rect := gui.pixel_snapped(c.rect)
-//         nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
-//     }
-// }
