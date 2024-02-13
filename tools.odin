@@ -14,33 +14,21 @@ Tick :: time.Tick
 Duration :: time.Duration
 
 Layer :: struct {
-    z_index: int,
+    local_z_index: int,
+    global_z_index: int,
     draw_commands: [dynamic]Draw_Command,
     final_mouse_hover_request: Id,
-}
-
-get_id :: proc "contextless" () -> u64 {
-    @(static) id: u64
-    return 1 + intrinsics.atomic_add(&id, 1)
 }
 
 temp_allocator :: proc() -> runtime.Allocator {
     return ctx.temp_allocator
 }
 
-z_index :: proc() -> int {
-    return _current_layer().z_index
-}
+// Hover and focus
 
-offset :: proc() -> Vec2 {
-    if len(ctx.offset_stack) <= 0 do return {0, 0}
-    return ctx.offset_stack[len(ctx.offset_stack) - 1]
-}
-
-clip_rect :: proc() -> Rect {
-    clip := ctx.clip_rect_stack[len(ctx.clip_rect_stack) - 1]
-    clip.position -= offset()
-    return clip
+get_id :: proc() -> u64 {
+    ctx.last_id += 1
+    return ctx.last_id
 }
 
 mouse_hover :: proc() -> Id {
@@ -91,75 +79,6 @@ release_keyboard_focus :: proc() {
     ctx.keyboard_focus = 0
 }
 
-begin_offset :: proc(offset: Vec2, global := false) {
-    if global {
-        append(&ctx.offset_stack, offset)
-    } else {
-        append(&ctx.offset_stack, _offset() + offset)
-    }
-}
-
-end_offset :: proc() {
-    if len(ctx.offset_stack) <= 0 do return
-    pop(&ctx.offset_stack)
-}
-
-@(deferred_none=end_offset)
-scoped_offset :: proc(offset: Vec2, global := false) {
-    begin_offset(offset, global = global)
-}
-
-begin_clip :: proc(rect: Rect, global := false, intersect := true) {
-    rect := rect
-
-    if !global {
-        rect.position += offset()
-    }
-
-    if intersect {
-        rect = rects.intersection(rect, ctx.clip_rect_stack[len(ctx.clip_rect_stack) - 1])
-    }
-
-    append(&ctx.clip_rect_stack, rect)
-    append(&_current_layer().draw_commands, Clip_Drawing_Command{rect})
-}
-
-end_clip :: proc() {
-    if len(ctx.clip_rect_stack) <= 0 do return
-    pop(&ctx.clip_rect_stack)
-
-    if len(ctx.clip_rect_stack) == 0 {
-        return
-    }
-
-    clip_rect := ctx.clip_rect_stack[len(ctx.clip_rect_stack) - 1]
-    append(&_current_layer().draw_commands, Clip_Drawing_Command{clip_rect})
-}
-
-@(deferred_none=end_clip)
-scoped_clip :: proc(rect: Rect, global := false, intersect := true) {
-    begin_clip(rect, global = global, intersect = intersect)
-}
-
-begin_z_index :: proc(z_index: int, global := false) {
-    layer: Layer
-    layer.draw_commands = make([dynamic]Draw_Command, ctx.temp_allocator)
-    if global do layer.z_index = z_index
-    else do layer.z_index = _z_index() + z_index
-    append(&ctx.layer_stack, layer)
-}
-
-end_z_index :: proc() {
-    if len(ctx.layer_stack) <= 0 do return
-    layer := pop(&ctx.layer_stack)
-    append(&ctx.layers, layer)
-}
-
-@(deferred_none=end_z_index)
-scoped_z_index :: proc(z_index: int, global := false) {
-    begin_z_index(z_index, global = global)
-}
-
 hit_test :: proc(rect: Rect, target: Vec2) -> bool {
     return rects.encloses(rect, target, include_borders = false) &&
            rects.encloses(clip_rect(), target, include_borders = false)
@@ -169,12 +88,144 @@ mouse_hit_test :: proc(rect: Rect) -> bool {
     return hit_test(rect, mouse_position())
 }
 
+// Position offsets
+
+// Local coordinates
+offset :: proc() -> Vec2 {
+    window := current_window()
+    if len(window.local_offset_stack) <= 0 do return {0, 0}
+    return window.local_offset_stack[len(window.local_offset_stack) - 1]
+}
+
+// Global coordinates
+global_offset :: proc() -> Vec2 {
+    window := current_window()
+    if len(window.global_offset_stack) <= 0 do return {0, 0}
+    return window.global_offset_stack[len(window.global_offset_stack) - 1]
+}
+
+// Set in local coordinates
+begin_offset :: proc(offset: Vec2) {
+    window := current_window()
+    append(&window.local_offset_stack, offset)
+    append(&window.global_offset_stack, global_offset() + offset)
+}
+
+end_offset :: proc() {
+    window := current_window()
+    if len(window.local_offset_stack) <= 0 ||
+       len(window.global_offset_stack) <= 0 {
+        return
+    }
+    pop(&window.local_offset_stack)
+    pop(&window.global_offset_stack)
+}
+
+@(deferred_none=end_offset)
+scoped_offset :: proc(offset: Vec2) {
+    begin_offset(offset)
+}
+
+// Clipping
+
+// Local coordinates
+clip_rect :: proc() -> Rect {
+    window := current_window()
+    if len(window.local_clip_rect_stack) <= 0 do return {{0, 0}, window.size}
+    return window.local_clip_rect_stack[len(window.local_clip_rect_stack) - 1]
+}
+
+// Global coordinates
+global_clip_rect :: proc() -> Rect {
+    window := current_window()
+    if len(window.global_clip_rect_stack) <= 0 do return {{0, 0}, window.size}
+    return window.global_clip_rect_stack[len(window.global_clip_rect_stack) - 1]
+}
+
+// Set in local coordinates
+begin_clip :: proc(rect: Rect, intersect := true) {
+    window := current_window()
+
+    offset := global_offset()
+    global_rect := Rect{offset + rect.position, rect.size}
+
+    if intersect && len(window.global_clip_rect_stack) > 0 {
+        global_rect = rects.intersection(global_rect, window.global_clip_rect_stack[len(window.global_clip_rect_stack) - 1])
+    }
+
+    append(&window.global_clip_rect_stack, global_rect)
+
+    local_rect := Rect{global_rect.position - offset, global_rect.size}
+    append(&window.local_clip_rect_stack, local_rect)
+
+    _process_draw_command(Clip_Drawing_Command{global_rect})
+}
+
+end_clip :: proc() {
+    window := current_window()
+
+    if len(window.local_clip_rect_stack) <= 0 ||
+       len(window.global_clip_rect_stack) <= 0 {
+        return
+    }
+
+    pop(&window.local_clip_rect_stack)
+    pop(&window.global_clip_rect_stack)
+
+    if len(window.local_clip_rect_stack) <= 0 ||
+       len(window.global_clip_rect_stack) <= 0 {
+        return
+    }
+
+    global_rect := window.global_clip_rect_stack[len(window.global_clip_rect_stack) - 1]
+
+    _process_draw_command(Clip_Drawing_Command{global_rect})
+}
+
+@(deferred_none=end_clip)
+scoped_clip :: proc(rect: Rect, intersect := true) {
+    begin_clip(rect, intersect = intersect)
+}
+
+// Layers
+
+z_index :: proc() -> int {
+    window := current_window()
+    if len(window.layer_stack) <= 0 do return 0
+    return _current_layer().local_z_index
+}
+
+global_z_index :: proc() -> int {
+    window := current_window()
+    if len(window.layer_stack) <= 0 do return 0
+    return _current_layer().global_z_index
+}
+
+// Local z index
+begin_layer :: proc(z_index: int) {
+    window := current_window()
+    layer: Layer
+    layer.draw_commands = make([dynamic]Draw_Command, ctx.temp_allocator)
+    layer.local_z_index = z_index
+    layer.global_z_index = global_z_index() + z_index
+    append(&window.layer_stack, layer)
+}
+
+end_layer :: proc() {
+    window := current_window()
+    if len(window.layer_stack) <= 0 do return
+    layer := pop(&window.layer_stack)
+    append(&window.layers, layer)
+}
+
+@(deferred_none=end_layer)
+scoped_layer :: proc(z_index: int) {
+    begin_layer(z_index)
+}
 
 
-
-_z_index :: z_index
-_offset :: offset
 
 _current_layer :: proc() -> ^Layer {
-    return &ctx.layer_stack[len(ctx.layer_stack) - 1]
+    window := current_window()
+    return &window.layer_stack[len(window.layer_stack) - 1]
 }

@@ -22,17 +22,7 @@ OPENGL_VERSION_MINOR :: 3
 Font :: struct {
     name: string,
     size: int,
-}
-
-load_font_from_data :: proc(font: ^Font, data: []byte, font_size: int) -> (ok: bool) {
-    if len(data) <= 0 do return false
-    ctx := gui.current_window(Window)
-    if nvg.CreateFontMem(ctx.nvg_ctx, font.name, data, false) == -1 {
-        fmt.eprintf("Failed to load font: %v\n", font.name)
-        return false
-    }
-    font.size = font_size
-    return true
+    data: []byte,
 }
 
 Vec2 :: gui.Vec2
@@ -69,20 +59,23 @@ Window :: struct {
 }
 
 init :: proc() {
-    // gui.ctx.window_vtable.poll_events = _poll_events
-    gui.ctx.window_vtable.init = _window_init
-    gui.ctx.window_vtable.open = _window_open
-    gui.ctx.window_vtable.close = _window_close
-    gui.ctx.window_vtable.begin_frame = _window_begin_frame
-    gui.ctx.window_vtable.end_frame = _window_end_frame
-    gui.ctx.backend_vtable.update = _update
-    gui.ctx.backend_vtable.tick_now = _tick_now
-    gui.ctx.backend_vtable.set_mouse_cursor_style = _set_mouse_cursor_style
-    gui.ctx.backend_vtable.get_clipboard = _get_clipboard
-    gui.ctx.backend_vtable.set_clipboard = _set_clipboard
-    gui.ctx.backend_vtable.measure_text = _measure_text
-    gui.ctx.backend_vtable.font_metrics = _font_metrics
-    gui.ctx.backend_vtable.render_draw_command = _render_draw_command
+    gui.ctx.backend.poll_events = _poll_events
+    gui.ctx.backend.tick_now = _tick_now
+    gui.ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
+    gui.ctx.backend.get_clipboard = _get_clipboard
+    gui.ctx.backend.set_clipboard = _set_clipboard
+
+    gui.ctx.backend.init_window = _init_window
+    gui.ctx.backend.destroy_window = _destroy_window
+    gui.ctx.backend.open_window = _open_window
+    gui.ctx.backend.close_window = _close_window
+    gui.ctx.backend.window_begin_frame = _window_begin_frame
+    gui.ctx.backend.window_end_frame = _window_end_frame
+
+    gui.ctx.backend.load_font = _load_font
+    gui.ctx.backend.measure_text = _measure_text
+    gui.ctx.backend.font_metrics = _font_metrics
+    gui.ctx.backend.render_draw_command = _render_draw_command
 
     when ODIN_BUILD_MODE == .Dynamic {
         world_type := pugl.WorldType.MODULE
@@ -108,12 +101,12 @@ shutdown :: proc() {
     _world = nil
 }
 
-_update :: proc() {
+_poll_events :: proc() {
     if _world == nil do return
     pugl.Update(_world, 0)
 }
 
-_window_init :: proc(window: ^gui.Window) {
+_init_window :: proc(window: ^gui.Window) {
     window := cast(^Window)window
     window.dark_mode = true
     window.is_visible = true
@@ -122,7 +115,14 @@ _window_init :: proc(window: ^gui.Window) {
     window.child_kind = .None
 }
 
-_window_open :: proc(window: ^gui.Window) -> (ok: bool) {
+_destroy_window :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
+    if window.is_open {
+        _close_window(window)
+    }
+}
+
+_open_window :: proc(window: ^gui.Window) -> (ok: bool) {
     window := cast(^Window)window
 
     if window.parent_handle != nil && window.child_kind == .None {
@@ -196,7 +196,7 @@ _window_open :: proc(window: ^gui.Window) -> (ok: bool) {
     return true
 }
 
-_window_close :: proc(window: ^gui.Window) -> (ok: bool) {
+_close_window :: proc(window: ^gui.Window) -> (ok: bool) {
     window := cast(^Window)window
     view := window.view
 
@@ -236,6 +236,17 @@ _window_end_frame :: proc(window: ^gui.Window) {
     pugl.LeaveContext(window.view)
 }
 
+_load_font :: proc(window: ^gui.Window, font: gui.Font) -> (ok: bool) {
+    font := cast(^Font)font
+    if len(font.data) <= 0 do return false
+    window := cast(^Window)window
+    if nvg.CreateFontMem(window.nvg_ctx, font.name, font.data, false) == -1 {
+        fmt.eprintf("Failed to load font: %v\n", font.name)
+        return false
+    }
+    return true
+}
+
 _tick_now :: proc() -> (tick: gui.Tick, ok: bool) {
     return time.tick_now(), true
 }
@@ -271,12 +282,13 @@ _set_clipboard :: proc(data: string)-> (ok: bool) {
 }
 
 _measure_text :: proc(
+    window: ^gui.Window,
     text: string,
     font: gui.Font,
     glyphs: ^[dynamic]gui.Text_Glyph,
     byte_index_to_rune_index: ^map[int]int,
 ) -> (ok: bool) {
-    window := gui.current_window(Window)
+    window := cast(^Window)window
     nvg_ctx := window.nvg_ctx
 
     font := cast(^Font)font
@@ -313,8 +325,8 @@ _measure_text :: proc(
     return true
 }
 
-_font_metrics :: proc(font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
-    window := gui.current_window(Window)
+_font_metrics :: proc(window: ^gui.Window, font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
+    window := cast(^Window)window
     nvg_ctx := window.nvg_ctx
 
     font := cast(^Font)font
@@ -327,8 +339,8 @@ _font_metrics :: proc(font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
     return metrics, true
 }
 
-_render_draw_command :: proc(command: gui.Draw_Command) {
-    window := gui.current_window(Window)
+_render_draw_command :: proc(window: ^gui.Window, command: gui.Draw_Command) {
+    window := cast(^Window)window
     nvg_ctx := window.nvg_ctx
 
     switch c in command {
@@ -354,7 +366,7 @@ _render_draw_command :: proc(command: gui.Draw_Command) {
         nvg.Text(nvg_ctx, position.x, position.y, c.text)
 
     case gui.Clip_Drawing_Command:
-        rect := gui.pixel_snapped(c.rect)
+        rect := gui.pixel_snapped(c.global_clip_rect)
         nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
     }
 }
@@ -366,8 +378,6 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
     #partial switch event.type {
     // case .EXPOSE:
-    // case .POINTER_IN:
-    // case .POINTER_OUT:
     // case .FOCUS_IN:
     // case .FOCUS_OUT:
 
@@ -393,6 +403,12 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         if !gui.window_opened(window) && gui.window_resized(window) {
             gui.context_update()
         }
+
+    case .POINTER_IN:
+        gui.input_window_mouse_enter(window)
+
+    case .POINTER_OUT:
+        gui.input_window_mouse_exit(window)
 
     case .MOTION:
         event := event.motion

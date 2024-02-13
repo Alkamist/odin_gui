@@ -55,8 +55,16 @@ input_window_size :: proc(window: ^Window, size: Vec2) {
     window.size = size
 }
 
+input_window_mouse_enter :: proc(window: ^Window) {
+    window.is_hovered_by_mouse = true
+}
+
+input_window_mouse_exit :: proc(window: ^Window) {
+    window.is_hovered_by_mouse = false
+}
+
 input_mouse_move :: proc(position: Vec2) {
-    ctx.global_mouse_position = position
+    ctx.screen_mouse_position = position
 }
 
 input_mouse_press :: proc(button: Mouse_Button) {
@@ -75,7 +83,7 @@ input_mouse_press :: proc(button: Mouse_Button) {
         }
 
         // This is just a simple x, y comparison, not true distance.
-        movement := ctx.global_mouse_position - ctx.mouse_repeat_start_position
+        movement := ctx.screen_mouse_position - ctx.mouse_repeat_start_position
         if abs(movement.x) > ctx.mouse_repeat_movement_tolerance ||
            abs(movement.y) > ctx.mouse_repeat_movement_tolerance {
             ctx.mouse_repeat_count = 1
@@ -83,7 +91,7 @@ input_mouse_press :: proc(button: Mouse_Button) {
     }
 
     if ctx.mouse_repeat_count == 1 {
-        ctx.mouse_repeat_start_position = ctx.global_mouse_position
+        ctx.mouse_repeat_start_position = ctx.screen_mouse_position
     }
 
     append(&ctx.mouse_presses, button)
@@ -131,27 +139,27 @@ delta_time :: proc() -> f32 {
 }
 
 mouse_position :: proc() -> (res: Vec2) {
-    res = ctx.global_mouse_position - offset()
+    res = ctx.screen_mouse_position - global_offset()
     if window := current_window(); window != nil {
         res -= window.position
     }
     return
 }
 
-window_mouse_position :: proc() -> (res: Vec2) {
-    res = ctx.global_mouse_position
+global_mouse_position :: proc() -> (res: Vec2) {
+    res = ctx.screen_mouse_position
     if window := current_window(); window != nil {
         res -= window.position
     }
     return
 }
 
-global_mouse_position :: proc() -> Vec2 {
-    return ctx.global_mouse_position
+screen_mouse_position :: proc() -> Vec2 {
+    return ctx.screen_mouse_position
 }
 
 mouse_delta :: proc() -> Vec2 {
-    return ctx.global_mouse_position - ctx.previous_global_mouse_position
+    return ctx.screen_mouse_position - ctx.previous_global_mouse_position
 }
 
 mouse_down :: proc(button: Mouse_Button) -> bool {

@@ -28,8 +28,8 @@ Draw_Command :: union {
 
 Draw_Custom_Command :: struct {
     custom: proc(),
-    offset: Vec2,
-    clip_rect: Rect,
+    global_offset: Vec2,
+    global_clip_rect: Rect,
 }
 
 Draw_Rect_Command :: struct {
@@ -45,7 +45,7 @@ Draw_Text_Command :: struct {
 }
 
 Clip_Drawing_Command :: struct {
-    rect: Rect,
+    global_clip_rect: Rect,
 }
 
 pixel_size :: proc() -> Vec2 {
@@ -70,30 +70,33 @@ rect_pixel_snapped :: proc(rect: Rect) -> Rect {
 }
 
 // draw_custom :: proc(custom: proc()) {
-//     _process_draw_command(Draw_Custom_Command{custom, offset(), clip_rect()})
+//     _process_draw_command(Draw_Custom_Command{custom, global_offset(), clip_rect()})
 // }
 
 draw_rect :: proc(rect: Rect, color: Color) {
     if rect.size.x <= 0 || rect.size.y <= 0 do return
     rect := rect
-    rect.position += offset()
+    rect.position += global_offset()
     _process_draw_command(Draw_Rect_Command{rect, color})
 }
 
 draw_text :: proc(text: string, position: Vec2, font: Font, color: Color) {
-    _process_draw_command(Draw_Text_Command{text, offset() + position, font, color})
+    window := current_window()
+    window_load_font(window, font)
+    _process_draw_command(Draw_Text_Command{text, global_offset() + position, font, color})
 }
 
 clip_drawing :: proc(rect: Rect) {
     rect := rect
-    rect.position += offset()
+    rect.position += global_offset()
     _process_draw_command(Clip_Drawing_Command{rect})
 }
 
 
 
 _process_draw_command :: proc(command: Draw_Command) {
-    ctx.backend_vtable.render_draw_command(command)
+    // ctx.backend_vtable.render_draw_command(command)
+    append(&_current_layer().draw_commands, command)
 }
 
 // _process_draw_command :: proc(command: Draw_Command) {
