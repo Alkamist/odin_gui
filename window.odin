@@ -9,6 +9,11 @@ Window :: struct {
     is_hovered_by_mouse: bool,
     is_rendering_draw_commands: bool,
 
+    moved: bool,
+    resized: bool,
+    opened: bool,
+    closed: bool,
+
     local_offset_stack: [dynamic]Vec2,
     global_offset_stack: [dynamic]Vec2,
     global_clip_rect_stack: [dynamic]Rect,
@@ -38,31 +43,7 @@ window_destroy :: proc(window: ^Window) {
     delete(window.loaded_fonts)
 }
 
-window_moved :: proc(window: ^Window) -> bool {
-    return window.position != window.previous_rect.position
-}
-
-window_resized :: proc(window: ^Window) -> bool {
-    return window.size != window.previous_rect.size
-}
-
-window_opened :: proc(window: ^Window) -> bool {
-    return window.is_open && !window.was_open
-}
-
-window_closed :: proc(window: ^Window) -> bool {
-    return !window.is_open && window.was_open
-}
-
-window_mouse_entered :: proc(window: ^Window) -> bool {
-    return window.is_hovered_by_mouse && !window.was_hovered_by_mouse
-}
-
-window_mouse_exited :: proc(window: ^Window) -> bool {
-    return !window.is_hovered_by_mouse && window.was_hovered_by_mouse
-}
-
-window_begin_update :: proc(window: ^Window) -> bool {
+window_begin :: proc(window: ^Window) -> bool {
     if !window.is_open && window.was_open {
         if ctx.backend.close_window != nil && ctx.backend.close_window(window) {
             window.is_open = false
@@ -74,6 +55,11 @@ window_begin_update :: proc(window: ^Window) -> bool {
             window.is_open = true
         }
     }
+
+    window.moved = window.position != window.previous_rect.position
+    window.resized = window.size != window.previous_rect.size
+    window.opened = window.is_open && !window.was_open
+    window.closed = !window.is_open && window.was_open
 
     window.was_open = window.is_open
     window.previous_rect = window.rect
@@ -99,12 +85,8 @@ window_begin_update :: proc(window: ^Window) -> bool {
     }
 }
 
-window_end_update :: proc(window: ^Window) {
+window_end :: proc(window: ^Window) {
     if window.is_open {
-        if ctx.backend.window_end_frame != nil {
-            ctx.backend.window_end_frame(window)
-        }
-
         end_layer()
 
         slice.reverse(window.layers[:])
@@ -138,15 +120,19 @@ window_end_update :: proc(window: ^Window) {
             }
         }
 
+        if ctx.backend.window_end_frame != nil {
+            ctx.backend.window_end_frame(window)
+        }
+
         window.is_rendering_draw_commands = false
 
         pop(&ctx.window_stack)
     }
 }
 
-@(deferred_in=window_end_update)
+@(deferred_in=window_end)
 window_update :: proc(window: ^Window) -> bool {
-    return window_begin_update(window)
+    return window_begin(window)
 }
 
 window_load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {

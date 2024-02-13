@@ -63,8 +63,12 @@ input_window_mouse_exit :: proc(window: ^Window) {
     window.is_hovered_by_mouse = false
 }
 
-input_mouse_move :: proc(position: Vec2) {
-    ctx.screen_mouse_position = position
+input_window_content_scale :: proc(window: ^Window, content_scale: Vec2) {
+    window.content_scale = content_scale
+}
+
+input_mouse_move :: proc(screen_position: Vec2) {
+    ctx.screen_mouse_position = screen_position
 }
 
 input_mouse_press :: proc(button: Mouse_Button) {

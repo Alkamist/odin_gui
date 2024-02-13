@@ -5,21 +5,143 @@ import "core:math"
 import "core:time"
 import "core:strings"
 import rl "vendor:raylib"
-import "../gui"
+import "../../gui"
 
-@(thread_local) _ctx: ^Context
+Vec2 :: gui.Vec2
+Rect :: gui.Rect
+Color :: gui.Color
 
 Font :: struct {
-    rl_font: rl.Font,
+    size: int,
+    data: []byte,
     rune_to_glyph_index: map[rune]int,
+    rl_font: rl.Font,
 }
 
-load_font_from_data :: proc(font: ^Font, data: []byte, font_size: int) -> (ok: bool) {
-    if len(data) <= 0 do return
+Window :: struct {
+    using gui_window: gui.Window,
+    background_color: gui.Color,
+}
+
+init :: proc() {
+    gui.ctx.backend.poll_events = _poll_events
+    gui.ctx.backend.tick_now = _tick_now
+    gui.ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
+    gui.ctx.backend.get_clipboard = _get_clipboard
+    gui.ctx.backend.set_clipboard = _set_clipboard
+
+    gui.ctx.backend.init_window = _init_window
+    gui.ctx.backend.destroy_window = _destroy_window
+    gui.ctx.backend.open_window = _open_window
+    gui.ctx.backend.close_window = _close_window
+    gui.ctx.backend.window_begin_frame = _window_begin_frame
+    gui.ctx.backend.window_end_frame = _window_end_frame
+
+    gui.ctx.backend.load_font = _load_font
+    gui.ctx.backend.measure_text = _measure_text
+    gui.ctx.backend.font_metrics = _font_metrics
+    gui.ctx.backend.render_draw_command = _render_draw_command
+}
+
+shutdown :: proc() {}
+
+_poll_events :: proc() {}
+
+_init_window :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
+    window.background_color = {0, 0, 0, 0}
+}
+
+_destroy_window :: proc(window: ^gui.Window) {
+    for font in window.loaded_fonts {
+        font := cast(^Font)font
+        delete(font.rune_to_glyph_index)
+    }
+    rl.CloseWindow()
+}
+
+_open_window :: proc(window: ^gui.Window) -> (ok: bool) {
+    rl.SetConfigFlags({.WINDOW_RESIZABLE})
+    rl.InitWindow(i32(window.size.x), i32(window.size.y), "Raylib Window")
+    rl.SetWindowPosition(i32(window.position.x), i32(window.position.y))
+    rl.SetTargetFPS(240)
+    gui.input_window_mouse_enter(window)
+    return true
+}
+
+_close_window :: proc(window: ^gui.Window) -> (ok: bool) {
+    gui.input_window_mouse_exit(window)
+    rl.CloseWindow()
+    return true
+}
+
+_window_begin_frame :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
+
+    if rl.WindowShouldClose() {
+        window.is_open = false
+        return
+    }
+
+    gui.input_window_content_scale(window, rl.GetWindowScaleDPI())
+
+    gui.input_window_move(window, rl.GetWindowPosition())
+    gui.input_window_size(window, {f32(rl.GetRenderWidth()), f32(rl.GetRenderHeight())})
+
+    gui.input_mouse_move(rl.GetMousePosition() + rl.GetWindowPosition())
+
+    for button in gui.Mouse_Button {
+        rl_button := _to_rl_mouse_button(button)
+        if rl.IsMouseButtonPressed(rl_button) {
+            gui.input_mouse_press(button)
+        } else if rl.IsMouseButtonReleased(rl_button) {
+            gui.input_mouse_release(button)
+        }
+    }
+
+    gui.input_mouse_scroll(rl.GetMouseWheelMoveV())
+
+    for key in gui.Keyboard_Key {
+        rl_key := _to_rl_key(key)
+        if rl.IsKeyPressed(rl_key) || rl.IsKeyPressedRepeat(rl_key) {
+            gui.input_key_press(key)
+        } else if rl.IsKeyReleased(rl_key) {
+            gui.input_key_release(key)
+        }
+    }
+
+    ch := rl.GetCharPressed()
+    for ch != 0 {
+        gui.input_text(ch)
+        ch = rl.GetCharPressed()
+    }
+
+    rl.BeginDrawing()
+
+    rl.ClearBackground(_to_rl_color(window.background_color))
+    rl.BeginScissorMode(0, 0, i32(window.size.x), i32(window.size.y))
+}
+
+_window_end_frame :: proc(window: ^gui.Window) {
+    rl.EndScissorMode()
+    rl.EndDrawing()
+}
+
+_load_font :: proc(window: ^gui.Window, font: gui.Font) -> (ok: bool) {
+    font := cast(^Font)font
+
+    if len(font.data) <= 0 do return
 
     CODEPOINT_COUNT :: 95
 
-    font.rl_font = rl.LoadFontFromMemory(".ttf", raw_data(data), i32(len(data)), i32(font_size), nil, CODEPOINT_COUNT)
+    font.rl_font = rl.LoadFontFromMemory(
+        ".ttf",
+        raw_data(font.data),
+        i32(len(font.data)),
+        i32(font.size),
+        nil,
+        CODEPOINT_COUNT,
+    )
 
     for i in 0 ..< CODEPOINT_COUNT {
         font.rune_to_glyph_index[font.rl_font.chars[i].value] = i
@@ -29,130 +151,29 @@ load_font_from_data :: proc(font: ^Font, data: []byte, font_size: int) -> (ok: b
     return
 }
 
-font_destroy :: proc(font: ^Font) {
-    delete(font.rune_to_glyph_index)
-}
-
-Context :: struct {
-    using gui_ctx: gui.Context,
-    background_color: gui.Color,
-}
-
-update :: proc() {
-    if _ctx == nil do return
-    if rl.WindowShouldClose() {
-        gui.input_close(_ctx)
-        return
-    }
-
-    gui.input_content_scale(_ctx, rl.GetWindowScaleDPI())
-
-    gui.input_move(_ctx, rl.GetWindowPosition())
-    gui.input_resize(_ctx, {f32(rl.GetRenderWidth()), f32(rl.GetRenderHeight())})
-
-    gui.input_mouse_move(_ctx, rl.GetMousePosition())
-
-    for button in gui.Mouse_Button {
-        rl_button := _to_rl_mouse_button(button)
-        if rl.IsMouseButtonPressed(rl_button) {
-            gui.input_mouse_press(_ctx, button)
-        } else if rl.IsMouseButtonReleased(rl_button) {
-            gui.input_mouse_release(_ctx, button)
-        }
-    }
-
-    gui.input_mouse_scroll(_ctx, rl.GetMouseWheelMoveV())
-
-    for key in gui.Keyboard_Key {
-        rl_key := _to_rl_key(key)
-        if rl.IsKeyPressed(rl_key) || rl.IsKeyPressedRepeat(rl_key) {
-            gui.input_key_press(_ctx, key)
-        } else if rl.IsKeyReleased(rl_key) {
-            gui.input_key_release(_ctx, key)
-        }
-    }
-
-    ch := rl.GetCharPressed()
-    for ch != 0 {
-        gui.input_text(_ctx, ch)
-        ch = rl.GetCharPressed()
-    }
-
-    rl.BeginDrawing()
-
-    rl.ClearBackground(_to_rl_color(_ctx.background_color))
-    gui.update(_ctx)
-
-    rl.EndDrawing()
-}
-
-init :: proc(
-    ctx: ^Context,
-    position: gui.Vec2,
-    size: gui.Vec2,
-    temp_allocator := context.temp_allocator,
-) -> runtime.Allocator_Error {
-    if _ctx != nil do return nil
-    gui.init(ctx, position, size, temp_allocator) or_return
-    _ctx = ctx
-    ctx.tick_now = _tick_now
-    ctx.set_mouse_cursor_style = _set_mouse_cursor_style
-    ctx.get_clipboard = _get_clipboard
-    ctx.set_clipboard = _set_clipboard
-    ctx.measure_text = _measure_text
-    ctx.font_metrics = _font_metrics
-    ctx.render_draw_command = _render_draw_command
-    return nil
-}
-
-destroy :: proc(ctx: ^Context) {
-    if ctx != _ctx do return
-    gui.destroy(ctx)
-    rl.CloseWindow()
-}
-
-open :: proc(ctx: ^Context) {
-    if ctx != _ctx do return
-    rl.SetConfigFlags({.WINDOW_RESIZABLE})
-    rl.InitWindow(i32(ctx.size.x), i32(ctx.size.y), "Raylib Window")
-    rl.SetWindowPosition(i32(ctx.position.x), i32(ctx.position.y))
-    rl.SetTargetFPS(240)
-    gui.input_open(ctx)
-    gui.input_mouse_enter(ctx)
-}
-
-close :: proc(ctx: ^Context) {
-    if ctx != _ctx do return
-    gui.input_mouse_exit(ctx)
-    gui.input_close(ctx)
-    rl.CloseWindow()
-}
-
-
-
-_tick_now :: proc(ctx: ^gui.Context) -> (tick: gui.Tick, ok: bool) {
+_tick_now :: proc() -> (tick: gui.Tick, ok: bool) {
     return time.tick_now(), true
 }
 
-_set_mouse_cursor_style :: proc(ctx: ^gui.Context, style: gui.Mouse_Cursor_Style) -> (ok: bool) {
+_set_mouse_cursor_style :: proc(style: gui.Mouse_Cursor_Style) -> (ok: bool) {
     rl.SetMouseCursor(_to_rl_mouse_cursor(style))
     return true
 }
 
-_get_clipboard :: proc(ctx: ^gui.Context) -> (data: string, ok: bool) {
+_get_clipboard :: proc() -> (data: string, ok: bool) {
     cstr := rl.GetClipboardText()
     if cstr == nil do return "", false
     return string(cstr), true
 }
 
-_set_clipboard :: proc(ctx: ^gui.Context, data: string)-> (ok: bool) {
+_set_clipboard :: proc(data: string)-> (ok: bool) {
     cstr := strings.clone_to_cstring(data, gui.temp_allocator())
     rl.SetClipboardText(cstr)
     return true
 }
 
 _measure_text :: proc(
-    ctx: ^gui.Context,
+    window: ^gui.Window,
     text: string,
     font: gui.Font,
     glyphs: ^[dynamic]gui.Text_Glyph,
@@ -193,14 +214,16 @@ _measure_text :: proc(
     return true
 }
 
-_font_metrics :: proc(ctx: ^gui.Context, font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
+_font_metrics :: proc(window: ^gui.Window, font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
     assert(font != nil)
     font := cast(^Font)font
     metrics.line_height = f32(font.rl_font.baseSize)
     return metrics, true
 }
 
-_render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Command) {
+import "core:fmt"
+
+_render_draw_command :: proc(window: ^gui.Window, command: gui.Draw_Command) {
     switch c in command {
     case gui.Draw_Custom_Command:
         if c.custom != nil {
@@ -212,14 +235,14 @@ _render_draw_command :: proc(ctx: ^gui.Context, command: gui.Draw_Command) {
         rl.DrawRectangleV(rect.position, rect.size, _to_rl_color(c.color))
 
     case gui.Draw_Text_Command:
-        font := cast(^rl.Font)c.font
+        font := cast(^Font)c.font
         text, err := strings.clone_to_cstring(c.text, gui.temp_allocator())
         if err == nil {
-            rl.DrawTextEx(font^, text, gui.pixel_snapped(c.position), f32(font.baseSize), 0, _to_rl_color(c.color))
+            rl.DrawTextEx(font.rl_font, text, gui.pixel_snapped(c.position), f32(font.rl_font.baseSize), 0, _to_rl_color(c.color))
         }
 
     case gui.Clip_Drawing_Command:
-        rect := gui.pixel_snapped(c.rect)
+        rect := gui.pixel_snapped(c.global_clip_rect)
         rl.EndScissorMode()
 		rl.BeginScissorMode(i32(rect.position.x), i32(rect.position.y), i32(rect.size.x), i32(rect.size.y))
     }

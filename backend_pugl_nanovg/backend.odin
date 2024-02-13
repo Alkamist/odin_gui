@@ -19,15 +19,15 @@ OPENGL_VERSION_MINOR :: 3
 @(thread_local) _open_gl_is_loaded: bool
 @(thread_local) _world: ^pugl.World
 
+Vec2 :: gui.Vec2
+Rect :: gui.Rect
+Color :: gui.Color
+
 Font :: struct {
     name: string,
     size: int,
     data: []byte,
 }
-
-Vec2 :: gui.Vec2
-Rect :: gui.Rect
-Color :: gui.Color
 
 Native_Handle :: rawptr
 
@@ -218,7 +218,9 @@ _window_begin_frame :: proc(window: ^gui.Window) {
     pugl.EnterContext(window.view)
 
     size := window.size
-    window.content_scale = f32(pugl.GetScaleFactor(window.view))
+    scale := f32(pugl.GetScaleFactor(window.view))
+    gui.input_window_content_scale(window, {scale, scale})
+
 
     c := window.background_color
     gl.Viewport(0, 0, i32(size.x), i32(size.y))
@@ -402,7 +404,9 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         event := event.configure
         gui.input_window_move(window, {f32(event.x), f32(event.y)})
         gui.input_window_size(window, {f32(event.width), f32(event.height)})
-        if !gui.window_opened(window) && gui.window_resized(window) {
+        opened := window.is_open && !window.was_open
+        resized := window.size != window.previous_rect.size
+        if !opened && resized {
             gui.context_update()
         }
 
