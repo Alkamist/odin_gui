@@ -1,12 +1,12 @@
-package main
+package example_raylib
 
 import "base:runtime"
 import "core:fmt"
 import "core:mem"
-import "../../gui"
-import "../../gui/widgets"
+import "../../../gui"
+import "../../../gui/widgets"
 
-import backend "../backend_raylib"
+import backend "../../backends/raylib"
 import rl "vendor:raylib"
 
 window: backend.Window

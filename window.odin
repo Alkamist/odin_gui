@@ -27,7 +27,7 @@ Window :: struct {
     was_hovered_by_mouse: bool,
 }
 
-window_init :: proc(window: ^Window, rect: Rect, allocator := context.allocator) {
+window_init :: proc(window: ^Window, rect: Rect) {
     window.rect = rect
     window.is_open = true
     window.content_scale = {1, 1}

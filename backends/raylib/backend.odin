@@ -5,7 +5,7 @@ import "core:math"
 import "core:time"
 import "core:strings"
 import rl "vendor:raylib"
-import "../../gui"
+import "../../../gui"
 
 Vec2 :: gui.Vec2
 Rect :: gui.Rect

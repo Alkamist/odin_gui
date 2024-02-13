@@ -1,11 +1,11 @@
-package main
+package example_pugl_nanovg
 
 import "base:runtime"
 import "core:fmt"
 import "core:mem"
-import "../../gui"
-import "../../gui/widgets"
-import backend "../../gui/backend_pugl_nanovg"
+import "../../../gui"
+import "../../../gui/widgets"
+import backend "../../backends/pugl_nanovg"
 import nvg "vendor:nanovg"
 
 consola_13 := backend.Font{"consola_13", 13, #load("consola.ttf")}

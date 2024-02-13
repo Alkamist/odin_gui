@@ -11,7 +11,7 @@ import gl "vendor:OpenGL"
 import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
 import "pugl"
-import "../../gui"
+import "../../../gui"
 
 OPENGL_VERSION_MAJOR :: 3
 OPENGL_VERSION_MINOR :: 3
