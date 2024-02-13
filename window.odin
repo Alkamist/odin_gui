@@ -1,6 +1,5 @@
 package gui
 
-import "core:fmt"
 import "core:slice"
 
 Window :: struct {
@@ -8,10 +7,10 @@ Window :: struct {
     content_scale: Vec2,
     is_open: bool,
     is_hovered_by_mouse: bool,
+    is_rendering_draw_commands: bool,
 
     local_offset_stack: [dynamic]Vec2,
     global_offset_stack: [dynamic]Vec2,
-    local_clip_rect_stack: [dynamic]Rect,
     global_clip_rect_stack: [dynamic]Rect,
     layer_stack: [dynamic]Layer,
     layers: [dynamic]Layer,
@@ -84,7 +83,6 @@ window_begin_update :: proc(window: ^Window) -> bool {
 
         window.local_offset_stack = make([dynamic]Vec2, ctx.temp_allocator)
         window.global_offset_stack = make([dynamic]Vec2, ctx.temp_allocator)
-        window.local_clip_rect_stack = make([dynamic]Rect, ctx.temp_allocator)
         window.global_clip_rect_stack = make([dynamic]Rect, ctx.temp_allocator)
         window.layer_stack = make([dynamic]Layer, ctx.temp_allocator)
         window.layers = make([dynamic]Layer, ctx.temp_allocator)
@@ -118,25 +116,29 @@ window_end_update :: proc(window: ^Window) {
             _update_hover(window)
         }
 
+        window.is_rendering_draw_commands = true
+
         for layer in window.layers {
             for command in layer.draw_commands {
                 render := ctx.backend.render_draw_command
                 if render != nil {
-                    // c, is_custom := command.(Draw_Custom_Command)
-                    // if is_custom {
-                    //     begin_offset(c.offset)
-                    //     begin_clip(c.clip_rect)
-                    // }
+                    c, is_custom := command.(Draw_Custom_Command)
+                    if is_custom {
+                        begin_clip(c.global_clip_rect)
+                        begin_offset(c.global_offset)
+                    }
 
                     render(window, command)
 
-                    // if is_custom {
-                    //     end_clip()
-                    //     end_offset()
-                    // }
+                    if is_custom {
+                        end_offset()
+                        end_clip()
+                    }
                 }
             }
         }
+
+        window.is_rendering_draw_commands = false
 
         pop(&ctx.window_stack)
     }
@@ -147,32 +149,26 @@ window_update :: proc(window: ^Window) -> bool {
     return window_begin_update(window)
 }
 
-window_load_font :: proc(window: ^Window, font: Font) {
+window_load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
     if ctx.backend.load_font == nil do return
     if font not_in window.loaded_fonts {
         if ctx.backend.load_font(window, font) {
             window.loaded_fonts[font] = {}
-        } else {
-            fmt.eprintf("Failed to load font: %v\n", font)
+            return true
         }
     }
+    return false
 }
 
-window_unload_font :: proc(window: ^Window, font: Font) {
+window_unload_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
     if ctx.backend.unload_font == nil do return
     if font in window.loaded_fonts {
         if ctx.backend.unload_font(window, font) {
             delete_key(&window.loaded_fonts, font)
-        } else {
-            fmt.eprintf("Failed to unload font: %v\n", font)
+            return true
         }
     }
-}
-
-window_unload_all_fonts :: proc(window: ^Window) {
-    for font in window.loaded_fonts {
-        window_unload_font(window, font)
-    }
+    return false
 }
 
 current_window :: proc{

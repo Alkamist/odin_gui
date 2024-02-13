@@ -1,7 +1,6 @@
 package gui
 
 import "base:runtime"
-import "base:intrinsics"
 import "core:time"
 import "rects"
 
@@ -131,8 +130,10 @@ scoped_offset :: proc(offset: Vec2) {
 // Local coordinates
 clip_rect :: proc() -> Rect {
     window := current_window()
-    if len(window.local_clip_rect_stack) <= 0 do return {{0, 0}, window.size}
-    return window.local_clip_rect_stack[len(window.local_clip_rect_stack) - 1]
+    if len(window.global_clip_rect_stack) <= 0 do return {{0, 0}, window.size}
+    global_rect := window.global_clip_rect_stack[len(window.global_clip_rect_stack) - 1]
+    global_rect.position -= global_offset()
+    return global_rect
 }
 
 // Global coordinates
@@ -154,26 +155,19 @@ begin_clip :: proc(rect: Rect, intersect := true) {
     }
 
     append(&window.global_clip_rect_stack, global_rect)
-
-    local_rect := Rect{global_rect.position - offset, global_rect.size}
-    append(&window.local_clip_rect_stack, local_rect)
-
     _process_draw_command(Clip_Drawing_Command{global_rect})
 }
 
 end_clip :: proc() {
     window := current_window()
 
-    if len(window.local_clip_rect_stack) <= 0 ||
-       len(window.global_clip_rect_stack) <= 0 {
+    if len(window.global_clip_rect_stack) <= 0 {
         return
     }
 
-    pop(&window.local_clip_rect_stack)
     pop(&window.global_clip_rect_stack)
 
-    if len(window.local_clip_rect_stack) <= 0 ||
-       len(window.global_clip_rect_stack) <= 0 {
+    if len(window.global_clip_rect_stack) <= 0 {
         return
     }
 

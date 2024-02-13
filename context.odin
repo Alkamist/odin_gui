@@ -1,9 +1,7 @@
 package gui
 
 import "base:runtime"
-import "base:intrinsics"
 import "core:time"
-import "core:slice"
 import "core:strings"
 import "rects"
 

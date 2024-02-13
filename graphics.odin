@@ -69,9 +69,9 @@ rect_pixel_snapped :: proc(rect: Rect) -> Rect {
     return rects.snapped(rect, pixel_size())
 }
 
-// draw_custom :: proc(custom: proc()) {
-//     _process_draw_command(Draw_Custom_Command{custom, global_offset(), clip_rect()})
-// }
+draw_custom :: proc(custom: proc()) {
+    _process_draw_command(Draw_Custom_Command{custom, global_offset(), global_clip_rect()})
+}
 
 draw_rect :: proc(rect: Rect, color: Color) {
     if rect.size.x <= 0 || rect.size.y <= 0 do return
@@ -95,17 +95,12 @@ clip_drawing :: proc(rect: Rect) {
 
 
 _process_draw_command :: proc(command: Draw_Command) {
-    // ctx.backend_vtable.render_draw_command(command)
-    append(&_current_layer().draw_commands, command)
+    window := current_window()
+    if window.is_rendering_draw_commands {
+        if ctx.backend.render_draw_command != nil {
+            ctx.backend.render_draw_command(window, command)
+        }
+    } else {
+        append(&_current_layer().draw_commands, command)
+    }
 }
-
-// _process_draw_command :: proc(command: Draw_Command) {
-//     if !_current_ctx.is_visible do return
-//     if _current_ctx.is_in_render_phase {
-//         if _current_ctx.render_draw_command != nil {
-//             _current_ctx->render_draw_command(command)
-//         }
-//     } else {
-//         append(&_current_layer().draw_commands, command)
-//     }
-// }

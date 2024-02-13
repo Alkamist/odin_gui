@@ -346,7 +346,9 @@ _render_draw_command :: proc(window: ^gui.Window, command: gui.Draw_Command) {
     switch c in command {
     case gui.Draw_Custom_Command:
         if c.custom != nil {
+            nvg.Save(nvg_ctx)
             c.custom()
+            nvg.Restore(nvg_ctx)
         }
 
     case gui.Draw_Rect_Command:

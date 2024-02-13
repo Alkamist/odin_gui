@@ -6,6 +6,7 @@ import "core:mem"
 import "../../gui"
 import "../../gui/widgets"
 import backend "../../gui/backend_pugl_nanovg"
+import nvg "vendor:nanovg"
 
 consola_13 := backend.Font{"consola_13", 13, #load("consola.ttf")}
 
@@ -33,24 +34,27 @@ update :: proc() {
     }
 
     if gui.window_update(&window1) {
-        // widgets.update(&button1)
-        // widgets.draw(&button1)
-        // widgets.update(&button2)
-        // widgets.draw(&button2)
+        widgets.update(&button1)
+        widgets.draw(&button1)
+        widgets.update(&button2)
+        widgets.draw(&button2)
 
-        {
-            gui.scoped_layer(-1)
-            gui.draw_rect({{50, 50}, {100, 100}}, {1, 0, 0, 1})
-        }
-
-        gui.draw_text("Hello window 1.", {50, 50}, &consola_13, {1, 1, 1, 1})
+        gui.draw_rect({{200, 200}, {200, 200}}, {0.5, 0, 0, 1})
+        gui.draw_custom(proc() {
+            nvg_ctx := gui.current_window(backend.Window).nvg_ctx
+            nvg.BeginPath(nvg_ctx)
+            nvg.Rect(nvg_ctx, 250, 250, 200, 200)
+            nvg.FillColor(nvg_ctx, {0, 0.5, 0, 1})
+            nvg.Fill(nvg_ctx)
+        })
+        gui.draw_text("Hello window 1.", {250, 250}, &consola_13, {1, 1, 1, 1})
     }
 
     if gui.window_update(&window2) {
-        // widgets.update(&button3)
-        // widgets.draw(&button3)
-        // widgets.update(&button4)
-        // widgets.draw(&button4)
+        widgets.update(&button3)
+        widgets.draw(&button3)
+        widgets.update(&button4)
+        widgets.draw(&button4)
 
         gui.draw_text("Hello window 2.", {50, 50}, &consola_13, {1, 1, 1, 1})
     }
