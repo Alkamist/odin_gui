@@ -94,10 +94,15 @@ update :: proc() {
     }
 
     if gui.window_update(&window1) {
+        button1.position = position
         widgets.update(&button1)
         widgets.draw(&button1)
         widgets.update(&button2)
         widgets.draw(&button2)
+
+        if button2.is_down && gui.mouse_moved() {
+            window1.size += gui.mouse_delta()
+        }
 
         gui.draw_rect({{200, 200}, {200, 200}}, {0.5, 0, 0, 1})
         gui.draw_custom(proc() {
@@ -111,6 +116,7 @@ update :: proc() {
     }
 
     if gui.window_update(&window2) {
+        button3.position = position
         widgets.update(&button3)
         widgets.draw(&button3)
         widgets.update(&button4)

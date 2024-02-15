@@ -57,6 +57,8 @@ Window :: struct {
     view: ^pugl.View,
 
     nvg_ctx: ^nvg.Context,
+
+    size_set_by_user_code: bool,
 }
 
 Context :: gui.Context
@@ -97,6 +99,8 @@ context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) ->
 
     ctx.backend.open_window = _open_window
     ctx.backend.close_window = _close_window
+    ctx.backend.set_window_position = _set_window_position
+    ctx.backend.set_window_size = _set_window_size
     ctx.backend.window_begin_frame = _window_begin_frame
     ctx.backend.window_end_frame = _window_end_frame
 
@@ -115,6 +119,7 @@ context_destroy :: proc(ctx: ^Context) {
 context_update :: proc(ctx: ^Context) {
     _odin_context = context
     if _world == nil do return
+    free_all(ctx.temp_allocator)
     pugl.Update(_world, 0)
     gui.context_update(ctx)
 }
@@ -226,8 +231,27 @@ _close_window :: proc(window: ^gui.Window) -> (ok: bool) {
     return true
 }
 
+_set_window_position :: proc(window: ^gui.Window, position: Vec2) -> (ok: bool)  {
+    window := cast(^Window)window
+    if pugl.SetPosition(window.view, i32(position.x), i32(position.y)) == .FAILURE {
+        return false
+    }
+    return true
+}
+
+_set_window_size :: proc(window: ^gui.Window, size: Vec2) -> (ok: bool) {
+    window := cast(^Window)window
+    window.size_set_by_user_code = true
+    defer window.size_set_by_user_code = false
+    if pugl.SetSize(window.view, u32(size.x), u32(size.y)) == .FAILURE {
+        return false
+    }
+    return true
+}
+
 _window_begin_frame :: proc(window: ^gui.Window) {
     window := cast(^Window)window
+
     pugl.EnterContext(window.view)
 
     size := window.size
@@ -245,9 +269,7 @@ _window_begin_frame :: proc(window: ^gui.Window) {
 
 _window_end_frame :: proc(window: ^gui.Window) {
     window := cast(^Window)window
-
     nvg.EndFrame(window.nvg_ctx)
-
     pugl.LeaveContext(window.view)
 }
 
@@ -395,10 +417,6 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     ctx := gui.current_context()
 
     #partial switch event.type {
-    // case .EXPOSE:
-    // case .FOCUS_IN:
-    // case .FOCUS_OUT:
-
     case .UPDATE:
         pugl.PostRedisplay(view)
 
@@ -416,43 +434,63 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
     case .CONFIGURE:
         event := event.configure
+
         gui.input_window_move(window, {f32(event.x), f32(event.y)})
         gui.input_window_size(window, {f32(event.width), f32(event.height)})
+
         opened := window.is_open && !window.was_open
         resized := window.size != window.previous_rect.size
-        if !opened && resized {
+
+        if !opened && resized && !window.size_set_by_user_code {
             gui.context_update(ctx)
+            pugl.PostRedisplay(view)
         }
 
     case .POINTER_IN:
         gui.input_window_mouse_enter(window)
+        gui.context_update(ctx)
+        pugl.PostRedisplay(view)
 
     case .POINTER_OUT:
         gui.input_window_mouse_exit(window)
+        gui.context_update(ctx)
+        pugl.PostRedisplay(view)
 
     case .MOTION:
         event := event.motion
         gui.input_mouse_move(ctx, {f32(event.xRoot), f32(event.yRoot)})
+        gui.context_update(ctx)
+        pugl.PostRedisplay(view)
 
     case .SCROLL:
         event := &event.scroll
         gui.input_mouse_scroll(ctx, {f32(event.dx), f32(event.dy)})
+        gui.context_update(ctx)
+        pugl.PostRedisplay(view)
 
     case .BUTTON_PRESS:
         event := &event.button
         gui.input_mouse_press(ctx, _pugl_button_to_mouse_button(event.button))
+        gui.context_update(ctx)
+        pugl.PostRedisplay(view)
 
     case .BUTTON_RELEASE:
         event := &event.button
         gui.input_mouse_release(ctx, _pugl_button_to_mouse_button(event.button))
+        gui.context_update(ctx)
+        pugl.PostRedisplay(view)
 
     case .KEY_PRESS:
         event := &event.key
         gui.input_key_press(ctx, _pugl_key_event_to_keyboard_key(event))
+        gui.context_update(ctx)
+        pugl.PostRedisplay(view)
 
     case .KEY_RELEASE:
         event := &event.key
         gui.input_key_release(ctx, _pugl_key_event_to_keyboard_key(event))
+        gui.context_update(ctx)
+        pugl.PostRedisplay(view)
 
     case .TEXT:
         event := &event.text
@@ -466,6 +504,8 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         if !skip {
             r, len := utf8.decode_rune(event.string[:4])
             gui.input_text(ctx, r)
+            gui.context_update(ctx)
+            pugl.PostRedisplay(view)
         }
 
     case .CLOSE:

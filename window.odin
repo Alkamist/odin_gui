@@ -9,6 +9,7 @@ Window :: struct {
     is_hovered_by_mouse: bool,
     is_rendering_draw_commands: bool,
 
+    // Delayed by 1 frame
     moved: bool,
     resized: bool,
     opened: bool,
@@ -25,6 +26,9 @@ Window :: struct {
     previous_rect: Rect,
     was_open: bool,
     was_hovered_by_mouse: bool,
+
+    last_position_set_externally: Vec2,
+    last_size_set_externally: Vec2,
 }
 
 window_init :: proc(window: ^Window, rect: Rect) {
@@ -39,6 +43,9 @@ window_destroy :: proc(window: ^Window) {
 
 window_begin :: proc(window: ^Window) -> bool {
     ctx := current_context()
+
+    window.size.x = max(0, window.size.x)
+    window.size.y = max(0, window.size.y)
 
     if !window.is_open && window.was_open {
         if ctx.backend.close_window != nil && ctx.backend.close_window(window) {
@@ -70,6 +77,8 @@ window_begin :: proc(window: ^Window) -> bool {
         window.layers = make([dynamic]Layer, ctx.temp_allocator)
 
         begin_layer(0)
+
+        _handle_move_and_resize(window)
 
         if ctx.backend.window_begin_frame != nil {
             ctx.backend.window_begin_frame(window)
@@ -162,6 +171,30 @@ current_window :: proc() -> ^Window {
 }
 
 
+
+_handle_move_and_resize :: proc(window: ^Window) {
+    ctx := current_context()
+
+    if window.position != window.last_position_set_externally {
+        failed := true
+        if ctx.backend.set_window_position != nil {
+            failed = ctx.backend.set_window_position(window, window.position)
+        }
+        if failed {
+            window.position = window.last_position_set_externally
+        }
+    }
+
+    if window.size != window.last_size_set_externally {
+        failed := true
+        if ctx.backend.set_window_size != nil {
+            failed = ctx.backend.set_window_size(window, window.size)
+        }
+        if failed {
+            window.size = window.last_size_set_externally
+        }
+    }
+}
 
 _update_hover :: proc(window: ^Window) {
     ctx := current_context()

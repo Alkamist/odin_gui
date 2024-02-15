@@ -9,7 +9,7 @@ import "../../../gui/widgets"
 import backend "../../backends/raylib"
 import rl "vendor:raylib"
 
-ctx: gui.Context
+ctx: backend.Context
 
 window: backend.Window
 
@@ -21,6 +21,8 @@ consola_13 := backend.Font{
 button: widgets.Button
 slider: widgets.Slider
 text: widgets.Editable_Text_Line
+
+move_button: widgets.Button
 
 controlling_camera: bool
 camera_button: widgets.Button
@@ -44,6 +46,13 @@ update :: proc() {
         if window.opened {
             scene_texture = rl.LoadRenderTexture(VIEW_WIDTH, VIEW_HEIGHT)
             rl.SetExitKey(.KEY_NULL)
+        }
+
+        widgets.update(&move_button)
+        widgets.draw(&move_button)
+
+        if move_button.is_down {
+            window.position += gui.mouse_delta()
         }
 
         if button.is_down && gui.mouse_moved() {
@@ -164,10 +173,10 @@ main :: proc() {
     text.font = &consola_13
     widgets.input_string(&text, "Hello world. Type here: ")
 
+    widgets.init(&move_button)
+    move_button.position = {700, 100}
+
     for window.is_open {
         backend.context_update(&ctx)
-        free_all(gui.temp_allocator())
     }
-
-    free_all(gui.temp_allocator())
 }

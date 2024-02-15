@@ -48,10 +48,12 @@ Keyboard_Key :: enum {
 }
 
 input_window_move :: proc(window: ^Window, position: Vec2) {
+    window.last_position_set_externally = position
     window.position = position
 }
 
 input_window_size :: proc(window: ^Window, size: Vec2) {
+    window.last_size_set_externally = size
     window.size = size
 }
 
@@ -171,7 +173,7 @@ screen_mouse_position :: proc() -> Vec2 {
 
 mouse_delta :: proc() -> Vec2 {
     ctx := current_context()
-    return ctx.screen_mouse_position - ctx.previous_global_mouse_position
+    return ctx.screen_mouse_position - ctx.previous_screen_mouse_position
 }
 
 mouse_down :: proc(button: Mouse_Button) -> bool {

@@ -23,7 +23,9 @@ Window :: struct {
     background_color: gui.Color,
 }
 
-Context :: gui.Context
+Context :: struct {
+    using gui_ctx: gui.Context,
+}
 
 context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
     gui.context_init(ctx, temp_allocator) or_return
@@ -35,6 +37,8 @@ context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) ->
 
     ctx.backend.open_window = _open_window
     ctx.backend.close_window = _close_window
+    ctx.backend.set_window_position = _set_window_position
+    ctx.backend.set_window_size = _set_window_size
     ctx.backend.window_begin_frame = _window_begin_frame
     ctx.backend.window_end_frame = _window_end_frame
 
@@ -83,6 +87,18 @@ _close_window :: proc(window: ^gui.Window) -> (ok: bool) {
     return true
 }
 
+_set_window_position :: proc(window: ^gui.Window, position: Vec2) -> (ok: bool)  {
+    rl.SetWindowPosition(i32(position.x), i32(position.y))
+    window.position = position
+    return true
+}
+
+_set_window_size :: proc(window: ^gui.Window, size: Vec2) -> (ok: bool) {
+    rl.SetWindowSize(i32(size.x), i32(size.y))
+    window.size = size
+    return true
+}
+
 _window_begin_frame :: proc(window: ^gui.Window) {
     window := cast(^Window)window
 
@@ -95,10 +111,10 @@ _window_begin_frame :: proc(window: ^gui.Window) {
 
     gui.input_window_content_scale(window, rl.GetWindowScaleDPI())
 
+    gui.input_mouse_move(ctx, rl.GetMousePosition() + window.position)
+
     gui.input_window_move(window, rl.GetWindowPosition())
     gui.input_window_size(window, {f32(rl.GetRenderWidth()), f32(rl.GetRenderHeight())})
-
-    gui.input_mouse_move(ctx, rl.GetMousePosition() + rl.GetWindowPosition())
 
     for button in gui.Mouse_Button {
         rl_button := _to_rl_mouse_button(button)
@@ -135,6 +151,7 @@ _window_begin_frame :: proc(window: ^gui.Window) {
 _window_end_frame :: proc(window: ^gui.Window) {
     rl.EndScissorMode()
     rl.EndDrawing()
+    free_all(gui.temp_allocator())
 }
 
 _load_font :: proc(window: ^gui.Window, font: gui.Font) -> (ok: bool) {

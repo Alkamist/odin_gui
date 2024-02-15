@@ -15,6 +15,8 @@ Backend_VTable :: struct {
 
     open_window: proc(window: ^Window) -> (ok: bool),
     close_window: proc(window: ^Window) -> (ok: bool),
+    set_window_position: proc(window: ^Window, position: Vec2) -> (ok: bool),
+    set_window_size: proc(window: ^Window, size: Vec2) -> (ok: bool),
     window_begin_frame: proc(window: ^Window),
     window_end_frame: proc(window: ^Window),
 
@@ -60,7 +62,7 @@ Context :: struct {
     is_first_frame: bool,
 
     previous_tick: Tick,
-    previous_global_mouse_position: Vec2,
+    previous_screen_mouse_position: Vec2,
 
     temp_allocator: runtime.Allocator,
 
@@ -71,6 +73,7 @@ current_context :: proc() -> ^Context {
     return _current_ctx
 }
 
+// You are responsible for freeing the temp_allocator every frame in your backend.
 context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
     ctx.temp_allocator = temp_allocator
     _remake_input_buffers(ctx) or_return
@@ -94,7 +97,7 @@ context_update :: proc(ctx: ^Context) {
 
     if ctx.is_first_frame {
         ctx.previous_tick = ctx.tick
-        ctx.previous_global_mouse_position = ctx.screen_mouse_position
+        ctx.previous_screen_mouse_position = ctx.screen_mouse_position
     }
 
     ctx.window_stack = make([dynamic]^Window, ctx.temp_allocator)
@@ -109,7 +112,7 @@ context_update :: proc(ctx: ^Context) {
 
     ctx.mouse_wheel = {0, 0}
     ctx.previous_tick = ctx.tick
-    ctx.previous_global_mouse_position = ctx.screen_mouse_position
+    ctx.previous_screen_mouse_position = ctx.screen_mouse_position
 
     ctx.is_first_frame = false
     ctx.any_window_hovered = false
