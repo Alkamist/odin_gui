@@ -31,19 +31,15 @@ window_init :: proc(window: ^Window, rect: Rect) {
     window.rect = rect
     window.is_open = true
     window.content_scale = {1, 1}
-    if ctx.backend.init_window != nil {
-        ctx.backend.init_window(window)
-    }
 }
 
 window_destroy :: proc(window: ^Window) {
-    if ctx.backend.destroy_window != nil {
-        ctx.backend.destroy_window(window)
-    }
     delete(window.loaded_fonts)
 }
 
 window_begin :: proc(window: ^Window) -> bool {
+    ctx := current_context()
+
     if !window.is_open && window.was_open {
         if ctx.backend.close_window != nil && ctx.backend.close_window(window) {
             window.is_open = false
@@ -86,48 +82,49 @@ window_begin :: proc(window: ^Window) -> bool {
 }
 
 window_end :: proc(window: ^Window) {
-    if window.is_open {
-        end_layer()
+    if !window.is_open do return
+    ctx := current_context()
 
-        slice.reverse(window.layers[:])
-        slice.stable_sort_by(window.layers[:], proc(i, j: Layer) -> bool {
-            return i.global_z_index < j.global_z_index
-        })
+    end_layer()
 
-        if window.is_hovered_by_mouse {
-            _update_hover(window)
-        }
+    slice.reverse(window.layers[:])
+    slice.stable_sort_by(window.layers[:], proc(i, j: Layer) -> bool {
+        return i.global_z_index < j.global_z_index
+    })
 
-        window.is_rendering_draw_commands = true
+    if window.is_hovered_by_mouse {
+        _update_hover(window)
+    }
 
-        for layer in window.layers {
-            for command in layer.draw_commands {
-                render := ctx.backend.render_draw_command
-                if render != nil {
-                    c, is_custom := command.(Draw_Custom_Command)
-                    if is_custom {
-                        begin_clip(c.global_clip_rect)
-                        begin_offset(c.global_offset)
-                    }
+    window.is_rendering_draw_commands = true
 
-                    render(window, command)
+    for layer in window.layers {
+        for command in layer.draw_commands {
+            render := ctx.backend.render_draw_command
+            if render != nil {
+                c, is_custom := command.(Draw_Custom_Command)
+                if is_custom {
+                    begin_clip(c.global_clip_rect)
+                    begin_offset(c.global_offset)
+                }
 
-                    if is_custom {
-                        end_offset()
-                        end_clip()
-                    }
+                render(window, command)
+
+                if is_custom {
+                    end_offset()
+                    end_clip()
                 }
             }
         }
-
-        if ctx.backend.window_end_frame != nil {
-            ctx.backend.window_end_frame(window)
-        }
-
-        window.is_rendering_draw_commands = false
-
-        pop(&ctx.window_stack)
     }
+
+    if ctx.backend.window_end_frame != nil {
+        ctx.backend.window_end_frame(window)
+    }
+
+    window.is_rendering_draw_commands = false
+
+    pop(&ctx.window_stack)
 }
 
 @(deferred_in=window_end)
@@ -136,6 +133,7 @@ window_update :: proc(window: ^Window) -> bool {
 }
 
 window_load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
+    ctx := current_context()
     if ctx.backend.load_font == nil do return
     if font not_in window.loaded_fonts {
         if ctx.backend.load_font(window, font) {
@@ -147,6 +145,7 @@ window_load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
 }
 
 window_unload_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
+    ctx := current_context()
     if ctx.backend.unload_font == nil do return
     if font in window.loaded_fonts {
         if ctx.backend.unload_font(window, font) {
@@ -157,23 +156,16 @@ window_unload_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
     return false
 }
 
-current_window :: proc{
-    current_window_cast,
-    current_window_base,
-}
-
-current_window_cast :: proc($T: typeid) -> ^T {
-    return cast(^T)ctx.window_stack[len(ctx.window_stack) - 1]
-}
-
-current_window_base :: proc() -> ^Window {
+current_window :: proc() -> ^Window {
+    ctx := current_context()
     return ctx.window_stack[len(ctx.window_stack) - 1]
 }
 
 
 
 _update_hover :: proc(window: ^Window) {
-    _clear_hover()
+    ctx := current_context()
+    _clear_hover(ctx)
 
     for layer in window.layers {
         mouse_hover_request := layer.final_mouse_hover_request

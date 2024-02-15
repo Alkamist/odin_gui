@@ -67,16 +67,17 @@ input_window_content_scale :: proc(window: ^Window, content_scale: Vec2) {
     window.content_scale = content_scale
 }
 
-input_mouse_move :: proc(screen_position: Vec2) {
+input_mouse_move :: proc(ctx: ^Context, screen_position: Vec2) {
     ctx.screen_mouse_position = screen_position
 }
 
-input_mouse_press :: proc(button: Mouse_Button) {
+input_mouse_press :: proc(ctx: ^Context, button: Mouse_Button) {
     ctx.mouse_down[button] = true
 
     tick_available := false
     previous_mouse_repeat_tick := ctx.mouse_repeat_tick
-    ctx.mouse_repeat_tick, tick_available = tick_now()
+
+    ctx.mouse_repeat_tick, tick_available = _tick_now(ctx)
 
     if tick_available {
         delta := time.tick_diff(previous_mouse_repeat_tick, ctx.mouse_repeat_tick)
@@ -101,16 +102,16 @@ input_mouse_press :: proc(button: Mouse_Button) {
     append(&ctx.mouse_presses, button)
 }
 
-input_mouse_release :: proc(button: Mouse_Button) {
+input_mouse_release :: proc(ctx: ^Context, button: Mouse_Button) {
     ctx.mouse_down[button] = false
     append(&ctx.mouse_releases, button)
 }
 
-input_mouse_scroll :: proc(amount: Vec2) {
+input_mouse_scroll :: proc(ctx: ^Context, amount: Vec2) {
     ctx.mouse_wheel = amount
 }
 
-input_key_press :: proc(key: Keyboard_Key) {
+input_key_press :: proc(ctx: ^Context, key: Keyboard_Key) {
     already_down := ctx.key_down[key]
     ctx.key_down[key] = true
     if !already_down {
@@ -119,30 +120,34 @@ input_key_press :: proc(key: Keyboard_Key) {
     append(&ctx.key_repeats, key)
 }
 
-input_key_release :: proc(key: Keyboard_Key) {
+input_key_release :: proc(ctx: ^Context, key: Keyboard_Key) {
     ctx.key_down[key] = false
     append(&ctx.key_releases, key)
 }
 
-input_text :: proc(text: rune) {
+input_text :: proc(ctx: ^Context, text: rune) {
     strings.write_rune(&ctx.text_input, text)
 }
 
 
 
 tick :: proc() -> time.Tick {
+    ctx := current_context()
     return ctx.tick
 }
 
 delta_time_duration :: proc() -> time.Duration {
+    ctx := current_context()
     return time.tick_diff(ctx.previous_tick, ctx.tick)
 }
 
 delta_time :: proc() -> f32 {
+    ctx := current_context()
     return f32(time.duration_seconds(time.tick_diff(ctx.previous_tick, ctx.tick)))
 }
 
 mouse_position :: proc() -> (res: Vec2) {
+    ctx := current_context()
     res = ctx.screen_mouse_position - global_offset()
     if window := current_window(); window != nil {
         res -= window.position
@@ -151,6 +156,7 @@ mouse_position :: proc() -> (res: Vec2) {
 }
 
 global_mouse_position :: proc() -> (res: Vec2) {
+    ctx := current_context()
     res = ctx.screen_mouse_position
     if window := current_window(); window != nil {
         res -= window.position
@@ -159,22 +165,27 @@ global_mouse_position :: proc() -> (res: Vec2) {
 }
 
 screen_mouse_position :: proc() -> Vec2 {
+    ctx := current_context()
     return ctx.screen_mouse_position
 }
 
 mouse_delta :: proc() -> Vec2 {
+    ctx := current_context()
     return ctx.screen_mouse_position - ctx.previous_global_mouse_position
 }
 
 mouse_down :: proc(button: Mouse_Button) -> bool {
+    ctx := current_context()
     return ctx.mouse_down[button]
 }
 
 key_down :: proc(key: Keyboard_Key) -> bool {
+    ctx := current_context()
     return ctx.key_down[key]
 }
 
 mouse_wheel :: proc() -> Vec2 {
+    ctx := current_context()
     return ctx.mouse_wheel
 }
 
@@ -183,39 +194,48 @@ mouse_moved :: proc() -> bool {
 }
 
 mouse_wheel_moved :: proc() -> bool {
+    ctx := current_context()
     return ctx.mouse_wheel != {0, 0}
 }
 
 mouse_pressed :: proc(button: Mouse_Button) -> bool {
+    ctx := current_context()
     return slice.contains(ctx.mouse_presses[:], button)
 }
 
 mouse_repeat_count :: proc() -> int {
+    ctx := current_context()
     return ctx.mouse_repeat_count
 }
 
 mouse_released :: proc(button: Mouse_Button) -> bool {
+    ctx := current_context()
     return slice.contains(ctx.mouse_releases[:], button)
 }
 
 any_mouse_pressed :: proc() -> bool {
+    ctx := current_context()
     return len(ctx.mouse_presses) > 0
 }
 
 any_mouse_released :: proc() -> bool {
+    ctx := current_context()
     return len(ctx.mouse_releases) > 0
 }
 
 key_pressed :: proc(key: Keyboard_Key, repeating := false) -> bool {
+    ctx := current_context()
     return slice.contains(ctx.key_presses[:], key) ||
            repeating && slice.contains(ctx.key_repeats[:], key)
 }
 
 key_released :: proc(key: Keyboard_Key) -> bool {
+    ctx := current_context()
     return slice.contains(ctx.key_releases[:], key)
 }
 
 any_key_pressed :: proc(repeating := false) -> bool {
+    ctx := current_context()
     if repeating {
         return len(ctx.key_repeats) > 0
     } else {
@@ -224,10 +244,12 @@ any_key_pressed :: proc(repeating := false) -> bool {
 }
 
 any_key_released :: proc() -> bool {
+    ctx := current_context()
     return len(ctx.key_releases) > 0
 }
 
 key_presses :: proc(repeating := false) -> []Keyboard_Key {
+    ctx := current_context()
     if repeating {
         return ctx.key_repeats[:]
     } else {
@@ -236,9 +258,11 @@ key_presses :: proc(repeating := false) -> []Keyboard_Key {
 }
 
 key_releases :: proc() -> []Keyboard_Key {
+    ctx := current_context()
     return ctx.key_releases[:]
 }
 
 text_input :: proc() -> string {
+    ctx := current_context()
     return strings.to_string(ctx.text_input)
 }

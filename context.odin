@@ -5,17 +5,14 @@ import "core:time"
 import "core:strings"
 import "rects"
 
-@(thread_local) ctx: Context
+@(thread_local) _current_ctx: ^Context
 
 Backend_VTable :: struct {
-    poll_events: proc(),
     tick_now: proc() -> (tick: Tick, ok: bool),
     set_mouse_cursor_style: proc(style: Mouse_Cursor_Style) -> (ok: bool),
     get_clipboard: proc() -> (data: string, ok: bool),
     set_clipboard: proc(data: string) -> (ok: bool),
 
-    init_window: proc(window: ^Window),
-    destroy_window: proc(window: ^Window),
     open_window: proc(window: ^Window) -> (ok: bool),
     close_window: proc(window: ^Window) -> (ok: bool),
     window_begin_frame: proc(window: ^Window),
@@ -65,35 +62,34 @@ Context :: struct {
     previous_tick: Tick,
     previous_global_mouse_position: Vec2,
 
-    odin_context: runtime.Context,
     temp_allocator: runtime.Allocator,
 
-    last_id: Id,
     any_window_hovered: bool,
 }
 
-init :: proc(update_proc: proc(), temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
-    ctx.update = update_proc
-    ctx.odin_context = context
+current_context :: proc() -> ^Context {
+    return _current_ctx
+}
+
+context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
     ctx.temp_allocator = temp_allocator
-    _remake_input_buffers() or_return
-    ctx = ctx
+    _remake_input_buffers(ctx) or_return
     ctx.mouse_repeat_duration = 300 * time.Millisecond
     ctx.mouse_repeat_movement_tolerance = 3
     ctx.is_first_frame = true
+    _current_ctx = ctx
     return nil
 }
 
-shutdown :: proc() {
+context_destroy :: proc(ctx: ^Context) {
     free_all(ctx.temp_allocator)
 }
 
-update :: proc() {
-    ctx.backend.poll_events()
-    context_update()
-}
+context_update :: proc(ctx: ^Context) {
+    previous_ctx := _current_ctx
+    _current_ctx = ctx
+    defer _current_ctx = previous_ctx
 
-context_update :: proc() {
     ctx.tick, _ = tick_now()
 
     if ctx.is_first_frame {
@@ -103,10 +99,12 @@ context_update :: proc() {
 
     ctx.window_stack = make([dynamic]^Window, ctx.temp_allocator)
 
-    ctx.update()
+    if ctx.update != nil {
+        ctx.update()
+    }
 
     if !ctx.any_window_hovered {
-        _clear_hover()
+        _clear_hover(ctx)
     }
 
     ctx.mouse_wheel = {0, 0}
@@ -116,35 +114,37 @@ context_update :: proc() {
     ctx.is_first_frame = false
     ctx.any_window_hovered = false
 
-    free_all(ctx.temp_allocator)
-    _remake_input_buffers()
+    _remake_input_buffers(ctx)
 }
 
-odin_context :: proc() -> runtime.Context {
-    return ctx.odin_context
+temp_allocator :: proc() -> runtime.Allocator {
+    return current_context().temp_allocator
 }
 
 tick_now :: proc() -> (tick: Tick, ok: bool) {
-    if ctx.backend.tick_now == nil do return {}, false
-    return ctx.backend.tick_now()
+    return _tick_now(current_context())
 }
 
 set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) -> (ok: bool) {
+    ctx := current_context()
     if ctx.backend.set_mouse_cursor_style == nil do return false
     return ctx.backend.set_mouse_cursor_style(style)
 }
 
 get_clipboard :: proc() -> (data: string, ok: bool) {
+    ctx := current_context()
     if ctx.backend.get_clipboard == nil do return "", false
     return ctx.backend.get_clipboard()
 }
 
-set_clipboard :: proc(data: string) -> (ok: bool) {
+set_clipboard :: proc(data: string, ) -> (ok: bool) {
+    ctx := current_context()
     if ctx.backend.set_clipboard == nil do return false
     return ctx.backend.set_clipboard(data)
 }
 
 measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) -> (ok: bool) {
+    ctx := current_context()
     if ctx.backend.measure_text == nil do return false
     window := current_window()
     window_load_font(window, font)
@@ -152,6 +152,7 @@ measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byt
 }
 
 font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {
+    ctx := current_context()
     if ctx.backend.font_metrics == nil do return {}, false
     window := current_window()
     window_load_font(window, font)
@@ -160,7 +161,7 @@ font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {
 
 
 
-_remake_input_buffers :: proc() -> runtime.Allocator_Error {
+_remake_input_buffers :: proc(ctx: ^Context) -> runtime.Allocator_Error {
     ctx.mouse_presses = make([dynamic]Mouse_Button, ctx.temp_allocator) or_return
     ctx.mouse_releases = make([dynamic]Mouse_Button, ctx.temp_allocator) or_return
     ctx.key_presses = make([dynamic]Keyboard_Key, ctx.temp_allocator) or_return
@@ -170,8 +171,13 @@ _remake_input_buffers :: proc() -> runtime.Allocator_Error {
     return nil
 }
 
-_clear_hover :: proc() {
+_clear_hover :: proc(ctx: ^Context) {
     ctx.previous_mouse_hover = ctx.mouse_hover
     ctx.mouse_hover = 0
     ctx.mouse_hit = 0
+}
+
+_tick_now :: proc(ctx: ^Context) -> (tick: Tick, ok: bool) {
+    if ctx.backend.tick_now == nil do return {}, false
+    return ctx.backend.tick_now()
 }

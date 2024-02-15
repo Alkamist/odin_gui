@@ -1,6 +1,7 @@
 package gui
 
 import "base:runtime"
+import "base:intrinsics"
 import "core:time"
 import "rects"
 
@@ -19,22 +20,20 @@ Layer :: struct {
     final_mouse_hover_request: Id,
 }
 
-temp_allocator :: proc() -> runtime.Allocator {
-    return ctx.temp_allocator
-}
-
 // Hover and focus
 
-get_id :: proc() -> u64 {
-    ctx.last_id += 1
-    return ctx.last_id
+get_id :: proc "contextless" () -> Id {
+    @(static) id: Id
+    return 1 + intrinsics.atomic_add(&id, 1)
 }
 
 mouse_hover :: proc() -> Id {
+    ctx := current_context()
     return ctx.mouse_hover
 }
 
 mouse_hover_entered :: proc() -> Id {
+    ctx := current_context()
     if ctx.mouse_hover != ctx.previous_mouse_hover {
         return ctx.mouse_hover
     } else {
@@ -43,6 +42,7 @@ mouse_hover_entered :: proc() -> Id {
 }
 
 mouse_hover_exited :: proc() -> Id {
+    ctx := current_context()
     if ctx.mouse_hover != ctx.previous_mouse_hover {
         return ctx.previous_mouse_hover
     } else {
@@ -51,6 +51,7 @@ mouse_hover_exited :: proc() -> Id {
 }
 
 mouse_hit :: proc() -> Id {
+    ctx := current_context()
     return ctx.mouse_hit
 }
 
@@ -59,22 +60,27 @@ request_mouse_hover :: proc(id: Id) {
 }
 
 capture_mouse_hover :: proc() {
+    ctx := current_context()
     ctx.mouse_hover_capture = _current_layer().final_mouse_hover_request
 }
 
 release_mouse_hover :: proc() {
+    ctx := current_context()
     ctx.mouse_hover_capture = 0
 }
 
 keyboard_focus :: proc() -> Id {
+    ctx := current_context()
     return ctx.keyboard_focus
 }
 
 set_keyboard_focus :: proc(id: Id) {
+    ctx := current_context()
     ctx.keyboard_focus = id
 }
 
 release_keyboard_focus :: proc() {
+    ctx := current_context()
     ctx.keyboard_focus = 0
 }
 
@@ -199,7 +205,7 @@ global_z_index :: proc() -> int {
 begin_layer :: proc(z_index: int) {
     window := current_window()
     layer: Layer
-    layer.draw_commands = make([dynamic]Draw_Command, ctx.temp_allocator)
+    layer.draw_commands = make([dynamic]Draw_Command, temp_allocator())
     layer.local_z_index = z_index
     layer.global_z_index = global_z_index() + z_index
     append(&window.layer_stack, layer)

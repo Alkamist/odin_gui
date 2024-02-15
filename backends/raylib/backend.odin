@@ -23,41 +23,49 @@ Window :: struct {
     background_color: gui.Color,
 }
 
-init :: proc() {
-    gui.ctx.backend.poll_events = _poll_events
-    gui.ctx.backend.tick_now = _tick_now
-    gui.ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
-    gui.ctx.backend.get_clipboard = _get_clipboard
-    gui.ctx.backend.set_clipboard = _set_clipboard
+Context :: gui.Context
 
-    gui.ctx.backend.init_window = _init_window
-    gui.ctx.backend.destroy_window = _destroy_window
-    gui.ctx.backend.open_window = _open_window
-    gui.ctx.backend.close_window = _close_window
-    gui.ctx.backend.window_begin_frame = _window_begin_frame
-    gui.ctx.backend.window_end_frame = _window_end_frame
+context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
+    gui.context_init(ctx, temp_allocator) or_return
 
-    gui.ctx.backend.load_font = _load_font
-    gui.ctx.backend.measure_text = _measure_text
-    gui.ctx.backend.font_metrics = _font_metrics
-    gui.ctx.backend.render_draw_command = _render_draw_command
+    ctx.backend.tick_now = _tick_now
+    ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
+    ctx.backend.get_clipboard = _get_clipboard
+    ctx.backend.set_clipboard = _set_clipboard
+
+    ctx.backend.open_window = _open_window
+    ctx.backend.close_window = _close_window
+    ctx.backend.window_begin_frame = _window_begin_frame
+    ctx.backend.window_end_frame = _window_end_frame
+
+    ctx.backend.load_font = _load_font
+    ctx.backend.measure_text = _measure_text
+    ctx.backend.font_metrics = _font_metrics
+    ctx.backend.render_draw_command = _render_draw_command
+
+    return nil
 }
 
-shutdown :: proc() {}
+context_destroy :: proc(ctx: ^Context) {
+    gui.context_destroy(ctx)
+}
 
-_poll_events :: proc() {}
+context_update :: proc(ctx: ^Context) {
+    gui.context_update(ctx)
+}
 
-_init_window :: proc(window: ^gui.Window) {
-    window := cast(^Window)window
+window_init :: proc(window: ^Window, rect: Rect) {
+    gui.window_init(window, rect)
     window.background_color = {0, 0, 0, 0}
 }
 
-_destroy_window :: proc(window: ^gui.Window) {
+window_destroy :: proc(window: ^Window) {
     for font in window.loaded_fonts {
         font := cast(^Font)font
         delete(font.rune_to_glyph_index)
     }
     rl.CloseWindow()
+    gui.window_destroy(window)
 }
 
 _open_window :: proc(window: ^gui.Window) -> (ok: bool) {
@@ -78,6 +86,8 @@ _close_window :: proc(window: ^gui.Window) -> (ok: bool) {
 _window_begin_frame :: proc(window: ^gui.Window) {
     window := cast(^Window)window
 
+    ctx := gui.current_context()
+
     if rl.WindowShouldClose() {
         window.is_open = false
         return
@@ -88,31 +98,31 @@ _window_begin_frame :: proc(window: ^gui.Window) {
     gui.input_window_move(window, rl.GetWindowPosition())
     gui.input_window_size(window, {f32(rl.GetRenderWidth()), f32(rl.GetRenderHeight())})
 
-    gui.input_mouse_move(rl.GetMousePosition() + rl.GetWindowPosition())
+    gui.input_mouse_move(ctx, rl.GetMousePosition() + rl.GetWindowPosition())
 
     for button in gui.Mouse_Button {
         rl_button := _to_rl_mouse_button(button)
         if rl.IsMouseButtonPressed(rl_button) {
-            gui.input_mouse_press(button)
+            gui.input_mouse_press(ctx, button)
         } else if rl.IsMouseButtonReleased(rl_button) {
-            gui.input_mouse_release(button)
+            gui.input_mouse_release(ctx, button)
         }
     }
 
-    gui.input_mouse_scroll(rl.GetMouseWheelMoveV())
+    gui.input_mouse_scroll(ctx, rl.GetMouseWheelMoveV())
 
     for key in gui.Keyboard_Key {
         rl_key := _to_rl_key(key)
         if rl.IsKeyPressed(rl_key) || rl.IsKeyPressedRepeat(rl_key) {
-            gui.input_key_press(key)
+            gui.input_key_press(ctx, key)
         } else if rl.IsKeyReleased(rl_key) {
-            gui.input_key_release(key)
+            gui.input_key_release(ctx, key)
         }
     }
 
     ch := rl.GetCharPressed()
     for ch != 0 {
-        gui.input_text(ch)
+        gui.input_text(ctx, ch)
         ch = rl.GetCharPressed()
     }
 
@@ -220,8 +230,6 @@ _font_metrics :: proc(window: ^gui.Window, font: gui.Font) -> (metrics: gui.Font
     metrics.line_height = f32(font.rl_font.baseSize)
     return metrics, true
 }
-
-import "core:fmt"
 
 _render_draw_command :: proc(window: ^gui.Window, command: gui.Draw_Command) {
     switch c in command {

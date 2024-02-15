@@ -8,6 +8,8 @@ import "../../../gui/widgets"
 import backend "../../backends/pugl_nanovg"
 import nvg "vendor:nanovg"
 
+ctx: backend.Context
+
 consola_13 := backend.Font{"consola_13", 13, #load("consola.ttf")}
 
 window1: backend.Window
@@ -49,17 +51,18 @@ main :: proc() {
         }
     }
 
-    gui.init(update)
-    defer gui.shutdown()
-
     backend.init()
     defer backend.shutdown()
 
-    gui.window_init(&window1, {{50, 50}, {400, 300}})
-    defer gui.window_destroy(&window1)
+    backend.context_init(&ctx)
+    defer backend.context_destroy(&ctx)
+    ctx.update = update
 
-    gui.window_init(&window2, {{500, 50}, {400, 300}})
-    defer gui.window_destroy(&window2)
+    backend.window_init(&window1, {{50, 50}, {400, 300}})
+    defer backend.window_destroy(&window1)
+
+    backend.window_init(&window2, {{500, 50}, {400, 300}})
+    defer backend.window_destroy(&window2)
 
     window1.background_color = {0.2, 0, 0, 1}
     window2.background_color = {0, 0.2, 0, 1}
@@ -77,7 +80,7 @@ main :: proc() {
     button4.position = {75, 75}
 
     for window1.is_open || window2.is_open {
-        gui.update()
+        backend.context_update(&ctx)
     }
 }
 
@@ -98,7 +101,7 @@ update :: proc() {
 
         gui.draw_rect({{200, 200}, {200, 200}}, {0.5, 0, 0, 1})
         gui.draw_custom(proc() {
-            nvg_ctx := gui.current_window(backend.Window).nvg_ctx
+            nvg_ctx := window1.nvg_ctx
             nvg.BeginPath(nvg_ctx)
             nvg.Rect(nvg_ctx, 250, 250, 200, 200)
             nvg.FillColor(nvg_ctx, {0, 0.5, 0, 1})

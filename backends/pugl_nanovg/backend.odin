@@ -18,6 +18,7 @@ OPENGL_VERSION_MINOR :: 3
 
 @(thread_local) _open_gl_is_loaded: bool
 @(thread_local) _world: ^pugl.World
+@(thread_local) _odin_context: runtime.Context
 
 Vec2 :: gui.Vec2
 Rect :: gui.Rect
@@ -58,25 +59,9 @@ Window :: struct {
     nvg_ctx: ^nvg.Context,
 }
 
-init :: proc() {
-    gui.ctx.backend.poll_events = _poll_events
-    gui.ctx.backend.tick_now = _tick_now
-    gui.ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
-    gui.ctx.backend.get_clipboard = _get_clipboard
-    gui.ctx.backend.set_clipboard = _set_clipboard
+Context :: gui.Context
 
-    gui.ctx.backend.init_window = _init_window
-    gui.ctx.backend.destroy_window = _destroy_window
-    gui.ctx.backend.open_window = _open_window
-    gui.ctx.backend.close_window = _close_window
-    gui.ctx.backend.window_begin_frame = _window_begin_frame
-    gui.ctx.backend.window_end_frame = _window_end_frame
-
-    gui.ctx.backend.load_font = _load_font
-    gui.ctx.backend.measure_text = _measure_text
-    gui.ctx.backend.font_metrics = _font_metrics
-    gui.ctx.backend.render_draw_command = _render_draw_command
-
+init :: proc(temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
     when ODIN_BUILD_MODE == .Dynamic {
         world_type := pugl.WorldType.MODULE
     } else {
@@ -89,11 +74,12 @@ init :: proc() {
         return 1 + intrinsics.atomic_add(&id, 1)
     }
 
-    world_id := fmt.aprint("WindowThread", _generate_world_id(), gui.temp_allocator())
-    world_id_cstring, err := strings.clone_to_cstring(world_id, gui.temp_allocator())
-    if err != nil do return
+    world_id := fmt.aprint("WindowThread", _generate_world_id(), temp_allocator)
+    world_id_cstring := strings.clone_to_cstring(world_id, temp_allocator) or_return
 
-    pugl.SetWorldString(_world, .CLASS_NAME, strings.clone_to_cstring(world_id, gui.temp_allocator()))
+    pugl.SetWorldString(_world, .CLASS_NAME, world_id_cstring)
+
+    return nil
 }
 
 shutdown :: proc() {
@@ -101,13 +87,40 @@ shutdown :: proc() {
     _world = nil
 }
 
-_poll_events :: proc() {
-    if _world == nil do return
-    pugl.Update(_world, 0)
+context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
+    gui.context_init(ctx, temp_allocator) or_return
+
+    ctx.backend.tick_now = _tick_now
+    ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
+    ctx.backend.get_clipboard = _get_clipboard
+    ctx.backend.set_clipboard = _set_clipboard
+
+    ctx.backend.open_window = _open_window
+    ctx.backend.close_window = _close_window
+    ctx.backend.window_begin_frame = _window_begin_frame
+    ctx.backend.window_end_frame = _window_end_frame
+
+    ctx.backend.load_font = _load_font
+    ctx.backend.measure_text = _measure_text
+    ctx.backend.font_metrics = _font_metrics
+    ctx.backend.render_draw_command = _render_draw_command
+
+    return nil
 }
 
-_init_window :: proc(window: ^gui.Window) {
-    window := cast(^Window)window
+context_destroy :: proc(ctx: ^Context) {
+    gui.context_destroy(ctx)
+}
+
+context_update :: proc(ctx: ^Context) {
+    _odin_context = context
+    if _world == nil do return
+    pugl.Update(_world, 0)
+    gui.context_update(ctx)
+}
+
+window_init :: proc(window: ^Window, rect: Rect) {
+    gui.window_init(window, rect)
     window.dark_mode = true
     window.is_visible = true
     window.is_resizable = true
@@ -115,11 +128,11 @@ _init_window :: proc(window: ^gui.Window) {
     window.child_kind = .None
 }
 
-_destroy_window :: proc(window: ^gui.Window) {
-    window := cast(^Window)window
+window_destroy :: proc(window: ^Window) {
     if window.is_open {
         _close_window(window)
     }
+    gui.window_destroy(window)
 }
 
 _open_window :: proc(window: ^gui.Window) -> (ok: bool) {
@@ -254,13 +267,13 @@ _tick_now :: proc() -> (tick: gui.Tick, ok: bool) {
 }
 
 _set_mouse_cursor_style :: proc(style: gui.Mouse_Cursor_Style) -> (ok: bool) {
-    window := gui.current_window(Window)
+    window := cast(^Window)gui.current_window()
     pugl.SetCursor(window.view, _cursor_style_to_pugl_cursor(style))
     return true
 }
 
 _get_clipboard :: proc() -> (data: string, ok: bool) {
-    window := gui.current_window(Window)
+    window := cast(^Window)gui.current_window()
 
     length: uint
     clipboard_cstring := cast(cstring)pugl.GetClipboard(window.view, 0, &length)
@@ -272,7 +285,7 @@ _get_clipboard :: proc() -> (data: string, ok: bool) {
 }
 
 _set_clipboard :: proc(data: string)-> (ok: bool) {
-    window := gui.current_window(Window)
+    window := cast(^Window)gui.current_window()
 
     data_cstring, err := strings.clone_to_cstring(data, gui.temp_allocator())
     if err != nil do return false
@@ -378,7 +391,8 @@ _render_draw_command :: proc(window: ^gui.Window, command: gui.Draw_Command) {
 _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     window := cast(^Window)pugl.GetHandle(view)
     window.view = view
-    context = gui.odin_context()
+    context = _odin_context
+    ctx := gui.current_context()
 
     #partial switch event.type {
     // case .EXPOSE:
@@ -397,7 +411,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .TIMER:
         event := event.timer
         if window.timer_id == event.id {
-            gui.update()
+            context_update(ctx)
         }
 
     case .CONFIGURE:
@@ -407,7 +421,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         opened := window.is_open && !window.was_open
         resized := window.size != window.previous_rect.size
         if !opened && resized {
-            gui.context_update()
+            gui.context_update(ctx)
         }
 
     case .POINTER_IN:
@@ -418,27 +432,27 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
     case .MOTION:
         event := event.motion
-        gui.input_mouse_move({f32(event.xRoot), f32(event.yRoot)})
+        gui.input_mouse_move(ctx, {f32(event.xRoot), f32(event.yRoot)})
 
     case .SCROLL:
         event := &event.scroll
-        gui.input_mouse_scroll({f32(event.dx), f32(event.dy)})
+        gui.input_mouse_scroll(ctx, {f32(event.dx), f32(event.dy)})
 
     case .BUTTON_PRESS:
         event := &event.button
-        gui.input_mouse_press(_pugl_button_to_mouse_button(event.button))
+        gui.input_mouse_press(ctx, _pugl_button_to_mouse_button(event.button))
 
     case .BUTTON_RELEASE:
         event := &event.button
-        gui.input_mouse_release(_pugl_button_to_mouse_button(event.button))
+        gui.input_mouse_release(ctx, _pugl_button_to_mouse_button(event.button))
 
     case .KEY_PRESS:
         event := &event.key
-        gui.input_key_press(_pugl_key_event_to_keyboard_key(event))
+        gui.input_key_press(ctx, _pugl_key_event_to_keyboard_key(event))
 
     case .KEY_RELEASE:
         event := &event.key
-        gui.input_key_release(_pugl_key_event_to_keyboard_key(event))
+        gui.input_key_release(ctx, _pugl_key_event_to_keyboard_key(event))
 
     case .TEXT:
         event := &event.text
@@ -451,7 +465,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
         if !skip {
             r, len := utf8.decode_rune(event.string[:4])
-            gui.input_text(r)
+            gui.input_text(ctx, r)
         }
 
     case .CLOSE:

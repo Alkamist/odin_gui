@@ -70,6 +70,7 @@ rect_pixel_snapped :: proc(rect: Rect) -> Rect {
 }
 
 draw_custom :: proc(custom: proc()) {
+    ctx := current_context()
     _process_draw_command(Draw_Custom_Command{custom, global_offset(), global_clip_rect()})
 }
 
@@ -97,6 +98,7 @@ clip_drawing :: proc(rect: Rect) {
 _process_draw_command :: proc(command: Draw_Command) {
     window := current_window()
     if window.is_rendering_draw_commands {
+        ctx := current_context()
         if ctx.backend.render_draw_command != nil {
             ctx.backend.render_draw_command(window, command)
         }

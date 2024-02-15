@@ -9,6 +9,8 @@ import "../../../gui/widgets"
 import backend "../../backends/raylib"
 import rl "vendor:raylib"
 
+ctx: gui.Context
+
 window: backend.Window
 
 consola_13 := backend.Font{
@@ -36,64 +38,6 @@ scene_texture: rl.RenderTexture2D
 
 VIEW_WIDTH :: 600
 VIEW_HEIGHT :: 500
-
-main :: proc() {
-    when ODIN_DEBUG {
-        track: mem.Tracking_Allocator
-        mem.tracking_allocator_init(&track, context.allocator)
-        context.allocator = mem.tracking_allocator(&track)
-
-        defer {
-            if len(track.allocation_map) > 0 {
-                fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
-                for _, entry in track.allocation_map {
-                    fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
-                }
-            }
-            if len(track.bad_free_array) > 0 {
-                fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
-                for entry in track.bad_free_array {
-                    fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
-                }
-            }
-            fmt.println(cast(^runtime.Default_Temp_Allocator)context.temp_allocator.data)
-            fmt.println("Success")
-            mem.tracking_allocator_destroy(&track)
-        }
-    }
-
-    gui.init(update)
-    defer gui.shutdown()
-
-    backend.init()
-    defer backend.shutdown()
-
-    gui.window_init(&window, {{300, 100}, {1280, 800}})
-    defer gui.window_destroy(&window)
-    window.background_color = {0.2, 0.2, 0.2, 1}
-
-    widgets.init(&button)
-    button.position = {20, 20}
-    button.size = {VIEW_WIDTH, 32}
-
-    widgets.init(&slider)
-    slider.position = {0, button.size.y + 10}
-    slider.size = {VIEW_WIDTH, 24}
-    slider.value = 0.5
-
-    widgets.init(&camera_button)
-    camera_button.position = {0, slider.position.y + slider.size.y + 10}
-    camera_button.size = {VIEW_WIDTH, VIEW_HEIGHT}
-
-    widgets.init(&text)
-    defer widgets.destroy(&text)
-    text.font = &consola_13
-    widgets.input_string(&text, "Hello world. Type here: ")
-
-    for window.is_open {
-        gui.update()
-    }
-}
 
 update :: proc() {
     if gui.window_update(&window) {
@@ -167,4 +111,63 @@ update :: proc() {
             widgets.draw(&text)
         }
     }
+}
+
+main :: proc() {
+    when ODIN_DEBUG {
+        track: mem.Tracking_Allocator
+        mem.tracking_allocator_init(&track, context.allocator)
+        context.allocator = mem.tracking_allocator(&track)
+
+        defer {
+            if len(track.allocation_map) > 0 {
+                fmt.eprintf("=== %v allocations not freed: ===\n", len(track.allocation_map))
+                for _, entry in track.allocation_map {
+                    fmt.eprintf("- %v bytes @ %v\n", entry.size, entry.location)
+                }
+            }
+            if len(track.bad_free_array) > 0 {
+                fmt.eprintf("=== %v incorrect frees: ===\n", len(track.bad_free_array))
+                for entry in track.bad_free_array {
+                    fmt.eprintf("- %p @ %v\n", entry.memory, entry.location)
+                }
+            }
+            fmt.println(cast(^runtime.Default_Temp_Allocator)context.temp_allocator.data)
+            fmt.println("Success")
+            mem.tracking_allocator_destroy(&track)
+        }
+    }
+
+    backend.context_init(&ctx)
+    defer backend.context_destroy(&ctx)
+    ctx.update = update
+
+    backend.window_init(&window, {{300, 100}, {1280, 800}})
+    defer backend.window_destroy(&window)
+    window.background_color = {0.2, 0.2, 0.2, 1}
+
+    widgets.init(&button)
+    button.position = {20, 20}
+    button.size = {VIEW_WIDTH, 32}
+
+    widgets.init(&slider)
+    slider.position = {0, button.size.y + 10}
+    slider.size = {VIEW_WIDTH, 24}
+    slider.value = 0.5
+
+    widgets.init(&camera_button)
+    camera_button.position = {0, slider.position.y + slider.size.y + 10}
+    camera_button.size = {VIEW_WIDTH, VIEW_HEIGHT}
+
+    widgets.init(&text)
+    defer widgets.destroy(&text)
+    text.font = &consola_13
+    widgets.input_string(&text, "Hello world. Type here: ")
+
+    for window.is_open {
+        backend.context_update(&ctx)
+        free_all(gui.temp_allocator())
+    }
+
+    free_all(gui.temp_allocator())
 }
