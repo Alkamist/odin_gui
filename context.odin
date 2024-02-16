@@ -5,6 +5,10 @@ import "core:time"
 import "core:strings"
 import "rects"
 
+// A thread local pointer to the current context is held here.
+// The idea is to avoid having to pass the context manually
+// into every function everywhere. Unless there is some very unique
+// user code, there should only be one context per thread anyway.
 @(thread_local) _current_ctx: ^Context
 
 Backend_VTable :: struct {
@@ -28,7 +32,7 @@ Backend_VTable :: struct {
 }
 
 Context :: struct {
-    update: proc(),
+    update: proc(), // User update code goes in here
 
     backend: Backend_VTable,
 
@@ -70,6 +74,7 @@ Context :: struct {
 }
 
 current_context :: proc() -> ^Context {
+    assert(_current_ctx != nil)
     return _current_ctx
 }
 

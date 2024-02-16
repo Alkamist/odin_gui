@@ -33,6 +33,8 @@ Window :: struct {
 
 window_init :: proc(window: ^Window, rect: Rect) {
     window.rect = rect
+    window.last_position_set_externally = rect.position
+    window.last_size_set_externally = rect.size
     window.is_open = true
     window.content_scale = {1, 1}
 }
