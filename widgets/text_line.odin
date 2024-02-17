@@ -58,7 +58,7 @@ text_line_draw :: proc(text: ^Text_Line) {
     str, x_compensation := visible_string(text)
     position := text.position
     position.x += x_compensation
-    gui.draw_text(str, position, text.font, text.color)
+    gui.fill_text(str, position, text.font, text.color)
 }
 
 visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f32) {

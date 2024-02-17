@@ -131,7 +131,7 @@ window_begin :: proc(window: ^Window) -> bool {
         window.layer_stack = make([dynamic]Layer, ctx.arena_allocator)
         window.layers = make([dynamic]Layer, ctx.arena_allocator)
 
-        begin_layer(0)
+        begin_z_index(0)
 
         _handle_move_and_resize(window)
         _window_activate_context(window)
@@ -151,7 +151,7 @@ window_end :: proc(window: ^Window) {
     if !window.is_open do return
     ctx := current_context()
 
-    end_layer()
+    end_z_index()
 
     slice.reverse(window.layers[:])
     slice.stable_sort_by(window.layers[:], proc(i, j: Layer) -> bool {

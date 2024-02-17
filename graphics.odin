@@ -1,8 +1,10 @@
 package gui
 
 import "core:math"
+import "paths"
 import "rects"
 
+Path :: paths.Path
 Color :: [4]f32
 Font :: rawptr
 
@@ -21,8 +23,8 @@ Text_Glyph :: struct {
 
 Draw_Command :: union {
     Draw_Custom_Command,
-    Draw_Rect_Command,
-    Draw_Text_Command,
+    Fill_Path_Command,
+    Fill_Text_Command,
     Clip_Drawing_Command,
 }
 
@@ -32,12 +34,12 @@ Draw_Custom_Command :: struct {
     global_clip_rect: Rect,
 }
 
-Draw_Rect_Command :: struct {
-    rect: Rect,
+Fill_Path_Command :: struct {
+    path: Path,
     color: Color,
 }
 
-Draw_Text_Command :: struct {
+Fill_Text_Command :: struct {
     text: string,
     position: Vec2,
     font: Font,
@@ -74,18 +76,17 @@ draw_custom :: proc(custom: proc()) {
     _process_draw_command(window, Draw_Custom_Command{custom, global_offset(), global_clip_rect()})
 }
 
-draw_rect :: proc(rect: Rect, color: Color) {
-    if rect.size.x <= 0 || rect.size.y <= 0 do return
+fill_path :: proc(path: Path, color: Color) {
     window := current_window()
-    rect := rect
-    rect.position += global_offset()
-    _process_draw_command(window, Draw_Rect_Command{rect, color})
+    path := path
+    path.position += global_offset()
+    _process_draw_command(window, Fill_Path_Command{path, color})
 }
 
-draw_text :: proc(text: string, position: Vec2, font: Font, color: Color) {
+fill_text :: proc(text: string, position: Vec2, font: Font, color: Color) {
     window := current_window()
     load_font(window, font)
-    _process_draw_command(window, Draw_Text_Command{text, global_offset() + position, font, color})
+    _process_draw_command(window, Fill_Text_Command{text, global_offset() + position, font, color})
 }
 
 clip_drawing :: proc(rect: Rect) {

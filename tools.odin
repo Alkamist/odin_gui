@@ -201,7 +201,7 @@ global_z_index :: proc() -> int {
 }
 
 // Local z index
-begin_layer :: proc(z_index: int) {
+begin_z_index :: proc(z_index: int) {
     window := current_window()
     layer: Layer
     layer.draw_commands = make([dynamic]Draw_Command, arena_allocator())
@@ -210,16 +210,16 @@ begin_layer :: proc(z_index: int) {
     append(&window.layer_stack, layer)
 }
 
-end_layer :: proc() {
+end_z_index :: proc() {
     window := current_window()
     if len(window.layer_stack) <= 0 do return
     layer := pop(&window.layer_stack)
     append(&window.layers, layer)
 }
 
-@(deferred_none=end_layer)
-scoped_layer :: proc(z_index: int) {
-    begin_layer(z_index)
+@(deferred_none=end_z_index)
+scoped_z_index :: proc(z_index: int) {
+    begin_z_index(z_index)
 }
 
 

@@ -73,32 +73,44 @@ font_metrics :: proc(nvg_ctx: ^nvg.Context, font: gui.Font) -> (metrics: gui.Fon
 }
 
 render_draw_command :: proc(nvg_ctx: ^nvg.Context, command: gui.Draw_Command) {
-    switch c in command {
+    switch cmd in command {
     case gui.Draw_Custom_Command:
-        if c.custom != nil {
+        if cmd.custom != nil {
             nvg.Save(nvg_ctx)
-            c.custom()
+            cmd.custom()
             nvg.Restore(nvg_ctx)
         }
 
-    case gui.Draw_Rect_Command:
-        rect := gui.pixel_snapped(c.rect)
+    case gui.Fill_Path_Command:
         nvg.BeginPath(nvg_ctx)
-        nvg.Rect(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
-        nvg.FillColor(nvg_ctx, c.color)
+        nvg.Save(nvg_ctx)
+        nvg.Translate(nvg_ctx, cmd.path.position.x, cmd.path.position.y)
+        nvg.MoveTo(nvg_ctx, 0, 0)
+        for segment in cmd.path.segments {
+            nvg.BezierTo(nvg_ctx,
+                segment[0].x, segment[0].y,
+                segment[1].x, segment[1].y,
+                segment[2].x, segment[2].y,
+            )
+        }
+        // nvg.StrokeWidth(nvg_ctx, 3)
+        // nvg.StrokeColor(nvg_ctx, cmd.color)
+        // nvg.Stroke(nvg_ctx)
+        nvg.FillColor(nvg_ctx, cmd.color)
         nvg.Fill(nvg_ctx)
+        nvg.Restore(nvg_ctx)
 
-    case gui.Draw_Text_Command:
-        font := cast(^Font)c.font
-        position := gui.pixel_snapped(c.position)
+    case gui.Fill_Text_Command:
+        font := cast(^Font)cmd.font
+        position := gui.pixel_snapped(cmd.position)
         nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
         nvg.FontFace(nvg_ctx, font.name)
         nvg.FontSize(nvg_ctx, f32(font.size))
-        nvg.FillColor(nvg_ctx, c.color)
-        nvg.Text(nvg_ctx, position.x, position.y, c.text)
+        nvg.FillColor(nvg_ctx, cmd.color)
+        nvg.Text(nvg_ctx, position.x, position.y, cmd.text)
 
     case gui.Clip_Drawing_Command:
-        rect := gui.pixel_snapped(c.global_clip_rect)
+        rect := gui.pixel_snapped(cmd.global_clip_rect)
         nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
     }
 }
