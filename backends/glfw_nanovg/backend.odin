@@ -88,14 +88,14 @@ poll_events :: proc() {
     glfw.PollEvents()
 }
 
-context_init :: proc(ctx: ^Context, allocator := context.allocator) -> runtime.Allocator_Error {
-    gui.context_init(ctx, allocator) or_return
-
+setup_vtable :: proc(ctx: ^Context) {
     ctx.backend.tick_now = _tick_now
     ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
     ctx.backend.get_clipboard = _get_clipboard
     ctx.backend.set_clipboard = _set_clipboard
 
+    ctx.backend.init_window = _init_window
+    ctx.backend.destroy_window = _destroy_window
     ctx.backend.open_window = _open_window
     ctx.backend.close_window = _close_window
     ctx.backend.show_window = _show_window
@@ -110,29 +110,19 @@ context_init :: proc(ctx: ^Context, allocator := context.allocator) -> runtime.A
     ctx.backend.measure_text = _measure_text
     ctx.backend.font_metrics = _font_metrics
     ctx.backend.render_draw_command = _render_draw_command
-
-    return nil
 }
 
-context_destroy :: proc(ctx: ^Context) {
-    gui.context_destroy(ctx)
-}
-
-context_update :: proc(ctx: ^Context) {
-    gui.context_update(ctx)
-}
-
-window_init :: proc(window: ^Window, rect: Rect) {
-    gui.window_init(window, rect)
+_init_window :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
     window.is_resizable = true
 }
 
-window_destroy :: proc(window: ^Window) {
+_destroy_window :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
     if window.is_open {
         _close_window(window)
     }
     glfw.DestroyWindow(window.glfw_window)
-    gui.window_destroy(window)
 }
 
 _open_window :: proc(window: ^gui.Window) -> (ok: bool) {

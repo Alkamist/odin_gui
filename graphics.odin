@@ -83,7 +83,7 @@ draw_rect :: proc(rect: Rect, color: Color) {
 
 draw_text :: proc(text: string, position: Vec2, font: Font, color: Color) {
     window := current_window()
-    window_load_font(window, font)
+    load_font(window, font)
     _process_draw_command(Draw_Text_Command{text, global_offset() + position, font, color})
 }
 

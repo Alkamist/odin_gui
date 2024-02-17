@@ -10,8 +10,11 @@ Window :: struct {
 
     should_open: bool,
     should_close: bool,
+    should_show: bool,
+    should_hide: bool,
 
     is_open: bool,
+    is_visible: bool,
     is_mouse_hovered: bool,
     is_rendering_draw_commands: bool,
 
@@ -27,30 +30,60 @@ Window :: struct {
     was_open: bool,
 }
 
-window_init :: proc(window: ^Window, rect: Rect) {
+init :: proc(window: ^Window, rect: Rect) {
     window.rect = rect
     window.actual_rect = rect
     window.content_scale = {1, 1}
+    window.is_visible = true
+    ctx := current_context()
+    if ctx.backend.init_window != nil {
+        ctx.backend.init_window(window)
+    }
 }
 
-window_destroy :: proc(window: ^Window) {
+destroy :: proc(window: ^Window) {
+    ctx := current_context()
+    if ctx.backend.destroy_window != nil {
+        ctx.backend.destroy_window(window)
+    }
     delete(window.loaded_fonts)
 }
 
-window_opened :: proc(window: ^Window) -> bool {
+opened :: proc(window: ^Window) -> bool {
     return window.is_open && !window.was_open
 }
 
-window_closed :: proc(window: ^Window) -> bool {
+closed :: proc(window: ^Window) -> bool {
     return !window.is_open && window.was_open
 }
 
-window_moved :: proc(window: ^Window) -> bool {
+moved :: proc(window: ^Window) -> bool {
     return window.actual_rect.position != window.previous_actual_rect.position
 }
 
-window_resized :: proc(window: ^Window) -> bool {
+resized :: proc(window: ^Window) -> bool {
     return window.actual_rect.position != window.previous_actual_rect.position
+}
+
+open :: proc(window: ^Window) {
+    window.should_open = true
+}
+
+close :: proc(window: ^Window) {
+    window.should_close = true
+}
+
+show :: proc(window: ^Window) {
+    window.should_show = true
+}
+
+hide :: proc(window: ^Window) {
+    window.should_hide = true
+}
+
+@(deferred_in=window_end)
+update :: proc(window: ^Window) -> bool {
+    return window_begin(window)
 }
 
 window_begin :: proc(window: ^Window) -> bool {
@@ -67,6 +100,16 @@ window_begin :: proc(window: ^Window) -> bool {
     if window.should_open {
         _open_window(ctx, window)
         window.should_open = false
+    }
+
+    if window.should_hide {
+        _hide_window(ctx, window)
+        window.should_hide = false
+    }
+
+    if window.should_show {
+        _show_window(ctx, window)
+        window.should_show = false
     }
 
     if window.is_open {
@@ -150,12 +193,7 @@ window_end :: proc(window: ^Window) {
     }
 }
 
-@(deferred_in=window_end)
-window_update :: proc(window: ^Window) -> bool {
-    return window_begin(window)
-}
-
-window_load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
+load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
     ctx := current_context()
     if ctx.backend.load_font == nil do return
     if font not_in window.loaded_fonts {
@@ -167,7 +205,7 @@ window_load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
     return false
 }
 
-window_unload_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
+unload_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
     ctx := current_context()
     if ctx.backend.unload_font == nil do return
     if font in window.loaded_fonts {
@@ -207,6 +245,20 @@ _close_window :: proc(ctx: ^Context, window: ^Window) {
         if len(ctx.window_stack) > 0 {
             _activate_window_context(ctx, ctx.window_stack[len(ctx.window_stack) - 1])
         }
+    }
+}
+
+_show_window :: proc(ctx: ^Context, window: ^Window) {
+    if window.is_visible do return
+    if ctx.backend.show_window != nil && ctx.backend.show_window(window) {
+        window.is_visible = true
+    }
+}
+
+_hide_window :: proc(ctx: ^Context, window: ^Window) {
+    if !window.is_visible do return
+    if ctx.backend.hide_window != nil && ctx.backend.hide_window(window) {
+        window.is_visible = false
     }
 }
 

@@ -48,17 +48,19 @@ main :: proc() {
     backend.init()
     defer backend.shutdown()
 
-    backend.context_init(&ctx)
-    defer backend.context_destroy(&ctx)
+    backend.setup_vtable(&ctx)
+
+    gui.context_init(&ctx)
+    defer gui.context_destroy(&ctx)
     ctx.update = update
 
-    backend.window_init(&window1, {{50, 50}, {400, 300}})
-    defer backend.window_destroy(&window1)
+    gui.init(&window1, {{50, 50}, {400, 300}})
+    defer gui.destroy(&window1)
     window1.should_open = true
     window1.background_color = {0.1, 0.1, 0.1, 1}
 
-    backend.window_init(&window2, {{500, 50}, {400, 300}})
-    defer backend.window_destroy(&window2)
+    gui.init(&window2, {{500, 50}, {400, 300}})
+    defer gui.destroy(&window2)
     window2.should_open = true
     window2.background_color = {0.1, 0.1, 0.1, 1}
 
@@ -76,12 +78,12 @@ main :: proc() {
 
     for running {
         backend.poll_events()
-        backend.context_update(&ctx)
+        gui.context_update(&ctx)
     }
 }
 
 update :: proc() {
-    if gui.window_update(&window1) {
+    if gui.update(&window1) {
         if text_move_button.is_down && gui.mouse_moved() {
             text_move_button.position += gui.mouse_delta()
         }
@@ -100,7 +102,7 @@ update :: proc() {
             widgets.draw(&text)
         }
 
-        if gui.window_update(&window2) {
+        if gui.update(&window2) {
             gui.draw_rect({{50, 50}, {200, 200}}, {0.5, 0, 0, 1})
             gui.draw_custom(proc() {
                 nvg_ctx := window2.nvg_ctx

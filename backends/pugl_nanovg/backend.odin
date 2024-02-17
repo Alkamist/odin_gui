@@ -47,7 +47,6 @@ Window :: struct {
     max_size: Maybe(Vec2),
     swap_interval: int,
     dark_mode: bool,
-    is_visible: bool,
     is_resizable: bool,
     double_buffer: bool,
     child_kind: Child_Kind,
@@ -61,7 +60,7 @@ Window :: struct {
 
 Context :: gui.Context
 
-init :: proc(temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
+startup :: proc(temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
     when ODIN_BUILD_MODE == .Dynamic {
         world_type := pugl.WorldType.MODULE
     } else {
@@ -93,8 +92,8 @@ poll_events :: proc() {
     pugl.Update(_world, 0)
 }
 
-context_init :: proc(ctx: ^Context, allocator := context.allocator) -> runtime.Allocator_Error {
-    gui.context_init(ctx, allocator) or_return
+init :: proc(ctx: ^Context, allocator := context.allocator) -> runtime.Allocator_Error {
+    gui.init(ctx, allocator) or_return
 
     ctx.backend.tick_now = _tick_now
     ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
@@ -119,12 +118,12 @@ context_init :: proc(ctx: ^Context, allocator := context.allocator) -> runtime.A
     return nil
 }
 
-context_destroy :: proc(ctx: ^Context) {
-    gui.context_destroy(ctx)
+destroy :: proc(ctx: ^Context) {
+    gui.destroy(ctx)
 }
 
-context_update :: proc(ctx: ^Context) {
-    gui.context_update(ctx)
+update :: proc(ctx: ^Context) {
+    gui.update(ctx)
 }
 
 window_init :: proc(window: ^Window, rect: Rect) {
@@ -442,7 +441,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .TIMER:
         event := event.timer
         if window.timer_id == event.id {
-            context_update(ctx)
+            update(ctx)
         }
 
     case .CONFIGURE:
@@ -459,55 +458,55 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
 
             // Update the context while avoiding recursion.
             if !was_set_by_user {
-                gui.context_update(gui.current_context())
+                gui.update(gui.current_context())
                 pugl.PostRedisplay(view)
             }
         }
 
     case .POINTER_IN:
         gui.input_window_mouse_enter(window)
-        gui.context_update(ctx)
+        gui.update(ctx)
         pugl.PostRedisplay(view)
 
     case .POINTER_OUT:
         gui.input_window_mouse_exit(window)
-        gui.context_update(ctx)
+        gui.update(ctx)
         pugl.PostRedisplay(view)
 
     case .MOTION:
         event := event.motion
         gui.input_mouse_move(ctx, {f32(event.xRoot), f32(event.yRoot)})
-        gui.context_update(ctx)
+        gui.update(ctx)
         pugl.PostRedisplay(view)
 
     case .SCROLL:
         event := &event.scroll
         gui.input_mouse_scroll(ctx, {f32(event.dx), f32(event.dy)})
-        gui.context_update(ctx)
+        gui.update(ctx)
         pugl.PostRedisplay(view)
 
     case .BUTTON_PRESS:
         event := &event.button
         gui.input_mouse_press(ctx, _pugl_button_to_mouse_button(event.button))
-        gui.context_update(ctx)
+        gui.update(ctx)
         pugl.PostRedisplay(view)
 
     case .BUTTON_RELEASE:
         event := &event.button
         gui.input_mouse_release(ctx, _pugl_button_to_mouse_button(event.button))
-        gui.context_update(ctx)
+        gui.update(ctx)
         pugl.PostRedisplay(view)
 
     case .KEY_PRESS:
         event := &event.key
         gui.input_key_press(ctx, _pugl_key_event_to_keyboard_key(event))
-        gui.context_update(ctx)
+        gui.update(ctx)
         pugl.PostRedisplay(view)
 
     case .KEY_RELEASE:
         event := &event.key
         gui.input_key_release(ctx, _pugl_key_event_to_keyboard_key(event))
-        gui.context_update(ctx)
+        gui.update(ctx)
         pugl.PostRedisplay(view)
 
     case .TEXT:
@@ -522,7 +521,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         if !skip {
             r, len := utf8.decode_rune(event.string[:4])
             gui.input_text(ctx, r)
-            gui.context_update(ctx)
+            gui.update(ctx)
             pugl.PostRedisplay(view)
         }
 

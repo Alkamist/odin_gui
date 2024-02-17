@@ -14,29 +14,6 @@ import "rects"
 // user code, there should only be one context per thread anyway.
 @(thread_local) _current_ctx: ^Context
 
-Backend_VTable :: struct {
-    tick_now: proc() -> (tick: Tick, ok: bool),
-    set_mouse_cursor_style: proc(style: Mouse_Cursor_Style) -> (ok: bool),
-    get_clipboard: proc() -> (data: string, ok: bool),
-    set_clipboard: proc(data: string) -> (ok: bool),
-
-    open_window: proc(window: ^Window) -> (ok: bool),
-    close_window: proc(window: ^Window) -> (ok: bool),
-    show_window: proc(window: ^Window) -> (ok: bool),
-    hide_window: proc(window: ^Window) -> (ok: bool),
-    set_window_position: proc(window: ^Window, position: Vec2) -> (ok: bool),
-    set_window_size: proc(window: ^Window, size: Vec2) -> (ok: bool),
-    activate_window_context: proc(window: ^Window),
-    window_begin_frame: proc(window: ^Window),
-    window_end_frame: proc(window: ^Window),
-
-    load_font: proc(window: ^Window, font: Font) -> (ok: bool),
-    unload_font: proc(window: ^Window, font: Font) -> (ok: bool),
-    measure_text: proc(window: ^Window, text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int) -> (ok: bool),
-    font_metrics: proc(window: ^Window, font: Font) -> (metrics: Font_Metrics, ok: bool),
-    render_draw_command: proc(window: ^Window, command: Draw_Command),
-}
-
 Context :: struct {
     update: proc(), // User update code goes in here
 
@@ -175,37 +152,23 @@ tick_now :: proc() -> (tick: Tick, ok: bool) {
 }
 
 set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) -> (ok: bool) {
-    ctx := current_context()
-    if ctx.backend.set_mouse_cursor_style == nil do return false
-    return ctx.backend.set_mouse_cursor_style(style)
+    return _set_mouse_cursor_style(current_context(), style)
 }
 
 get_clipboard :: proc() -> (data: string, ok: bool) {
-    ctx := current_context()
-    if ctx.backend.get_clipboard == nil do return "", false
-    return ctx.backend.get_clipboard()
+    return _get_clipboard(current_context())
 }
 
 set_clipboard :: proc(data: string) -> (ok: bool) {
-    ctx := current_context()
-    if ctx.backend.set_clipboard == nil do return false
-    return ctx.backend.set_clipboard(data)
+    return _set_clipboard(current_context(), data)
 }
 
 measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) -> (ok: bool) {
-    ctx := current_context()
-    if ctx.backend.measure_text == nil do return false
-    window := current_window()
-    window_load_font(window, font)
-    return ctx.backend.measure_text(window, text, font, glyphs, byte_index_to_rune_index)
+    return _measure_text(current_context(), text, font, glyphs, byte_index_to_rune_index)
 }
 
 font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {
-    ctx := current_context()
-    if ctx.backend.font_metrics == nil do return {}, false
-    window := current_window()
-    window_load_font(window, font)
-    return ctx.backend.font_metrics(window, font)
+    return _font_metrics(current_context(), font)
 }
 
 
@@ -224,9 +187,4 @@ _clear_hover :: proc(ctx: ^Context) {
     ctx.previous_mouse_hover = ctx.mouse_hover
     ctx.mouse_hover = 0
     ctx.mouse_hit = 0
-}
-
-_tick_now :: proc(ctx: ^Context) -> (tick: Tick, ok: bool) {
-    if ctx.backend.tick_now == nil do return {}, false
-    return ctx.backend.tick_now()
 }

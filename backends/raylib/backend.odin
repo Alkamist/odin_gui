@@ -31,8 +31,8 @@ Context :: struct {
     using gui_ctx: gui.Context,
 }
 
-context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
-    gui.context_init(ctx, temp_allocator) or_return
+init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
+    gui.init(ctx, temp_allocator) or_return
 
     ctx.backend.tick_now = _tick_now
     ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
@@ -56,12 +56,12 @@ context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) ->
     return nil
 }
 
-context_destroy :: proc(ctx: ^Context) {
-    gui.context_destroy(ctx)
+destroy :: proc(ctx: ^Context) {
+    gui.destroy(ctx)
 }
 
-context_update :: proc(ctx: ^Context) {
-    gui.context_update(ctx)
+update :: proc(ctx: ^Context) {
+    gui.update(ctx)
 }
 
 window_init :: proc(window: ^Window, rect: Rect) {
