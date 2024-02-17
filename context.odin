@@ -151,19 +151,19 @@ arena_allocator :: proc() -> runtime.Allocator {
 }
 
 tick_now :: proc() -> (tick: Tick, ok: bool) {
-    return _backend_vtable_tick_now(current_context())
+    return _context_tick_now(current_context())
 }
 
 set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) -> (ok: bool) {
-    return _backend_vtable_set_mouse_cursor_style(current_context(), style)
+    return _context_set_mouse_cursor_style(current_context(), style)
 }
 
 get_clipboard :: proc() -> (data: string, ok: bool) {
-    return _backend_vtable_get_clipboard(current_context())
+    return _context_get_clipboard(current_context())
 }
 
 set_clipboard :: proc(data: string) -> (ok: bool) {
-    return _backend_vtable_set_clipboard(current_context(), data)
+    return _context_set_clipboard(current_context(), data)
 }
 
 

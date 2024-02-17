@@ -79,7 +79,7 @@ input_mouse_press :: proc(ctx: ^Context, button: Mouse_Button) {
     tick_available := false
     previous_mouse_repeat_tick := ctx.mouse_repeat_tick
 
-    ctx.mouse_repeat_tick, tick_available = _backend_vtable_tick_now(ctx)
+    ctx.mouse_repeat_tick, tick_available = _context_tick_now(ctx)
 
     if tick_available {
         delta := time.tick_diff(previous_mouse_repeat_tick, ctx.mouse_repeat_tick)

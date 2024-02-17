@@ -99,7 +99,7 @@ clip_drawing :: proc(rect: Rect) {
 
 _process_draw_command :: proc(window: ^Window, command: Draw_Command) {
     if window.is_rendering_draw_commands {
-        _window_vtable_render_draw_command(window, command)
+        _window_render_draw_command(window, command)
     } else {
         append(&_current_layer().draw_commands, command)
     }
