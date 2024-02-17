@@ -1,6 +1,7 @@
 package backend_raylib
 
 import "base:runtime"
+import "core:c"
 import "core:math"
 import "core:time"
 import "core:strings"
@@ -20,7 +21,10 @@ Font :: struct {
 
 Window :: struct {
     using gui_window: gui.Window,
+    title: string,
+    is_resizable: bool,
     background_color: gui.Color,
+    target_fps: int,
 }
 
 Context :: struct {
@@ -37,6 +41,8 @@ context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) ->
 
     ctx.backend.open_window = _open_window
     ctx.backend.close_window = _close_window
+    ctx.backend.show_window = _show_window
+    ctx.backend.hide_window = _hide_window
     ctx.backend.set_window_position = _set_window_position
     ctx.backend.set_window_size = _set_window_size
     ctx.backend.window_begin_frame = _window_begin_frame
@@ -60,7 +66,11 @@ context_update :: proc(ctx: ^Context) {
 
 window_init :: proc(window: ^Window, rect: Rect) {
     gui.window_init(window, rect)
+    window.title = "Raylib Window"
+    window.is_resizable = true
     window.background_color = {0, 0, 0, 0}
+    window.target_fps = 240
+    window.should_open = true
 }
 
 window_destroy :: proc(window: ^Window) {
@@ -68,16 +78,27 @@ window_destroy :: proc(window: ^Window) {
         font := cast(^Font)font
         delete(font.rune_to_glyph_index)
     }
-    rl.CloseWindow()
+    if window.is_open {
+        rl.CloseWindow()
+    }
     gui.window_destroy(window)
 }
 
 _open_window :: proc(window: ^gui.Window) -> (ok: bool) {
-    rl.SetConfigFlags({.WINDOW_RESIZABLE})
-    rl.InitWindow(i32(window.size.x), i32(window.size.y), "Raylib Window")
-    rl.SetWindowPosition(i32(window.position.x), i32(window.position.y))
-    rl.SetTargetFPS(240)
+    window := cast(^Window)window
+
+    if window.is_resizable {
+        rl.SetConfigFlags({.WINDOW_RESIZABLE})
+    }
+
+    title_cstring := strings.clone_to_cstring(window.title, gui.arena_allocator())
+    rl.InitWindow(c.int(window.size.x), c.int(window.size.y), title_cstring)
+
+    rl.SetWindowPosition(c.int(window.position.x), c.int(window.position.y))
+    rl.SetTargetFPS(c.int(window.target_fps))
+
     gui.input_window_mouse_enter(window)
+
     return true
 }
 
@@ -87,15 +108,23 @@ _close_window :: proc(window: ^gui.Window) -> (ok: bool) {
     return true
 }
 
+_show_window :: proc(window: ^gui.Window) -> (ok: bool) {
+    rl.SetWindowOpacity(1)
+    return true
+}
+
+_hide_window :: proc(window: ^gui.Window) -> (ok: bool) {
+    rl.SetWindowOpacity(0)
+    return true
+}
+
 _set_window_position :: proc(window: ^gui.Window, position: Vec2) -> (ok: bool)  {
-    rl.SetWindowPosition(i32(position.x), i32(position.y))
-    window.position = position
+    rl.SetWindowPosition(c.int(position.x), c.int(position.y))
     return true
 }
 
 _set_window_size :: proc(window: ^gui.Window, size: Vec2) -> (ok: bool) {
-    rl.SetWindowSize(i32(size.x), i32(size.y))
-    window.size = size
+    rl.SetWindowSize(c.int(size.x), c.int(size.y))
     return true
 }
 
@@ -145,13 +174,12 @@ _window_begin_frame :: proc(window: ^gui.Window) {
     rl.BeginDrawing()
 
     rl.ClearBackground(_to_rl_color(window.background_color))
-    rl.BeginScissorMode(0, 0, i32(window.size.x), i32(window.size.y))
+    rl.BeginScissorMode(0, 0, c.int(window.actual_rect.size.x), c.int(window.actual_rect.size.y))
 }
 
 _window_end_frame :: proc(window: ^gui.Window) {
     rl.EndScissorMode()
     rl.EndDrawing()
-    free_all(gui.temp_allocator())
 }
 
 _load_font :: proc(window: ^gui.Window, font: gui.Font) -> (ok: bool) {
@@ -164,8 +192,8 @@ _load_font :: proc(window: ^gui.Window, font: gui.Font) -> (ok: bool) {
     font.rl_font = rl.LoadFontFromMemory(
         ".ttf",
         raw_data(font.data),
-        i32(len(font.data)),
-        i32(font.size),
+        c.int(len(font.data)),
+        c.int(font.size),
         nil,
         CODEPOINT_COUNT,
     )
@@ -194,7 +222,7 @@ _get_clipboard :: proc() -> (data: string, ok: bool) {
 }
 
 _set_clipboard :: proc(data: string)-> (ok: bool) {
-    cstr := strings.clone_to_cstring(data, gui.temp_allocator())
+    cstr := strings.clone_to_cstring(data, gui.arena_allocator())
     rl.SetClipboardText(cstr)
     return true
 }
@@ -249,27 +277,27 @@ _font_metrics :: proc(window: ^gui.Window, font: gui.Font) -> (metrics: gui.Font
 }
 
 _render_draw_command :: proc(window: ^gui.Window, command: gui.Draw_Command) {
-    switch c in command {
+    switch cmd in command {
     case gui.Draw_Custom_Command:
-        if c.custom != nil {
-            c.custom()
+        if cmd.custom != nil {
+            cmd.custom()
         }
 
     case gui.Draw_Rect_Command:
-        rect := gui.pixel_snapped(c.rect)
-        rl.DrawRectangleV(rect.position, rect.size, _to_rl_color(c.color))
+        rect := gui.pixel_snapped(cmd.rect)
+        rl.DrawRectangleV(rect.position, rect.size, _to_rl_color(cmd.color))
 
     case gui.Draw_Text_Command:
-        font := cast(^Font)c.font
-        text, err := strings.clone_to_cstring(c.text, gui.temp_allocator())
+        font := cast(^Font)cmd.font
+        text, err := strings.clone_to_cstring(cmd.text, gui.arena_allocator())
         if err == nil {
-            rl.DrawTextEx(font.rl_font, text, gui.pixel_snapped(c.position), f32(font.rl_font.baseSize), 0, _to_rl_color(c.color))
+            rl.DrawTextEx(font.rl_font, text, gui.pixel_snapped(cmd.position), f32(font.rl_font.baseSize), 0, _to_rl_color(cmd.color))
         }
 
     case gui.Clip_Drawing_Command:
-        rect := gui.pixel_snapped(c.global_clip_rect)
+        rect := gui.pixel_snapped(cmd.global_clip_rect)
         rl.EndScissorMode()
-		rl.BeginScissorMode(i32(rect.position.x), i32(rect.position.y), i32(rect.size.x), i32(rect.size.y))
+		rl.BeginScissorMode(c.int(rect.position.x), c.int(rect.position.y), c.int(rect.size.x), c.int(rect.size.y))
     }
 }
 
