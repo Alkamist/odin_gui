@@ -57,8 +57,6 @@ Window :: struct {
     view: ^pugl.View,
 
     nvg_ctx: ^nvg.Context,
-
-    size_set_by_user_code: bool,
 }
 
 Context :: gui.Context
@@ -89,8 +87,14 @@ shutdown :: proc() {
     _world = nil
 }
 
-context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
-    gui.context_init(ctx, temp_allocator) or_return
+poll_events :: proc() {
+    _odin_context = context
+    if _world == nil do return
+    pugl.Update(_world, 0)
+}
+
+context_init :: proc(ctx: ^Context, allocator := context.allocator) -> runtime.Allocator_Error {
+    gui.context_init(ctx, allocator) or_return
 
     ctx.backend.tick_now = _tick_now
     ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
@@ -99,8 +103,11 @@ context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) ->
 
     ctx.backend.open_window = _open_window
     ctx.backend.close_window = _close_window
+    ctx.backend.show_window = _show_window
+    ctx.backend.hide_window = _hide_window
     ctx.backend.set_window_position = _set_window_position
     ctx.backend.set_window_size = _set_window_size
+    ctx.backend.activate_window_context = _activate_window_context
     ctx.backend.window_begin_frame = _window_begin_frame
     ctx.backend.window_end_frame = _window_end_frame
 
@@ -117,10 +124,6 @@ context_destroy :: proc(ctx: ^Context) {
 }
 
 context_update :: proc(ctx: ^Context) {
-    _odin_context = context
-    if _world == nil do return
-    free_all(ctx.temp_allocator)
-    pugl.Update(_world, 0)
     gui.context_update(ctx)
 }
 
@@ -149,7 +152,7 @@ _open_window :: proc(window: ^gui.Window) -> (ok: bool) {
 
     view := pugl.NewView(_world)
 
-    title_cstring, err := strings.clone_to_cstring(window.title, gui.temp_allocator())
+    title_cstring, err := strings.clone_to_cstring(window.title, gui.arena_allocator())
     if err != nil do return
 
     pugl.SetViewString(view, .WINDOW_TITLE, title_cstring)
@@ -216,18 +219,27 @@ _open_window :: proc(window: ^gui.Window) -> (ok: bool) {
 
 _close_window :: proc(window: ^gui.Window) -> (ok: bool) {
     window := cast(^Window)window
-    view := window.view
-
-    pugl.EnterContext(view)
 
     nvg_gl.Destroy(window.nvg_ctx)
     window.nvg_ctx = nil
 
-    pugl.Unrealize(view)
-    pugl.FreeView(view)
+    pugl.Unrealize(window.view)
+    pugl.FreeView(window.view)
 
     window.view = nil
 
+    return true
+}
+
+_show_window :: proc(window: ^gui.Window) -> (ok: bool) {
+    window := cast(^Window)window
+    pugl.Show(window.view, .RAISE)
+    return true
+}
+
+_hide_window :: proc(window: ^gui.Window) -> (ok: bool) {
+    window := cast(^Window)window
+    pugl.Hide(window.view)
     return true
 }
 
@@ -241,20 +253,21 @@ _set_window_position :: proc(window: ^gui.Window, position: Vec2) -> (ok: bool) 
 
 _set_window_size :: proc(window: ^gui.Window, size: Vec2) -> (ok: bool) {
     window := cast(^Window)window
-    window.size_set_by_user_code = true
-    defer window.size_set_by_user_code = false
     if pugl.SetSize(window.view, u32(size.x), u32(size.y)) == .FAILURE {
         return false
     }
     return true
 }
 
+_activate_window_context :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
+    pugl.EnterContext(window.view)
+}
+
 _window_begin_frame :: proc(window: ^gui.Window) {
     window := cast(^Window)window
 
-    pugl.EnterContext(window.view)
-
-    size := window.size
+    size := window.actual_rect.size
     scale := f32(pugl.GetScaleFactor(window.view))
     gui.input_window_content_scale(window, {scale, scale})
 
@@ -309,7 +322,7 @@ _get_clipboard :: proc() -> (data: string, ok: bool) {
 _set_clipboard :: proc(data: string)-> (ok: bool) {
     window := cast(^Window)gui.current_window()
 
-    data_cstring, err := strings.clone_to_cstring(data, gui.temp_allocator())
+    data_cstring, err := strings.clone_to_cstring(data, gui.arena_allocator())
     if err != nil do return false
     if pugl.SetClipboard(window.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1) != .SUCCESS {
         return false
@@ -340,7 +353,7 @@ _measure_text :: proc(
     nvg.FontFace(nvg_ctx, font.name)
     nvg.FontSize(nvg_ctx, f32(font.size))
 
-    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), gui.temp_allocator())
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), gui.arena_allocator())
 
     temp_slice := nvg_positions[:]
     position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, text, &temp_slice)
@@ -435,15 +448,20 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     case .CONFIGURE:
         event := event.configure
 
-        gui.input_window_move(window, {f32(event.x), f32(event.y)})
-        gui.input_window_size(window, {f32(event.width), f32(event.height)})
+        position := Vec2{f32(event.x), f32(event.y)}
+        size := Vec2{f32(event.width), f32(event.height)}
 
-        opened := window.is_open && !window.was_open
-        resized := window.size != window.previous_rect.size
+        gui.input_window_move(window, position)
 
-        if !opened && resized && !window.size_set_by_user_code {
-            gui.context_update(ctx)
-            pugl.PostRedisplay(view)
+        if size != window.actual_rect.size {
+            was_set_by_user := window.size != window.actual_rect.size
+            gui.input_window_size(window, {f32(event.width), f32(event.height)})
+
+            // Update the context while avoiding recursion.
+            if !was_set_by_user {
+                gui.context_update(gui.current_context())
+                pugl.PostRedisplay(view)
+            }
         }
 
     case .POINTER_IN:
@@ -509,7 +527,7 @@ _on_event :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
         }
 
     case .CLOSE:
-        window.is_open = false
+        window.should_close = true
     }
 
     return .SUCCESS

@@ -34,12 +34,9 @@ Window :: struct {
     title: string,
     is_resizable: bool,
 
-    timer_id: uintptr,
     glfw_window: glfw.WindowHandle,
 
     nvg_ctx: ^nvg.Context,
-
-    size_set_by_user_code: bool,
 }
 
 Context :: gui.Context
@@ -87,6 +84,7 @@ shutdown :: proc() {
 }
 
 poll_events :: proc() {
+    _odin_context = context
     glfw.PollEvents()
 }
 
@@ -121,7 +119,6 @@ context_destroy :: proc(ctx: ^Context) {
 }
 
 context_update :: proc(ctx: ^Context) {
-    _odin_context = context
     gui.context_update(ctx)
 }
 
@@ -211,8 +208,6 @@ _set_window_position :: proc(window: ^gui.Window, position: Vec2) -> (ok: bool) 
 
 _set_window_size :: proc(window: ^gui.Window, size: Vec2) -> (ok: bool) {
     window := cast(^Window)window
-    window.size_set_by_user_code = true
-    defer window.size_set_by_user_code = false
     glfw.SetWindowSize(window.glfw_window, c.int(size.x), c.int(size.y))
     return true
 }
@@ -225,7 +220,7 @@ _activate_window_context :: proc(window: ^gui.Window) {
 _window_begin_frame :: proc(window: ^gui.Window) {
     window := cast(^Window)window
 
-    size := window.size
+    size := window.actual_rect.size
 
     c := window.background_color
     gl.Viewport(0, 0, i32(size.x), i32(size.y))
@@ -378,12 +373,13 @@ _on_window_move :: proc "c" (window: glfw.WindowHandle, xpos, ypos: c.int) {
 _on_window_resize :: proc "c" (window: glfw.WindowHandle, width, height: c.int) {
     context = _odin_context
     window := cast(^Window)glfw.GetWindowUserPointer(window)
+
+    was_set_by_user := window.size != window.actual_rect.size
+
     gui.input_window_size(window, {f32(width), f32(height)})
 
-    opened := window.is_open && !window.was_open
-    resized := window.size != window.previous_rect.size
-
-    if !opened && resized && !window.size_set_by_user_code {
+    // Update the context while avoiding recursion.
+    if !was_set_by_user {
         gui.context_update(gui.current_context())
     }
 }
@@ -428,7 +424,7 @@ _on_mouse_move :: proc "c" (window: glfw.WindowHandle, xpos,  ypos: f64) {
     context = _odin_context
     ctx := gui.current_context()
     window := cast(^Window)glfw.GetWindowUserPointer(window)
-    gui.input_mouse_move(ctx, window.position + {f32(xpos),  f32(ypos)})
+    gui.input_mouse_move(ctx, window.actual_rect.position + {f32(xpos),  f32(ypos)})
 }
 
 _on_mouse_scroll :: proc "c" (window: glfw.WindowHandle, xoffset, yoffset: f64) {

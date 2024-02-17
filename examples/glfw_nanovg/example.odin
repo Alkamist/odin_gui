@@ -19,6 +19,8 @@ window2: backend.Window
 text_move_button: widgets.Button
 text: widgets.Editable_Text_Line
 
+move_window_button: widgets.Button
+
 main :: proc() {
     defer fmt.println("Success")
 
@@ -43,9 +45,13 @@ main :: proc() {
     text_move_button.position = {50, 50}
     text_move_button.size = {400, 32}
 
+    widgets.init(&move_window_button)
+    move_window_button.position = {200, 200}
+
     widgets.init(&text)
     defer widgets.destroy(&text)
     text.font = &consola_13
+    widgets.input_string(&text, "Type here: ")
 
     for running {
         backend.poll_events()
@@ -83,6 +89,13 @@ update :: proc() {
                 nvg.Fill(nvg_ctx)
             })
             gui.draw_text("Hello window 2.", {50, 50}, &consola_13, {1, 1, 1, 1})
+
+            if move_window_button.is_down && gui.mouse_moved() {
+                window2.position += gui.mouse_delta()
+            }
+
+            widgets.update(&move_window_button)
+            widgets.draw(&move_window_button)
         }
     }
 

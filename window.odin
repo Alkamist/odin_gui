@@ -4,13 +4,14 @@ import "core:slice"
 
 Window :: struct {
     using rect: Rect,
+    actual_rect: Rect,
+
     content_scale: Vec2,
 
     should_open: bool,
     should_close: bool,
 
     is_open: bool,
-    is_visible: bool,
     is_mouse_hovered: bool,
     is_rendering_draw_commands: bool,
 
@@ -22,22 +23,34 @@ Window :: struct {
 
     loaded_fonts: map[Font]struct{},
 
-    previous_rect: Rect,
+    previous_actual_rect: Rect,
     was_open: bool,
-
-    last_position_set_externally: Vec2,
-    last_size_set_externally: Vec2,
 }
 
 window_init :: proc(window: ^Window, rect: Rect) {
     window.rect = rect
-    window.last_position_set_externally = rect.position
-    window.last_size_set_externally = rect.size
+    window.actual_rect = rect
     window.content_scale = {1, 1}
 }
 
 window_destroy :: proc(window: ^Window) {
     delete(window.loaded_fonts)
+}
+
+window_opened :: proc(window: ^Window) -> bool {
+    return window.is_open && !window.was_open
+}
+
+window_closed :: proc(window: ^Window) -> bool {
+    return !window.is_open && window.was_open
+}
+
+window_moved :: proc(window: ^Window) -> bool {
+    return window.actual_rect.position != window.previous_actual_rect.position
+}
+
+window_resized :: proc(window: ^Window) -> bool {
+    return window.actual_rect.position != window.previous_actual_rect.position
 }
 
 window_begin :: proc(window: ^Window) -> bool {
@@ -55,9 +68,6 @@ window_begin :: proc(window: ^Window) -> bool {
         _open_window(ctx, window)
         window.should_open = false
     }
-
-    window.was_open = window.is_open
-    window.previous_rect = window.rect
 
     if window.is_open {
         append(&ctx.window_stack, window)
@@ -203,23 +213,23 @@ _close_window :: proc(ctx: ^Context, window: ^Window) {
 _handle_move_and_resize :: proc(window: ^Window) {
     ctx := current_context()
 
-    if window.position != window.last_position_set_externally {
+    if window.position != window.actual_rect.position {
         failed := true
         if ctx.backend.set_window_position != nil {
             failed = ctx.backend.set_window_position(window, window.position)
         }
         if failed {
-            window.position = window.last_position_set_externally
+            window.position = window.actual_rect.position
         }
     }
 
-    if window.size != window.last_size_set_externally {
+    if window.size != window.actual_rect.size {
         failed := true
         if ctx.backend.set_window_size != nil {
             failed = ctx.backend.set_window_size(window, window.size)
         }
         if failed {
-            window.size = window.last_size_set_externally
+            window.size = window.actual_rect.size
         }
     }
 }

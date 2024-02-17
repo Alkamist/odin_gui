@@ -132,6 +132,11 @@ context_update :: proc(ctx: ^Context) {
         ctx.update()
     }
 
+    for window in ctx.active_windows {
+        window.was_open = window.is_open
+        window.previous_actual_rect = window.actual_rect
+    }
+
     for window in ctx.previous_active_windows {
         if window not_in ctx.active_windows {
             _close_window(ctx, window)

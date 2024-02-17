@@ -48,12 +48,12 @@ Keyboard_Key :: enum {
 }
 
 input_window_move :: proc(window: ^Window, position: Vec2) {
-    window.last_position_set_externally = position
+    window.actual_rect.position = position
     window.position = position
 }
 
 input_window_size :: proc(window: ^Window, size: Vec2) {
-    window.last_size_set_externally = size
+    window.actual_rect.size = size
     window.size = size
 }
 
