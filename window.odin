@@ -5,15 +5,14 @@ import "core:slice"
 Window :: struct {
     using rect: Rect,
     content_scale: Vec2,
-    is_open: bool,
-    is_hovered_by_mouse: bool,
-    is_rendering_draw_commands: bool,
 
-    // Delayed by 1 frame
-    moved: bool,
-    resized: bool,
-    opened: bool,
-    closed: bool,
+    should_open: bool,
+    should_close: bool,
+
+    is_open: bool,
+    is_visible: bool,
+    is_mouse_hovered: bool,
+    is_rendering_draw_commands: bool,
 
     local_offset_stack: [dynamic]Vec2,
     global_offset_stack: [dynamic]Vec2,
@@ -25,7 +24,6 @@ Window :: struct {
 
     previous_rect: Rect,
     was_open: bool,
-    was_hovered_by_mouse: bool,
 
     last_position_set_externally: Vec2,
     last_size_set_externally: Vec2,
@@ -35,7 +33,6 @@ window_init :: proc(window: ^Window, rect: Rect) {
     window.rect = rect
     window.last_position_set_externally = rect.position
     window.last_size_set_externally = rect.size
-    window.is_open = true
     window.content_scale = {1, 1}
 }
 
@@ -49,38 +46,34 @@ window_begin :: proc(window: ^Window) -> bool {
     window.size.x = max(0, window.size.x)
     window.size.y = max(0, window.size.y)
 
-    if !window.is_open && window.was_open {
-        if ctx.backend.close_window != nil && ctx.backend.close_window(window) {
-            window.is_open = false
-        }
+    if window.should_close {
+        _close_window(ctx, window)
+        window.should_close = false
     }
 
-    if window.is_open && !window.was_open {
-        if ctx.backend.open_window != nil && ctx.backend.open_window(window) {
-            window.is_open = true
-        }
+    if window.should_open {
+        _open_window(ctx, window)
+        window.should_open = false
     }
-
-    window.moved = window.position != window.previous_rect.position
-    window.resized = window.size != window.previous_rect.size
-    window.opened = window.is_open && !window.was_open
-    window.closed = !window.is_open && window.was_open
 
     window.was_open = window.is_open
     window.previous_rect = window.rect
 
     if window.is_open {
         append(&ctx.window_stack, window)
+        ctx.active_windows[window] = {}
 
-        window.local_offset_stack = make([dynamic]Vec2, ctx.temp_allocator)
-        window.global_offset_stack = make([dynamic]Vec2, ctx.temp_allocator)
-        window.global_clip_rect_stack = make([dynamic]Rect, ctx.temp_allocator)
-        window.layer_stack = make([dynamic]Layer, ctx.temp_allocator)
-        window.layers = make([dynamic]Layer, ctx.temp_allocator)
+        window.local_offset_stack = make([dynamic]Vec2, ctx.arena_allocator)
+        window.global_offset_stack = make([dynamic]Vec2, ctx.arena_allocator)
+        window.global_clip_rect_stack = make([dynamic]Rect, ctx.arena_allocator)
+        window.layer_stack = make([dynamic]Layer, ctx.arena_allocator)
+        window.layers = make([dynamic]Layer, ctx.arena_allocator)
 
         begin_layer(0)
 
         _handle_move_and_resize(window)
+
+        _activate_window_context(ctx, window)
 
         if ctx.backend.window_begin_frame != nil {
             ctx.backend.window_begin_frame(window)
@@ -88,6 +81,10 @@ window_begin :: proc(window: ^Window) -> bool {
 
         return true
     } else {
+        if len(ctx.window_stack) > 0 {
+            containing_window := ctx.window_stack[len(ctx.window_stack) - 1]
+            _activate_window_context(ctx, containing_window)
+        }
         return false
     }
 }
@@ -103,7 +100,7 @@ window_end :: proc(window: ^Window) {
         return i.global_z_index < j.global_z_index
     })
 
-    if window.is_hovered_by_mouse {
+    if window.is_mouse_hovered {
         _update_hover(window)
     }
 
@@ -136,6 +133,11 @@ window_end :: proc(window: ^Window) {
     window.is_rendering_draw_commands = false
 
     pop(&ctx.window_stack)
+
+    // Restore the containing window's context if it exists.
+    if len(ctx.window_stack) > 0 {
+        _activate_window_context(ctx, ctx.window_stack[len(ctx.window_stack) - 1])
+    }
 }
 
 @(deferred_in=window_end)
@@ -169,10 +171,34 @@ window_unload_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
 
 current_window :: proc() -> ^Window {
     ctx := current_context()
+    if len(ctx.window_stack) <= 0 do return nil
     return ctx.window_stack[len(ctx.window_stack) - 1]
 }
 
 
+
+_open_window :: proc(ctx: ^Context, window: ^Window) {
+    if window.is_open do return
+    if ctx.backend.open_window != nil && ctx.backend.open_window(window) {
+        window.is_open = true
+    }
+}
+
+_close_window :: proc(ctx: ^Context, window: ^Window) {
+    if !window.is_open do return
+
+    // Activate the window's context for any cleanup logic that needs it.
+    _activate_window_context(ctx, window)
+
+    if ctx.backend.close_window != nil && ctx.backend.close_window(window) {
+        window.is_open = false
+
+        // Restore the containing window's context if it exists.
+        if len(ctx.window_stack) > 0 {
+            _activate_window_context(ctx, ctx.window_stack[len(ctx.window_stack) - 1])
+        }
+    }
+}
 
 _handle_move_and_resize :: proc(window: ^Window) {
     ctx := current_context()
@@ -215,4 +241,10 @@ _update_hover :: proc(window: ^Window) {
     }
 
     ctx.any_window_hovered = true
+}
+
+_activate_window_context :: proc(ctx: ^Context, window: ^Window) {
+    if ctx.backend.activate_window_context != nil {
+        ctx.backend.activate_window_context(window)
+    }
 }

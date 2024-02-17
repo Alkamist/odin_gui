@@ -93,7 +93,7 @@ input_string :: proc(text: ^Editable_Text_Line, str: string) {
 }
 
 input_runes :: proc(text: ^Editable_Text_Line, runes: []rune) {
-    str := utf8.runes_to_string(runes, gui.temp_allocator())
+    str := utf8.runes_to_string(runes, gui.arena_allocator())
     input_string(text, str)
 }
 
@@ -389,7 +389,7 @@ byte_index_at_x :: proc(text: ^Editable_Text_Line, x: f32) -> int {
 
 
 _quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
-    bytes := make([dynamic]byte, len(str), allocator = gui.temp_allocator())
+    bytes := make([dynamic]byte, len(str), allocator = gui.arena_allocator())
     copy_from_string(bytes[:], str)
 
     keep_position := 0

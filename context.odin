@@ -1,6 +1,9 @@
 package gui
 
 import "base:runtime"
+import "core:fmt"
+import "core:mem"
+import "core:mem/virtual"
 import "core:time"
 import "core:strings"
 import "rects"
@@ -19,8 +22,11 @@ Backend_VTable :: struct {
 
     open_window: proc(window: ^Window) -> (ok: bool),
     close_window: proc(window: ^Window) -> (ok: bool),
+    show_window: proc(window: ^Window) -> (ok: bool),
+    hide_window: proc(window: ^Window) -> (ok: bool),
     set_window_position: proc(window: ^Window, position: Vec2) -> (ok: bool),
     set_window_size: proc(window: ^Window, size: Vec2) -> (ok: bool),
+    activate_window_context: proc(window: ^Window),
     window_begin_frame: proc(window: ^Window),
     window_end_frame: proc(window: ^Window),
 
@@ -62,13 +68,20 @@ Context :: struct {
     mouse_hover_capture: Id,
 
     window_stack: [dynamic]^Window,
+    active_windows: map[^Window]struct{},
+    previous_active_windows: map[^Window]struct{},
 
     is_first_frame: bool,
 
     previous_tick: Tick,
     previous_screen_mouse_position: Vec2,
 
-    temp_allocator: runtime.Allocator,
+    arena_allocator: runtime.Allocator,
+    arena: virtual.Arena,
+
+    // For the previous frame
+    previous_arena_allocator: runtime.Allocator,
+    previous_arena: virtual.Arena,
 
     any_window_hovered: bool,
 }
@@ -78,19 +91,26 @@ current_context :: proc() -> ^Context {
     return _current_ctx
 }
 
-// You are responsible for freeing the temp_allocator every frame in your backend.
-context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
-    ctx.temp_allocator = temp_allocator
+context_init :: proc(ctx: ^Context, allocator := context.allocator) -> runtime.Allocator_Error {
+    virtual.arena_init_growing(&ctx.arena) or_return
+    ctx.arena_allocator = virtual.arena_allocator(&ctx.arena)
+
+    virtual.arena_init_growing(&ctx.previous_arena) or_return
+    ctx.previous_arena_allocator = virtual.arena_allocator(&ctx.previous_arena)
+
     _remake_input_buffers(ctx) or_return
+
     ctx.mouse_repeat_duration = 300 * time.Millisecond
     ctx.mouse_repeat_movement_tolerance = 3
     ctx.is_first_frame = true
+
     _current_ctx = ctx
+
     return nil
 }
 
 context_destroy :: proc(ctx: ^Context) {
-    free_all(ctx.temp_allocator)
+    free_all(ctx.arena_allocator)
 }
 
 context_update :: proc(ctx: ^Context) {
@@ -105,10 +125,24 @@ context_update :: proc(ctx: ^Context) {
         ctx.previous_screen_mouse_position = ctx.screen_mouse_position
     }
 
-    ctx.window_stack = make([dynamic]^Window, ctx.temp_allocator)
+    ctx.window_stack = make([dynamic]^Window, ctx.arena_allocator)
+    ctx.active_windows = make(map[^Window]struct{}, allocator = ctx.arena_allocator)
 
     if ctx.update != nil {
         ctx.update()
+    }
+
+    for window in ctx.previous_active_windows {
+        if window not_in ctx.active_windows {
+            _close_window(ctx, window)
+        }
+    }
+
+    free_all(ctx.previous_arena_allocator)
+
+    ctx.previous_active_windows = make(map[^Window]struct{}, allocator = ctx.previous_arena_allocator)
+    for window in ctx.active_windows {
+        ctx.previous_active_windows[window] = {}
     }
 
     if !ctx.any_window_hovered {
@@ -122,11 +156,13 @@ context_update :: proc(ctx: ^Context) {
     ctx.is_first_frame = false
     ctx.any_window_hovered = false
 
+    free_all(ctx.arena_allocator)
+
     _remake_input_buffers(ctx)
 }
 
-temp_allocator :: proc() -> runtime.Allocator {
-    return current_context().temp_allocator
+arena_allocator :: proc() -> runtime.Allocator {
+    return current_context().arena_allocator
 }
 
 tick_now :: proc() -> (tick: Tick, ok: bool) {
@@ -145,7 +181,7 @@ get_clipboard :: proc() -> (data: string, ok: bool) {
     return ctx.backend.get_clipboard()
 }
 
-set_clipboard :: proc(data: string, ) -> (ok: bool) {
+set_clipboard :: proc(data: string) -> (ok: bool) {
     ctx := current_context()
     if ctx.backend.set_clipboard == nil do return false
     return ctx.backend.set_clipboard(data)
@@ -170,12 +206,12 @@ font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {
 
 
 _remake_input_buffers :: proc(ctx: ^Context) -> runtime.Allocator_Error {
-    ctx.mouse_presses = make([dynamic]Mouse_Button, ctx.temp_allocator) or_return
-    ctx.mouse_releases = make([dynamic]Mouse_Button, ctx.temp_allocator) or_return
-    ctx.key_presses = make([dynamic]Keyboard_Key, ctx.temp_allocator) or_return
-    ctx.key_repeats = make([dynamic]Keyboard_Key, ctx.temp_allocator) or_return
-    ctx.key_releases = make([dynamic]Keyboard_Key, ctx.temp_allocator) or_return
-    strings.builder_init(&ctx.text_input, ctx.temp_allocator) or_return
+    ctx.mouse_presses = make([dynamic]Mouse_Button, ctx.arena_allocator) or_return
+    ctx.mouse_releases = make([dynamic]Mouse_Button, ctx.arena_allocator) or_return
+    ctx.key_presses = make([dynamic]Keyboard_Key, ctx.arena_allocator) or_return
+    ctx.key_repeats = make([dynamic]Keyboard_Key, ctx.arena_allocator) or_return
+    ctx.key_releases = make([dynamic]Keyboard_Key, ctx.arena_allocator) or_return
+    strings.builder_init(&ctx.text_input, ctx.arena_allocator) or_return
     return nil
 }
 

@@ -32,13 +32,7 @@ Window :: struct {
     background_color: gui.Color,
 
     title: string,
-    min_size: Maybe(Vec2),
-    max_size: Maybe(Vec2),
-    swap_interval: int,
-    dark_mode: bool,
-    is_visible: bool,
     is_resizable: bool,
-    double_buffer: bool,
 
     timer_id: uintptr,
     glfw_window: glfw.WindowHandle,
@@ -50,29 +44,67 @@ Window :: struct {
 
 Context :: gui.Context
 
+Glfw_Cursors :: struct {
+    arrow: glfw.CursorHandle,
+    ibeam: glfw.CursorHandle,
+    crosshair: glfw.CursorHandle,
+    pointing_hand: glfw.CursorHandle,
+    resize_left_right: glfw.CursorHandle,
+    resize_top_bottom: glfw.CursorHandle,
+
+    // These aren't there by default so placeholders for now.
+    resize_top_left_bottom_right: glfw.CursorHandle,
+    resize_top_right_bottom_left: glfw.CursorHandle,
+}
+
+cursors: Glfw_Cursors
+
 init :: proc() {
     if !glfw.Init() {
 		fmt.eprintln("Failed to initialize GLFW")
 		return
 	}
+    cursors.arrow = glfw.CreateStandardCursor(glfw.ARROW_CURSOR)
+    cursors.ibeam = glfw.CreateStandardCursor(glfw.IBEAM_CURSOR)
+    cursors.crosshair = glfw.CreateStandardCursor(glfw.CROSSHAIR_CURSOR)
+    cursors.pointing_hand = glfw.CreateStandardCursor(glfw.HAND_CURSOR)
+    cursors.resize_left_right = glfw.CreateStandardCursor(glfw.HRESIZE_CURSOR)
+    cursors.resize_top_bottom = glfw.CreateStandardCursor(glfw.VRESIZE_CURSOR)
+    cursors.resize_top_left_bottom_right = glfw.CreateStandardCursor(glfw.CROSSHAIR_CURSOR)
+    cursors.resize_top_right_bottom_left = glfw.CreateStandardCursor(glfw.CROSSHAIR_CURSOR)
 }
 
 shutdown :: proc() {
+    glfw.DestroyCursor(cursors.arrow)
+    glfw.DestroyCursor(cursors.ibeam)
+    glfw.DestroyCursor(cursors.crosshair)
+    glfw.DestroyCursor(cursors.pointing_hand)
+    glfw.DestroyCursor(cursors.resize_left_right)
+    glfw.DestroyCursor(cursors.resize_top_bottom)
+    glfw.DestroyCursor(cursors.resize_top_left_bottom_right)
+    glfw.DestroyCursor(cursors.resize_top_right_bottom_left)
     glfw.Terminate()
 }
 
-context_init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
-    gui.context_init(ctx, temp_allocator) or_return
+poll_events :: proc() {
+    glfw.PollEvents()
+}
+
+context_init :: proc(ctx: ^Context, allocator := context.allocator) -> runtime.Allocator_Error {
+    gui.context_init(ctx, allocator) or_return
 
     ctx.backend.tick_now = _tick_now
-    // ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
-    // ctx.backend.get_clipboard = _get_clipboard
-    // ctx.backend.set_clipboard = _set_clipboard
+    ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
+    ctx.backend.get_clipboard = _get_clipboard
+    ctx.backend.set_clipboard = _set_clipboard
 
     ctx.backend.open_window = _open_window
     ctx.backend.close_window = _close_window
+    ctx.backend.show_window = _show_window
+    ctx.backend.hide_window = _hide_window
     ctx.backend.set_window_position = _set_window_position
     ctx.backend.set_window_size = _set_window_size
+    ctx.backend.activate_window_context = _activate_window_context
     ctx.backend.window_begin_frame = _window_begin_frame
     ctx.backend.window_end_frame = _window_end_frame
 
@@ -90,17 +122,12 @@ context_destroy :: proc(ctx: ^Context) {
 
 context_update :: proc(ctx: ^Context) {
     _odin_context = context
-    free_all(ctx.temp_allocator)
-    glfw.PollEvents()
     gui.context_update(ctx)
 }
 
 window_init :: proc(window: ^Window, rect: Rect) {
     gui.window_init(window, rect)
-    window.dark_mode = true
-    window.is_visible = true
     window.is_resizable = true
-    window.double_buffer = true
 }
 
 window_destroy :: proc(window: ^Window) {
@@ -119,7 +146,7 @@ _open_window :: proc(window: ^gui.Window) -> (ok: bool) {
 	glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, OPENGL_VERSION_MINOR)
 	glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
 
-    title_cstring := strings.clone_to_cstring(window.title, gui.temp_allocator())
+    title_cstring := strings.clone_to_cstring(window.title, gui.arena_allocator())
 
     window.glfw_window = glfw.CreateWindow(
         c.int(window.size.x), c.int(window.size.y),
@@ -154,7 +181,6 @@ _open_window :: proc(window: ^gui.Window) -> (ok: bool) {
 
 _close_window :: proc(window: ^gui.Window) -> (ok: bool) {
     window := cast(^Window)window
-    glfw.MakeContextCurrent(window.glfw_window)
 
     nvg_gl.Destroy(window.nvg_ctx)
     window.nvg_ctx = nil
@@ -162,6 +188,18 @@ _close_window :: proc(window: ^gui.Window) -> (ok: bool) {
     glfw.DestroyWindow(window.glfw_window)
     window.glfw_window = nil
 
+    return true
+}
+
+_show_window :: proc(window: ^gui.Window) -> (ok: bool) {
+    window := cast(^Window)window
+    glfw.ShowWindow(window.glfw_window)
+    return true
+}
+
+_hide_window :: proc(window: ^gui.Window) -> (ok: bool) {
+    window := cast(^Window)window
+    glfw.HideWindow(window.glfw_window)
     return true
 }
 
@@ -179,10 +217,13 @@ _set_window_size :: proc(window: ^gui.Window, size: Vec2) -> (ok: bool) {
     return true
 }
 
+_activate_window_context :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
+    glfw.MakeContextCurrent(window.glfw_window)
+}
+
 _window_begin_frame :: proc(window: ^gui.Window) {
     window := cast(^Window)window
-
-    glfw.MakeContextCurrent(window.glfw_window)
 
     size := window.size
 
@@ -215,35 +256,26 @@ _tick_now :: proc() -> (tick: gui.Tick, ok: bool) {
     return time.tick_now(), true
 }
 
-// _set_mouse_cursor_style :: proc(style: gui.Mouse_Cursor_Style) -> (ok: bool) {
-//     window := cast(^Window)gui.current_window()
-//     pugl.SetCursor(window.view, _cursor_style_to_pugl_cursor(style))
-//     return true
-// }
+_set_mouse_cursor_style :: proc(style: gui.Mouse_Cursor_Style) -> (ok: bool) {
+    window := cast(^Window)gui.current_window()
+    glfw.SetCursor(window.glfw_window, _cursor_style_to_glfw_cursor(style))
+    return true
+}
 
-// _get_clipboard :: proc() -> (data: string, ok: bool) {
-//     window := cast(^Window)gui.current_window()
+_get_clipboard :: proc() -> (data: string, ok: bool) {
+    window := cast(^Window)gui.current_window()
+    if window == nil do return "", false
+    return glfw.GetClipboardString(window.glfw_window), true
+}
 
-//     length: uint
-//     clipboard_cstring := cast(cstring)pugl.GetClipboard(window.view, 0, &length)
-//     if clipboard_cstring == nil {
-//         return "", false
-//     }
-
-//     return string(clipboard_cstring), true
-// }
-
-// _set_clipboard :: proc(data: string)-> (ok: bool) {
-//     window := cast(^Window)gui.current_window()
-
-//     data_cstring, err := strings.clone_to_cstring(data, gui.temp_allocator())
-//     if err != nil do return false
-//     if pugl.SetClipboard(window.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1) != .SUCCESS {
-//         return false
-//     }
-
-//     return true
-// }
+_set_clipboard :: proc(data: string)-> (ok: bool) {
+    window := cast(^Window)gui.current_window()
+    if window == nil do return false
+    data_cstring, err := strings.clone_to_cstring(data, gui.arena_allocator())
+    if err != nil do return false
+    glfw.SetClipboardString(window.glfw_window, data_cstring)
+    return true
+}
 
 _measure_text :: proc(
     window: ^gui.Window,
@@ -267,7 +299,7 @@ _measure_text :: proc(
     nvg.FontFace(nvg_ctx, font.name)
     nvg.FontSize(nvg_ctx, f32(font.size))
 
-    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), gui.temp_allocator())
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), gui.arena_allocator())
 
     temp_slice := nvg_positions[:]
     position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, text, &temp_slice)
@@ -414,7 +446,7 @@ _on_text_input :: proc "c" (window: glfw.WindowHandle, codepoint: rune) {
 _on_close :: proc "c" (window: glfw.WindowHandle) {
     context = _odin_context
     window := cast(^Window)glfw.GetWindowUserPointer(window)
-    window.is_open = false
+    window.should_close = true
 }
 
 _to_mouse_button :: proc(glfw_button: c.int) -> gui.Mouse_Button {
@@ -552,4 +584,18 @@ _to_keyboard_key :: proc(glfw_key: c.int) -> gui.Keyboard_Key {
     // case glfw.KEY_MENU: return .Menu
     }
     return .Unknown
+}
+
+_cursor_style_to_glfw_cursor :: proc(style: gui.Mouse_Cursor_Style) -> glfw.CursorHandle {
+    #partial switch style {
+    case .Arrow: return cursors.arrow
+    case .I_Beam: return cursors.ibeam
+    case .Crosshair: return cursors.crosshair
+    case .Hand: return cursors.pointing_hand
+    case .Resize_Left_Right: return cursors.resize_left_right
+    case .Resize_Top_Bottom: return cursors.resize_top_bottom
+    case .Resize_Top_Left_Bottom_Right: return cursors.resize_top_left_bottom_right
+    case .Resize_Top_Right_Bottom_Left: return cursors.resize_top_right_bottom_left
+    }
+    return cursors.arrow
 }

@@ -58,11 +58,11 @@ input_window_size :: proc(window: ^Window, size: Vec2) {
 }
 
 input_window_mouse_enter :: proc(window: ^Window) {
-    window.is_hovered_by_mouse = true
+    window.is_mouse_hovered = true
 }
 
 input_window_mouse_exit :: proc(window: ^Window) {
-    window.is_hovered_by_mouse = false
+    window.is_mouse_hovered = false
 }
 
 input_window_content_scale :: proc(window: ^Window, content_scale: Vec2) {

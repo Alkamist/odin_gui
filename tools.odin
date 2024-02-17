@@ -136,7 +136,7 @@ scoped_offset :: proc(offset: Vec2) {
 // Local coordinates
 clip_rect :: proc() -> Rect {
     window := current_window()
-    if len(window.global_clip_rect_stack) <= 0 do return {{0, 0}, window.size}
+    if len(window.global_clip_rect_stack) <= 0 do return {-global_offset(), window.size}
     global_rect := window.global_clip_rect_stack[len(window.global_clip_rect_stack) - 1]
     global_rect.position -= global_offset()
     return global_rect
@@ -205,7 +205,7 @@ global_z_index :: proc() -> int {
 begin_layer :: proc(z_index: int) {
     window := current_window()
     layer: Layer
-    layer.draw_commands = make([dynamic]Draw_Command, temp_allocator())
+    layer.draw_commands = make([dynamic]Draw_Command, arena_allocator())
     layer.local_z_index = z_index
     layer.global_z_index = global_z_index() + z_index
     append(&window.layer_stack, layer)
