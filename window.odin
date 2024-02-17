@@ -3,6 +3,8 @@ package gui
 import "core:slice"
 
 Window :: struct {
+    vtable: ^Window_VTable,
+
     using rect: Rect,
     actual_rect: Rect,
 
@@ -30,22 +32,17 @@ Window :: struct {
     was_open: bool,
 }
 
-init :: proc(window: ^Window, rect: Rect) {
+init :: proc(window: ^Window, vtable: ^Window_VTable, rect: Rect) {
+    window.vtable = vtable
     window.rect = rect
     window.actual_rect = rect
     window.content_scale = {1, 1}
     window.is_visible = true
-    ctx := current_context()
-    if ctx.backend.init_window != nil {
-        ctx.backend.init_window(window)
-    }
+    _window_vtable_init(window)
 }
 
 destroy :: proc(window: ^Window) {
-    ctx := current_context()
-    if ctx.backend.destroy_window != nil {
-        ctx.backend.destroy_window(window)
-    }
+    _window_vtable_destroy(window)
     delete(window.loaded_fonts)
 }
 
@@ -81,6 +78,18 @@ hide :: proc(window: ^Window) {
     window.should_hide = true
 }
 
+measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) -> (ok: bool) {
+    window := current_window()
+    load_font(window, font)
+    return _window_vtable_measure_text(window, text, font, glyphs, byte_index_to_rune_index)
+}
+
+font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {
+    window := current_window()
+    load_font(window, font)
+    return _window_vtable_font_metrics(window, font)
+}
+
 @(deferred_in=window_end)
 update :: proc(window: ^Window) -> bool {
     return window_begin(window)
@@ -98,17 +107,17 @@ window_begin :: proc(window: ^Window) -> bool {
     }
 
     if window.should_open {
-        _open_window(ctx, window)
+        _open_window(window)
         window.should_open = false
     }
 
     if window.should_hide {
-        _hide_window(ctx, window)
+        _hide_window(window)
         window.should_hide = false
     }
 
     if window.should_show {
-        _show_window(ctx, window)
+        _show_window(window)
         window.should_show = false
     }
 
@@ -125,18 +134,14 @@ window_begin :: proc(window: ^Window) -> bool {
         begin_layer(0)
 
         _handle_move_and_resize(window)
-
-        _activate_window_context(ctx, window)
-
-        if ctx.backend.window_begin_frame != nil {
-            ctx.backend.window_begin_frame(window)
-        }
+        _window_vtable_activate_context(window)
+        _window_vtable_begin_frame(window)
 
         return true
     } else {
         if len(ctx.window_stack) > 0 {
             containing_window := ctx.window_stack[len(ctx.window_stack) - 1]
-            _activate_window_context(ctx, containing_window)
+            _window_vtable_activate_context(containing_window)
         }
         return false
     }
@@ -161,27 +166,22 @@ window_end :: proc(window: ^Window) {
 
     for layer in window.layers {
         for command in layer.draw_commands {
-            render := ctx.backend.render_draw_command
-            if render != nil {
-                c, is_custom := command.(Draw_Custom_Command)
-                if is_custom {
-                    begin_clip(c.global_clip_rect)
-                    begin_offset(c.global_offset)
-                }
+            c, is_custom := command.(Draw_Custom_Command)
+            if is_custom {
+                begin_clip(c.global_clip_rect)
+                begin_offset(c.global_offset)
+            }
 
-                render(window, command)
+            _window_vtable_render_draw_command(window, command)
 
-                if is_custom {
-                    end_offset()
-                    end_clip()
-                }
+            if is_custom {
+                end_offset()
+                end_clip()
             }
         }
     }
 
-    if ctx.backend.window_end_frame != nil {
-        ctx.backend.window_end_frame(window)
-    }
+    _window_vtable_end_frame(window)
 
     window.is_rendering_draw_commands = false
 
@@ -189,15 +189,13 @@ window_end :: proc(window: ^Window) {
 
     // Restore the containing window's context if it exists.
     if len(ctx.window_stack) > 0 {
-        _activate_window_context(ctx, ctx.window_stack[len(ctx.window_stack) - 1])
+        _window_vtable_activate_context(ctx.window_stack[len(ctx.window_stack) - 1])
     }
 }
 
 load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
-    ctx := current_context()
-    if ctx.backend.load_font == nil do return
     if font not_in window.loaded_fonts {
-        if ctx.backend.load_font(window, font) {
+        if _window_vtable_load_font(window, font) {
             window.loaded_fonts[font] = {}
             return true
         }
@@ -206,10 +204,8 @@ load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
 }
 
 unload_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
-    ctx := current_context()
-    if ctx.backend.unload_font == nil do return
     if font in window.loaded_fonts {
-        if ctx.backend.unload_font(window, font) {
+        if _window_vtable_unload_font(window, font) {
             delete_key(&window.loaded_fonts, font)
             return true
         }
@@ -225,9 +221,9 @@ current_window :: proc() -> ^Window {
 
 
 
-_open_window :: proc(ctx: ^Context, window: ^Window) {
+_open_window :: proc(window: ^Window) {
     if window.is_open do return
-    if ctx.backend.open_window != nil && ctx.backend.open_window(window) {
+    if _window_vtable_open(window) {
         window.is_open = true
     }
 }
@@ -236,28 +232,28 @@ _close_window :: proc(ctx: ^Context, window: ^Window) {
     if !window.is_open do return
 
     // Activate the window's context for any cleanup logic that needs it.
-    _activate_window_context(ctx, window)
+    _window_vtable_activate_context(window)
 
-    if ctx.backend.close_window != nil && ctx.backend.close_window(window) {
+    if _window_vtable_close(window) {
         window.is_open = false
 
         // Restore the containing window's context if it exists.
         if len(ctx.window_stack) > 0 {
-            _activate_window_context(ctx, ctx.window_stack[len(ctx.window_stack) - 1])
+            _window_vtable_activate_context(ctx.window_stack[len(ctx.window_stack) - 1])
         }
     }
 }
 
-_show_window :: proc(ctx: ^Context, window: ^Window) {
+_show_window :: proc(window: ^Window) {
     if window.is_visible do return
-    if ctx.backend.show_window != nil && ctx.backend.show_window(window) {
+    if _window_vtable_show(window) {
         window.is_visible = true
     }
 }
 
-_hide_window :: proc(ctx: ^Context, window: ^Window) {
+_hide_window :: proc(window: ^Window) {
     if !window.is_visible do return
-    if ctx.backend.hide_window != nil && ctx.backend.hide_window(window) {
+    if _window_vtable_hide(window) {
         window.is_visible = false
     }
 }
@@ -266,21 +262,13 @@ _handle_move_and_resize :: proc(window: ^Window) {
     ctx := current_context()
 
     if window.position != window.actual_rect.position {
-        failed := true
-        if ctx.backend.set_window_position != nil {
-            failed = ctx.backend.set_window_position(window, window.position)
-        }
-        if failed {
+        if !_window_vtable_set_position(window, window.position) {
             window.position = window.actual_rect.position
         }
     }
 
     if window.size != window.actual_rect.size {
-        failed := true
-        if ctx.backend.set_window_size != nil {
-            failed = ctx.backend.set_window_size(window, window.size)
-        }
-        if failed {
+        if !_window_vtable_set_size(window, window.size) {
             window.size = window.actual_rect.size
         }
     }
@@ -303,10 +291,4 @@ _update_hover :: proc(window: ^Window) {
     }
 
     ctx.any_window_hovered = true
-}
-
-_activate_window_context :: proc(ctx: ^Context, window: ^Window) {
-    if ctx.backend.activate_window_context != nil {
-        ctx.backend.activate_window_context(window)
-    }
 }

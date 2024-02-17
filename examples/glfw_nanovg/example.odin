@@ -48,18 +48,16 @@ main :: proc() {
     backend.init()
     defer backend.shutdown()
 
-    backend.setup_vtable(&ctx)
-
-    gui.context_init(&ctx)
+    gui.context_init(&ctx, backend.context_vtable())
     defer gui.context_destroy(&ctx)
     ctx.update = update
 
-    gui.init(&window1, {{50, 50}, {400, 300}})
+    gui.init(&window1, backend.window_vtable(), {{50, 50}, {400, 300}})
     defer gui.destroy(&window1)
     window1.should_open = true
     window1.background_color = {0.1, 0.1, 0.1, 1}
 
-    gui.init(&window2, {{500, 50}, {400, 300}})
+    gui.init(&window2, backend.window_vtable(), {{500, 50}, {400, 300}})
     defer gui.destroy(&window2)
     window2.should_open = true
     window2.background_color = {0.1, 0.1, 0.1, 1}

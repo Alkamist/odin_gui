@@ -67,12 +67,12 @@ main :: proc() {
         }
     }
 
-    backend.context_init(&ctx)
-    defer backend.context_destroy(&ctx)
+    gui.context_init(&ctx, backend.context_vtable())
+    defer gui.context_destroy(&ctx)
     ctx.update = update
 
-    backend.window_init(&window, {{300, 100}, {1280, 800}})
-    defer backend.window_destroy(&window)
+    gui.init(&window, backend.window_vtable(), {{300, 100}, {1280, 800}})
+    defer gui.destroy(&window)
     window.background_color = {0.2, 0.2, 0.2, 1}
 
     widgets.init(&button)
@@ -97,13 +97,13 @@ main :: proc() {
     move_button.position = {700, 100}
 
     for running {
-        backend.context_update(&ctx)
+        gui.context_update(&ctx)
     }
 }
 
 update :: proc() {
-    if gui.window_update(&window) {
-        if gui.window_opened(&window) {
+    if gui.update(&window) {
+        if gui.opened(&window) {
             scene_texture = rl.LoadRenderTexture(VIEW_WIDTH, VIEW_HEIGHT)
             rl.SetExitKey(.KEY_NULL)
         }

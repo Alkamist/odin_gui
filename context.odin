@@ -1,12 +1,9 @@
 package gui
 
 import "base:runtime"
-import "core:fmt"
-import "core:mem"
 import "core:mem/virtual"
 import "core:time"
 import "core:strings"
-import "rects"
 
 // A thread local pointer to the current context is held here.
 // The idea is to avoid having to pass the context manually
@@ -17,7 +14,7 @@ import "rects"
 Context :: struct {
     update: proc(), // User update code goes in here
 
-    backend: Backend_VTable,
+    vtable: ^Context_VTable,
 
     tick: Tick,
 
@@ -68,7 +65,13 @@ current_context :: proc() -> ^Context {
     return _current_ctx
 }
 
-context_init :: proc(ctx: ^Context, allocator := context.allocator) -> runtime.Allocator_Error {
+context_init :: proc(
+    ctx: ^Context,
+    vtable: ^Context_VTable,
+    allocator := context.allocator,
+) -> runtime.Allocator_Error {
+    ctx.vtable = vtable
+
     virtual.arena_init_growing(&ctx.arena) or_return
     ctx.arena_allocator = virtual.arena_allocator(&ctx.arena)
 
@@ -148,27 +151,19 @@ arena_allocator :: proc() -> runtime.Allocator {
 }
 
 tick_now :: proc() -> (tick: Tick, ok: bool) {
-    return _tick_now(current_context())
+    return _backend_vtable_tick_now(current_context())
 }
 
 set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) -> (ok: bool) {
-    return _set_mouse_cursor_style(current_context(), style)
+    return _backend_vtable_set_mouse_cursor_style(current_context(), style)
 }
 
 get_clipboard :: proc() -> (data: string, ok: bool) {
-    return _get_clipboard(current_context())
+    return _backend_vtable_get_clipboard(current_context())
 }
 
 set_clipboard :: proc(data: string) -> (ok: bool) {
-    return _set_clipboard(current_context(), data)
-}
-
-measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) -> (ok: bool) {
-    return _measure_text(current_context(), text, font, glyphs, byte_index_to_rune_index)
-}
-
-font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {
-    return _font_metrics(current_context(), font)
+    return _backend_vtable_set_clipboard(current_context(), data)
 }
 
 

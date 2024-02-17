@@ -53,63 +53,71 @@ Glfw_Cursors :: struct {
     resize_top_left_bottom_right: glfw.CursorHandle,
     resize_top_right_bottom_left: glfw.CursorHandle,
 }
+_cursors: Glfw_Cursors
 
-cursors: Glfw_Cursors
+_context_vtable := gui.Context_VTable{
+    tick_now = _tick_now,
+    set_mouse_cursor_style = _set_mouse_cursor_style,
+    get_clipboard = _get_clipboard,
+    set_clipboard = _set_clipboard,
+}
+
+_window_vtable := gui.Window_VTable{
+    init = _init_window,
+    destroy = _destroy_window,
+    open = _open_window,
+    close = _close_window,
+    show = _show_window,
+    hide = _hide_window,
+    set_position = _set_window_position,
+    set_size = _set_window_size,
+    activate_context = _activate_window_context,
+    begin_frame = _window_begin_frame,
+    end_frame = _window_end_frame,
+    load_font = _load_font,
+    measure_text = _measure_text,
+    font_metrics = _font_metrics,
+    render_draw_command = _render_draw_command,
+}
+
+context_vtable :: proc() -> ^gui.Context_VTable {
+    return &_context_vtable
+}
+
+window_vtable :: proc() -> ^gui.Window_VTable {
+    return &_window_vtable
+}
 
 init :: proc() {
     if !glfw.Init() {
 		fmt.eprintln("Failed to initialize GLFW")
 		return
 	}
-    cursors.arrow = glfw.CreateStandardCursor(glfw.ARROW_CURSOR)
-    cursors.ibeam = glfw.CreateStandardCursor(glfw.IBEAM_CURSOR)
-    cursors.crosshair = glfw.CreateStandardCursor(glfw.CROSSHAIR_CURSOR)
-    cursors.pointing_hand = glfw.CreateStandardCursor(glfw.HAND_CURSOR)
-    cursors.resize_left_right = glfw.CreateStandardCursor(glfw.HRESIZE_CURSOR)
-    cursors.resize_top_bottom = glfw.CreateStandardCursor(glfw.VRESIZE_CURSOR)
-    cursors.resize_top_left_bottom_right = glfw.CreateStandardCursor(glfw.CROSSHAIR_CURSOR)
-    cursors.resize_top_right_bottom_left = glfw.CreateStandardCursor(glfw.CROSSHAIR_CURSOR)
+    _cursors.arrow = glfw.CreateStandardCursor(glfw.ARROW_CURSOR)
+    _cursors.ibeam = glfw.CreateStandardCursor(glfw.IBEAM_CURSOR)
+    _cursors.crosshair = glfw.CreateStandardCursor(glfw.CROSSHAIR_CURSOR)
+    _cursors.pointing_hand = glfw.CreateStandardCursor(glfw.HAND_CURSOR)
+    _cursors.resize_left_right = glfw.CreateStandardCursor(glfw.HRESIZE_CURSOR)
+    _cursors.resize_top_bottom = glfw.CreateStandardCursor(glfw.VRESIZE_CURSOR)
+    _cursors.resize_top_left_bottom_right = glfw.CreateStandardCursor(glfw.CROSSHAIR_CURSOR)
+    _cursors.resize_top_right_bottom_left = glfw.CreateStandardCursor(glfw.CROSSHAIR_CURSOR)
 }
 
 shutdown :: proc() {
-    glfw.DestroyCursor(cursors.arrow)
-    glfw.DestroyCursor(cursors.ibeam)
-    glfw.DestroyCursor(cursors.crosshair)
-    glfw.DestroyCursor(cursors.pointing_hand)
-    glfw.DestroyCursor(cursors.resize_left_right)
-    glfw.DestroyCursor(cursors.resize_top_bottom)
-    glfw.DestroyCursor(cursors.resize_top_left_bottom_right)
-    glfw.DestroyCursor(cursors.resize_top_right_bottom_left)
+    glfw.DestroyCursor(_cursors.arrow)
+    glfw.DestroyCursor(_cursors.ibeam)
+    glfw.DestroyCursor(_cursors.crosshair)
+    glfw.DestroyCursor(_cursors.pointing_hand)
+    glfw.DestroyCursor(_cursors.resize_left_right)
+    glfw.DestroyCursor(_cursors.resize_top_bottom)
+    glfw.DestroyCursor(_cursors.resize_top_left_bottom_right)
+    glfw.DestroyCursor(_cursors.resize_top_right_bottom_left)
     glfw.Terminate()
 }
 
 poll_events :: proc() {
     _odin_context = context
     glfw.PollEvents()
-}
-
-setup_vtable :: proc(ctx: ^Context) {
-    ctx.backend.tick_now = _tick_now
-    ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
-    ctx.backend.get_clipboard = _get_clipboard
-    ctx.backend.set_clipboard = _set_clipboard
-
-    ctx.backend.init_window = _init_window
-    ctx.backend.destroy_window = _destroy_window
-    ctx.backend.open_window = _open_window
-    ctx.backend.close_window = _close_window
-    ctx.backend.show_window = _show_window
-    ctx.backend.hide_window = _hide_window
-    ctx.backend.set_window_position = _set_window_position
-    ctx.backend.set_window_size = _set_window_size
-    ctx.backend.activate_window_context = _activate_window_context
-    ctx.backend.window_begin_frame = _window_begin_frame
-    ctx.backend.window_end_frame = _window_end_frame
-
-    ctx.backend.load_font = _load_font
-    ctx.backend.measure_text = _measure_text
-    ctx.backend.font_metrics = _font_metrics
-    ctx.backend.render_draw_command = _render_draw_command
 }
 
 _init_window :: proc(window: ^gui.Window) {
@@ -574,14 +582,14 @@ _to_keyboard_key :: proc(glfw_key: c.int) -> gui.Keyboard_Key {
 
 _cursor_style_to_glfw_cursor :: proc(style: gui.Mouse_Cursor_Style) -> glfw.CursorHandle {
     #partial switch style {
-    case .Arrow: return cursors.arrow
-    case .I_Beam: return cursors.ibeam
-    case .Crosshair: return cursors.crosshair
-    case .Hand: return cursors.pointing_hand
-    case .Resize_Left_Right: return cursors.resize_left_right
-    case .Resize_Top_Bottom: return cursors.resize_top_bottom
-    case .Resize_Top_Left_Bottom_Right: return cursors.resize_top_left_bottom_right
-    case .Resize_Top_Right_Bottom_Left: return cursors.resize_top_right_bottom_left
+    case .Arrow: return _cursors.arrow
+    case .I_Beam: return _cursors.ibeam
+    case .Crosshair: return _cursors.crosshair
+    case .Hand: return _cursors.pointing_hand
+    case .Resize_Left_Right: return _cursors.resize_left_right
+    case .Resize_Top_Bottom: return _cursors.resize_top_bottom
+    case .Resize_Top_Left_Bottom_Right: return _cursors.resize_top_left_bottom_right
+    case .Resize_Top_Right_Bottom_Left: return _cursors.resize_top_right_bottom_left
     }
-    return cursors.arrow
+    return _cursors.arrow
 }

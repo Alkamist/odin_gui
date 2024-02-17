@@ -31,41 +31,41 @@ Context :: struct {
     using gui_ctx: gui.Context,
 }
 
-init :: proc(ctx: ^Context, temp_allocator := context.temp_allocator) -> runtime.Allocator_Error {
-    gui.init(ctx, temp_allocator) or_return
-
-    ctx.backend.tick_now = _tick_now
-    ctx.backend.set_mouse_cursor_style = _set_mouse_cursor_style
-    ctx.backend.get_clipboard = _get_clipboard
-    ctx.backend.set_clipboard = _set_clipboard
-
-    ctx.backend.open_window = _open_window
-    ctx.backend.close_window = _close_window
-    ctx.backend.show_window = _show_window
-    ctx.backend.hide_window = _hide_window
-    ctx.backend.set_window_position = _set_window_position
-    ctx.backend.set_window_size = _set_window_size
-    ctx.backend.window_begin_frame = _window_begin_frame
-    ctx.backend.window_end_frame = _window_end_frame
-
-    ctx.backend.load_font = _load_font
-    ctx.backend.measure_text = _measure_text
-    ctx.backend.font_metrics = _font_metrics
-    ctx.backend.render_draw_command = _render_draw_command
-
-    return nil
+_context_vtable := gui.Context_VTable{
+    tick_now = _tick_now,
+    set_mouse_cursor_style = _set_mouse_cursor_style,
+    get_clipboard = _get_clipboard,
+    set_clipboard = _set_clipboard,
 }
 
-destroy :: proc(ctx: ^Context) {
-    gui.destroy(ctx)
+_window_vtable := gui.Window_VTable{
+    init = _init_window,
+    destroy = _destroy_window,
+    open = _open_window,
+    close = _close_window,
+    show = _show_window,
+    hide = _hide_window,
+    set_position = _set_window_position,
+    set_size = _set_window_size,
+    activate_context = nil,
+    begin_frame = _window_begin_frame,
+    end_frame = _window_end_frame,
+    load_font = _load_font,
+    measure_text = _measure_text,
+    font_metrics = _font_metrics,
+    render_draw_command = _render_draw_command,
 }
 
-update :: proc(ctx: ^Context) {
-    gui.update(ctx)
+context_vtable :: proc() -> ^gui.Context_VTable {
+    return &_context_vtable
 }
 
-window_init :: proc(window: ^Window, rect: Rect) {
-    gui.window_init(window, rect)
+window_vtable :: proc() -> ^gui.Window_VTable {
+    return &_window_vtable
+}
+
+_init_window :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
     window.title = "Raylib Window"
     window.is_resizable = true
     window.background_color = {0, 0, 0, 0}
@@ -73,7 +73,9 @@ window_init :: proc(window: ^Window, rect: Rect) {
     window.should_open = true
 }
 
-window_destroy :: proc(window: ^Window) {
+_destroy_window :: proc(window: ^gui.Window) {
+    window := cast(^Window)window
+
     for font in window.loaded_fonts {
         font := cast(^Font)font
         delete(font.rune_to_glyph_index)
@@ -81,7 +83,6 @@ window_destroy :: proc(window: ^Window) {
     if window.is_open {
         rl.CloseWindow()
     }
-    gui.window_destroy(window)
 }
 
 _open_window :: proc(window: ^gui.Window) -> (ok: bool) {
@@ -140,7 +141,7 @@ _window_begin_frame :: proc(window: ^gui.Window) {
 
     gui.input_window_content_scale(window, rl.GetWindowScaleDPI())
 
-    gui.input_mouse_move(ctx, rl.GetMousePosition() + window.position)
+    gui.input_mouse_move(ctx, rl.GetMousePosition() + window.actual_rect.position)
 
     gui.input_window_move(window, rl.GetWindowPosition())
     gui.input_window_size(window, {f32(rl.GetRenderWidth()), f32(rl.GetRenderHeight())})

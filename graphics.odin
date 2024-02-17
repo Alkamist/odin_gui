@@ -70,38 +70,36 @@ rect_pixel_snapped :: proc(rect: Rect) -> Rect {
 }
 
 draw_custom :: proc(custom: proc()) {
-    ctx := current_context()
-    _process_draw_command(Draw_Custom_Command{custom, global_offset(), global_clip_rect()})
+    window := current_window()
+    _process_draw_command(window, Draw_Custom_Command{custom, global_offset(), global_clip_rect()})
 }
 
 draw_rect :: proc(rect: Rect, color: Color) {
     if rect.size.x <= 0 || rect.size.y <= 0 do return
+    window := current_window()
     rect := rect
     rect.position += global_offset()
-    _process_draw_command(Draw_Rect_Command{rect, color})
+    _process_draw_command(window, Draw_Rect_Command{rect, color})
 }
 
 draw_text :: proc(text: string, position: Vec2, font: Font, color: Color) {
     window := current_window()
     load_font(window, font)
-    _process_draw_command(Draw_Text_Command{text, global_offset() + position, font, color})
+    _process_draw_command(window, Draw_Text_Command{text, global_offset() + position, font, color})
 }
 
 clip_drawing :: proc(rect: Rect) {
+    window := current_window()
     rect := rect
     rect.position += global_offset()
-    _process_draw_command(Clip_Drawing_Command{rect})
+    _process_draw_command(window, Clip_Drawing_Command{rect})
 }
 
 
 
-_process_draw_command :: proc(command: Draw_Command) {
-    window := current_window()
+_process_draw_command :: proc(window: ^Window, command: Draw_Command) {
     if window.is_rendering_draw_commands {
-        ctx := current_context()
-        if ctx.backend.render_draw_command != nil {
-            ctx.backend.render_draw_command(window, command)
-        }
+        _window_vtable_render_draw_command(window, command)
     } else {
         append(&_current_layer().draw_commands, command)
     }

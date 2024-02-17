@@ -1,6 +1,5 @@
 package gui
 
-import "base:runtime"
 import "base:intrinsics"
 import "core:time"
 import "rects"
@@ -161,7 +160,7 @@ begin_clip :: proc(rect: Rect, intersect := true) {
     }
 
     append(&window.global_clip_rect_stack, global_rect)
-    _process_draw_command(Clip_Drawing_Command{global_rect})
+    _process_draw_command(window, Clip_Drawing_Command{global_rect})
 }
 
 end_clip :: proc() {
@@ -179,7 +178,7 @@ end_clip :: proc() {
 
     global_rect := window.global_clip_rect_stack[len(window.global_clip_rect_stack) - 1]
 
-    _process_draw_command(Clip_Drawing_Command{global_rect})
+    _process_draw_command(window, Clip_Drawing_Command{global_rect})
 }
 
 @(deferred_none=end_clip)
