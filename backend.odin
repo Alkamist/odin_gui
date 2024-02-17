@@ -40,7 +40,6 @@ Window_VTable :: struct {
     begin_frame: proc(window: ^Window),
     end_frame: proc(window: ^Window),
     load_font: proc(window: ^Window, font: Font) -> (ok: bool),
-    unload_font: proc(window: ^Window, font: Font) -> (ok: bool),
     measure_text: proc(window: ^Window, text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int) -> (ok: bool),
     font_metrics: proc(window: ^Window, font: Font) -> (metrics: Font_Metrics, ok: bool),
     render_draw_command: proc(window: ^Window, command: Draw_Command),
@@ -116,12 +115,6 @@ _window_load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
     if window.vtable == nil do return false
     if window.vtable.load_font == nil do return false
     return window.vtable.load_font(window, font)
-}
-
-_window_unload_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
-    if window.vtable == nil do return false
-    if window.vtable.unload_font == nil do return false
-    return window.vtable.unload_font(window, font)
 }
 
 _window_measure_text :: proc(window: ^Window, text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) -> (ok: bool) {

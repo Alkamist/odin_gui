@@ -203,16 +203,6 @@ load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
     return false
 }
 
-unload_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
-    if font in window.loaded_fonts {
-        if _window_unload_font(window, font) {
-            delete_key(&window.loaded_fonts, font)
-            return true
-        }
-    }
-    return false
-}
-
 current_window :: proc() -> ^Window {
     ctx := current_context()
     if len(ctx.window_stack) <= 0 do return nil
