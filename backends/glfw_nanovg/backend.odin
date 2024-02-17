@@ -8,6 +8,7 @@ import "core:strings"
 import gl "vendor:OpenGL"
 import nvg "vendor:nanovg"
 import nvg_gl "vendor:nanovg/gl"
+import backend_nanovg "../nanovg"
 import "vendor:glfw"
 import "../../../gui"
 
@@ -21,11 +22,7 @@ Vec2 :: gui.Vec2
 Rect :: gui.Rect
 Color :: gui.Color
 
-Font :: struct {
-    name: string,
-    size: int,
-    data: []byte,
-}
+Font :: backend_nanovg.Font
 
 Window :: struct {
     using gui_window: gui.Window,
@@ -235,14 +232,8 @@ _window_end_frame :: proc(window: ^gui.Window) {
 }
 
 _load_font :: proc(window: ^gui.Window, font: gui.Font) -> (ok: bool) {
-    font := cast(^Font)font
-    if len(font.data) <= 0 do return false
     window := cast(^Window)window
-    if nvg.CreateFontMem(window.nvg_ctx, font.name, font.data, false) == -1 {
-        fmt.eprintf("Failed to load font: %v\n", font.name)
-        return false
-    }
-    return true
+    return backend_nanovg.load_font(window.nvg_ctx, font)
 }
 
 _tick_now :: proc() -> (tick: gui.Tick, ok: bool) {
@@ -278,88 +269,17 @@ _measure_text :: proc(
     byte_index_to_rune_index: ^map[int]int,
 ) -> (ok: bool) {
     window := cast(^Window)window
-    nvg_ctx := window.nvg_ctx
-
-    font := cast(^Font)font
-
-    clear(glyphs)
-
-    if len(text) == 0 {
-        return
-    }
-
-    nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
-    nvg.FontFace(nvg_ctx, font.name)
-    nvg.FontSize(nvg_ctx, f32(font.size))
-
-    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), gui.arena_allocator())
-
-    temp_slice := nvg_positions[:]
-    position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, text, &temp_slice)
-
-    resize(glyphs, position_count)
-
-    for i in 0 ..< position_count {
-        if byte_index_to_rune_index != nil {
-            byte_index_to_rune_index[nvg_positions[i].str] = i
-        }
-        glyphs[i] = gui.Text_Glyph{
-            byte_index = nvg_positions[i].str,
-            position = nvg_positions[i].x,
-            width = nvg_positions[i].maxx - nvg_positions[i].minx,
-            kerning = (nvg_positions[i].x - nvg_positions[i].minx),
-        }
-    }
-
-    return true
+    return backend_nanovg.measure_text(window.nvg_ctx, text, font, glyphs, byte_index_to_rune_index)
 }
 
 _font_metrics :: proc(window: ^gui.Window, font: gui.Font) -> (metrics: gui.Font_Metrics, ok: bool) {
     window := cast(^Window)window
-    nvg_ctx := window.nvg_ctx
-
-    font := cast(^Font)font
-
-    nvg.FontFace(nvg_ctx, font.name)
-    nvg.FontSize(nvg_ctx, f32(font.size))
-
-    metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(nvg_ctx)
-
-    return metrics, true
+    return backend_nanovg.font_metrics(window.nvg_ctx, font)
 }
 
 _render_draw_command :: proc(window: ^gui.Window, command: gui.Draw_Command) {
     window := cast(^Window)window
-    nvg_ctx := window.nvg_ctx
-
-    switch c in command {
-    case gui.Draw_Custom_Command:
-        if c.custom != nil {
-            nvg.Save(nvg_ctx)
-            c.custom()
-            nvg.Restore(nvg_ctx)
-        }
-
-    case gui.Draw_Rect_Command:
-        rect := gui.pixel_snapped(c.rect)
-        nvg.BeginPath(nvg_ctx)
-        nvg.Rect(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
-        nvg.FillColor(nvg_ctx, c.color)
-        nvg.Fill(nvg_ctx)
-
-    case gui.Draw_Text_Command:
-        font := cast(^Font)c.font
-        position := gui.pixel_snapped(c.position)
-        nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
-        nvg.FontFace(nvg_ctx, font.name)
-        nvg.FontSize(nvg_ctx, f32(font.size))
-        nvg.FillColor(nvg_ctx, c.color)
-        nvg.Text(nvg_ctx, position.x, position.y, c.text)
-
-    case gui.Clip_Drawing_Command:
-        rect := gui.pixel_snapped(c.global_clip_rect)
-        nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
-    }
+    backend_nanovg.render_draw_command(window.nvg_ctx, command)
 }
 
 _on_window_move :: proc "c" (window: glfw.WindowHandle, xpos, ypos: c.int) {
