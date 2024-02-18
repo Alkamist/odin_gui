@@ -4,6 +4,8 @@ import "core:math"
 import "paths"
 import "rects"
 
+PI :: math.PI
+
 Path :: paths.Path
 Color :: [4]f32
 Font :: rawptr
@@ -76,13 +78,6 @@ draw_custom :: proc(custom: proc()) {
     _process_draw_command(window, Draw_Custom_Command{custom, global_offset(), global_clip_rect()})
 }
 
-fill_path :: proc(path: Path, color: Color) {
-    window := current_window()
-    path := path
-    path.position += global_offset()
-    _process_draw_command(window, Fill_Path_Command{path, color})
-}
-
 fill_text :: proc(text: string, position: Vec2, font: Font, color: Color) {
     window := current_window()
     load_font(window, font)
@@ -96,12 +91,19 @@ clip_drawing :: proc(rect: Rect) {
     _process_draw_command(window, Clip_Drawing_Command{rect})
 }
 
+fill_path :: proc(path: Path, color: Color) {
+    window := current_window()
+    path := path
+    paths.translate(&path, global_offset())
+    _process_draw_command(window, Fill_Path_Command{path, color})
+}
+
 
 
 _process_draw_command :: proc(window: ^Window, command: Draw_Command) {
     if window.is_rendering_draw_commands {
         _window_render_draw_command(window, command)
     } else {
-        append(&_current_layer().draw_commands, command)
+        append(&_current_layer(window).draw_commands, command)
     }
 }

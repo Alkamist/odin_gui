@@ -58,12 +58,20 @@ main :: proc() {
 
 update :: proc() {
     if gui.update(&window) {
-        path: paths.Path
+        path: gui.Path
         paths.init(&path, gui.arena_allocator())
 
-        path.position = {50, 50}
-        paths.bezier_to(&path, {100, 0}, {100, 0}, {100, 50})
-        paths.close(&path)
+        // paths.move_to(&path, {200, 20})
+        // paths.arc_to(&path, {200, 130}, {50, 20}, 40)
+        // paths.close(&path)
+
+        paths.ellipse(&path, {100, 100}, {50, 20})
+
+        // paths.rounded_rect(&path, {{50, 50}, {200, 100}}, 5)
+        // // paths.rounded_rect(&path, {{70, 70}, {160, 60}}, 5, .Hole)
+
+        // paths.arc(&path, {100, 100}, 40, 0, gui.PI)
+        // paths.close(&path, .Hole)
 
         gui.fill_path(path, {1, 1, 1, 1})
     }

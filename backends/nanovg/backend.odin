@@ -82,22 +82,36 @@ render_draw_command :: proc(nvg_ctx: ^nvg.Context, command: gui.Draw_Command) {
         }
 
     case gui.Fill_Path_Command:
-        nvg.BeginPath(nvg_ctx)
         nvg.Save(nvg_ctx)
-        nvg.Translate(nvg_ctx, cmd.path.position.x, cmd.path.position.y)
-        nvg.MoveTo(nvg_ctx, 0, 0)
-        for segment in cmd.path.segments {
-            nvg.BezierTo(nvg_ctx,
-                segment[0].x, segment[0].y,
-                segment[1].x, segment[1].y,
-                segment[2].x, segment[2].y,
-            )
+
+        nvg.BeginPath(nvg_ctx)
+
+        for sub_path in cmd.path.sub_paths {
+            nvg.MoveTo(nvg_ctx, sub_path.points[0].x, sub_path.points[0].y)
+
+            for i := 1; i < len(sub_path.points); i += 3 {
+                c1 := sub_path.points[i]
+                c2 := sub_path.points[i + 1]
+                point := sub_path.points[i + 2]
+                nvg.BezierTo(nvg_ctx,
+                    c1.x, c1.y,
+                    c2.x, c2.y,
+                    point.x, point.y,
+                )
+            }
+
+            if sub_path.is_closed {
+                nvg.ClosePath(nvg_ctx)
+            }
+
+            if sub_path.polarity == .Hole {
+                nvg.PathWinding(nvg_ctx, .CW)
+            }
         }
-        // nvg.StrokeWidth(nvg_ctx, 3)
-        // nvg.StrokeColor(nvg_ctx, cmd.color)
-        // nvg.Stroke(nvg_ctx)
+
         nvg.FillColor(nvg_ctx, cmd.color)
         nvg.Fill(nvg_ctx)
+
         nvg.Restore(nvg_ctx)
 
     case gui.Fill_Text_Command:

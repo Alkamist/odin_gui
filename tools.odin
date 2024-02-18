@@ -2,6 +2,7 @@ package gui
 
 import "base:intrinsics"
 import "core:time"
+import "paths"
 import "rects"
 
 Id :: u64
@@ -55,12 +56,12 @@ mouse_hit :: proc() -> Id {
 }
 
 request_mouse_hover :: proc(id: Id) {
-    _current_layer().final_mouse_hover_request = id
+    _current_layer(current_window()).final_mouse_hover_request = id
 }
 
 capture_mouse_hover :: proc() {
     ctx := current_context()
-    ctx.mouse_hover_capture = _current_layer().final_mouse_hover_request
+    ctx.mouse_hover_capture = _current_layer(current_window()).final_mouse_hover_request
 }
 
 release_mouse_hover :: proc() {
@@ -191,13 +192,13 @@ scoped_clip :: proc(rect: Rect, intersect := true) {
 z_index :: proc() -> int {
     window := current_window()
     if len(window.layer_stack) <= 0 do return 0
-    return _current_layer().local_z_index
+    return _current_layer(window).local_z_index
 }
 
 global_z_index :: proc() -> int {
     window := current_window()
     if len(window.layer_stack) <= 0 do return 0
-    return _current_layer().global_z_index
+    return _current_layer(window).global_z_index
 }
 
 // Local z index
@@ -224,7 +225,6 @@ scoped_z_index :: proc(z_index: int) {
 
 
 
-_current_layer :: proc() -> ^Layer {
-    window := current_window()
+_current_layer :: proc(window: ^Window) -> ^Layer {
     return &window.layer_stack[len(window.layer_stack) - 1]
 }
