@@ -30,11 +30,18 @@ Sub_Path :: struct {
 
 Path :: struct {
     sub_paths: [dynamic]Sub_Path,
+
+    // bounds: Rect,
+    // tesselation_tolerance: f32,
+    // flattened_points: [dynamic]Vec2,
+
     allocator: runtime.Allocator,
 }
 
 init :: proc(path: ^Path, allocator := context.allocator) -> runtime.Allocator_Error {
     path.sub_paths = make([dynamic]Sub_Path, allocator = allocator) or_return
+    // path.flattened_points = make([dynamic]Vec2, allocator = allocator) or_return
+    // path.tesselation_tolerance = 0.25
     path.allocator = allocator
     return nil
 }
@@ -43,6 +50,7 @@ destroy :: proc(path: ^Path) {
     for sub_path in path.sub_paths {
         delete(sub_path.points)
     }
+    // delete(path.flattened_points)
     delete(path.sub_paths)
 }
 

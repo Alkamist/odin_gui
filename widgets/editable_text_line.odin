@@ -5,6 +5,7 @@ import "core:unicode/utf8"
 import text_edit "core:text/edit"
 import "core:strings"
 import "../../gui"
+import "../paths"
 
 // This is an editable extension of Text_Line.
 // It owns a strings.Builder and will update the string
@@ -76,14 +77,18 @@ editable_text_line_draw :: proc(text: ^Editable_Text_Line) {
     if text.is_editable {
         if selection, exists := selection_rect(text); exists {
             color := text.focused_selection_color if is_focus else text.unfocused_selection_color
-            gui.draw_rect(selection, color)
+            selection_path := gui.temp_path()
+            paths.rect(&selection_path, selection)
+            gui.fill_path(selection_path, color)
         }
     }
 
     text_line_draw(text)
 
     if text.is_editable && is_focus {
-        gui.draw_rect(caret_rect(text), text.caret_color)
+        caret_path := gui.temp_path()
+        paths.rect(&caret_path, caret_rect(text))
+        gui.fill_path(caret_path, text.caret_color)
     }
 }
 

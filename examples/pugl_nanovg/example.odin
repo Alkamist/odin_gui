@@ -6,6 +6,7 @@ import "core:mem"
 import "../../../gui"
 import "../../paths"
 import backend "../../backends/pugl_nanovg"
+import nvg "vendor:nanovg"
 
 running := true
 ctx: backend.Context
@@ -58,20 +59,15 @@ main :: proc() {
 
 update :: proc() {
     if gui.update(&window) {
-        path: gui.Path
-        paths.init(&path, gui.arena_allocator())
+        path := gui.temp_path()
 
-        // paths.move_to(&path, {200, 20})
-        // paths.arc_to(&path, {200, 130}, {50, 20}, 40)
-        // paths.close(&path)
-
-        paths.ellipse(&path, {100, 100}, {50, 20})
-
-        // paths.rounded_rect(&path, {{50, 50}, {200, 100}}, 5)
-        // // paths.rounded_rect(&path, {{70, 70}, {160, 60}}, 5, .Hole)
-
-        // paths.arc(&path, {100, 100}, 40, 0, gui.PI)
-        // paths.close(&path, .Hole)
+        paths.move_to(&path, {50, 50})
+        paths.line_to(&path, {100, 50})
+        paths.line_to(&path, {100, 100})
+        paths.line_to(&path, {75, 100})
+        paths.line_to(&path, {75, 75})
+        paths.line_to(&path, {50, 75})
+        paths.close(&path)
 
         gui.fill_path(path, {1, 1, 1, 1})
     }
@@ -92,14 +88,12 @@ update :: proc() {
 
 
 
-
-
-
 // import "base:runtime"
 // import "core:fmt"
 // import "core:mem"
 // import "../../../gui"
-// import "../../../gui/widgets"
+// import "../../paths"
+// import "../../widgets"
 // import backend "../../backends/pugl_nanovg"
 // import nvg "vendor:nanovg"
 
@@ -189,14 +183,20 @@ update :: proc() {
 
 //             text_box := gui.Rect{{0, 0}, {text_move_button.size.x, 300}}
 //             gui.scoped_clip(text_box)
-//             gui.draw_rect(text_box, {0.2, 0, 0, 1})
+
+//             rect := gui.temp_path()
+//             paths.rect(&rect, text_box)
+//             gui.fill_path(rect, {0.2, 0, 0, 1})
 
 //             widgets.update(&text)
 //             widgets.draw(&text)
 //         }
 
 //         if gui.update(&window2) {
-//             gui.draw_rect({{50, 50}, {200, 200}}, {0.5, 0, 0, 1})
+//             rect := gui.temp_path()
+//             paths.rect(&rect, {{50, 50}, {200, 200}})
+//             gui.fill_path(rect, {0.5, 0, 0, 1})
+
 //             gui.draw_custom(proc() {
 //                 nvg_ctx := window2.nvg_ctx
 //                 nvg.BeginPath(nvg_ctx)
@@ -204,7 +204,7 @@ update :: proc() {
 //                 nvg.FillColor(nvg_ctx, {0, 0.5, 0, 1})
 //                 nvg.Fill(nvg_ctx)
 //             })
-//             gui.draw_text("Hello window 2.", {50, 50}, &consola_13, {1, 1, 1, 1})
+//             gui.fill_text("Hello window 2.", {50, 50}, &consola_13, {1, 1, 1, 1})
 
 //             if move_window_button.is_down && gui.mouse_moved() {
 //                 window2.position += gui.mouse_delta()

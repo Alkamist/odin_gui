@@ -1,6 +1,7 @@
 package widgets
 
 import "../../gui"
+import "../paths"
 
 Button_Base :: struct {
     id: gui.Id,
@@ -62,10 +63,13 @@ button_update :: proc(button: ^Button) {
 }
 
 button_draw :: proc(button: ^Button) {
-    gui.draw_rect(button, button.color)
+    path := gui.temp_path()
+    paths.rect(&path, button)
+
+    gui.fill_path(path, button.color)
     if button.is_down {
-        gui.draw_rect(button, {0, 0, 0, 0.2})
+        gui.fill_path(path, {0, 0, 0, 0.2})
     } else if gui.mouse_hover() == button.id {
-        gui.draw_rect(button, {1, 1, 1, 0.05})
+        gui.fill_path(path, {1, 1, 1, 0.05})
     }
 }

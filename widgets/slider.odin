@@ -1,6 +1,7 @@
 package widgets
 
 import "../../gui"
+import "../paths"
 
 Slider :: struct {
     id: gui.Id,
@@ -87,14 +88,19 @@ slider_update :: proc(slider: ^Slider) {
 }
 
 slider_draw :: proc(slider: ^Slider) {
-    gui.draw_rect(slider, {0.05, 0.05, 0.05, 1})
+    slider_path := gui.temp_path()
+    paths.rect(&slider_path, slider)
 
-    handle_rect := handle_rect(slider)
-    gui.draw_rect(handle_rect, {0.4, 0.4, 0.4, 1})
+    gui.fill_path(slider_path, {0.05, 0.05, 0.05, 1})
+
+    handle_path := gui.temp_path()
+    paths.rect(&handle_path, handle_rect(slider))
+
+    gui.fill_path(handle_path, {0.4, 0.4, 0.4, 1})
     if slider.held {
-        gui.draw_rect(handle_rect, {0, 0, 0, 0.2})
+        gui.fill_path(handle_path, {0, 0, 0, 0.2})
     } else if gui.mouse_hover() == slider.id {
-        gui.draw_rect(handle_rect, {1, 1, 1, 0.05})
+        gui.fill_path(handle_path, {1, 1, 1, 0.05})
     }
 }
 

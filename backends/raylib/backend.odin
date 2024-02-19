@@ -284,11 +284,20 @@ _render_draw_command :: proc(window: ^gui.Window, command: gui.Draw_Command) {
             cmd.custom()
         }
 
-    case gui.Draw_Rect_Command:
-        rect := gui.pixel_snapped(cmd.rect)
-        rl.DrawRectangleV(rect.position, rect.size, _to_rl_color(cmd.color))
+    case gui.Fill_Path_Command:
+        color := _to_rl_color(cmd.color)
+        for sub_path in cmd.path.sub_paths {
+            for i := 1; i < len(sub_path.points); i += 3 {
+                start_point := sub_path.points[i - 1]
+                c1 := sub_path.points[i]
+                c2 := sub_path.points[i + 1]
+                end_point := sub_path.points[i + 2]
+                // rl.DrawSplineSegmentBezierCubic(start_point, c1, c2, end_point, 3, color)
+                rl.DrawLineV(start_point, end_point, color)
+            }
+        }
 
-    case gui.Draw_Text_Command:
+    case gui.Fill_Text_Command:
         font := cast(^Font)cmd.font
         text, err := strings.clone_to_cstring(cmd.text, gui.arena_allocator())
         if err == nil {

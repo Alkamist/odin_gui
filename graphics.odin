@@ -52,6 +52,11 @@ Clip_Drawing_Command :: struct {
     global_clip_rect: Rect,
 }
 
+temp_path :: proc() -> (res: Path) {
+    paths.init(&res, arena_allocator())
+    return
+}
+
 pixel_size :: proc() -> Vec2 {
     return 1.0 / current_window().content_scale
 }

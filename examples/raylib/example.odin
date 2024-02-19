@@ -4,7 +4,8 @@ import "base:runtime"
 import "core:fmt"
 import "core:mem"
 import "../../../gui"
-import "../../../gui/widgets"
+import "../../widgets"
+import "../../paths"
 
 import backend "../../backends/raylib"
 import rl "vendor:raylib"
@@ -171,7 +172,10 @@ update :: proc() {
             }
 
             gui.scoped_clip(text_box)
-            gui.draw_rect(text_box, {0.2, 0, 0, 1})
+
+            text_box_path := gui.temp_path()
+            paths.rect(&text_box_path, text_box)
+            gui.fill_path(text_box_path, {0.2, 0, 0, 1})
 
             alignment := gui.Vec2{slider.value, slider.value}
             text.position = text_box.position + (text_box.size - text.size - {widgets.CARET_WIDTH, 0}) * alignment
