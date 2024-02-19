@@ -12,36 +12,18 @@ Vec2 :: [2]f32
 Rect :: rects.Rect
 Color :: [4]f32
 
-Polarity :: enum {
-    Solid,
-    Hole,
-}
-
-Rotational_Direction :: enum {
-    CCW,
-    CW,
-}
-
 Sub_Path :: struct {
     is_closed: bool,
-    polarity: Polarity,
     points: [dynamic]Vec2,
 }
 
 Path :: struct {
     sub_paths: [dynamic]Sub_Path,
-
-    // bounds: Rect,
-    // tesselation_tolerance: f32,
-    // flattened_points: [dynamic]Vec2,
-
     allocator: runtime.Allocator,
 }
 
 init :: proc(path: ^Path, allocator := context.allocator) -> runtime.Allocator_Error {
     path.sub_paths = make([dynamic]Sub_Path, allocator = allocator) or_return
-    // path.flattened_points = make([dynamic]Vec2, allocator = allocator) or_return
-    // path.tesselation_tolerance = 0.25
     path.allocator = allocator
     return nil
 }
@@ -50,14 +32,12 @@ destroy :: proc(path: ^Path) {
     for sub_path in path.sub_paths {
         delete(sub_path.points)
     }
-    // delete(path.flattened_points)
     delete(path.sub_paths)
 }
 
-// Closes the current sub-path with the given polarity.
-close :: proc(path: ^Path, polarity := Polarity.Solid) {
+// Closes the current sub-path.
+close :: proc(path: ^Path) {
     path.sub_paths[len(path.sub_paths) - 1].is_closed = true
-    path.sub_paths[len(path.sub_paths) - 1].polarity = polarity
 }
 
 // Translates all points in the path by the given amount.
@@ -107,8 +87,9 @@ arc :: proc(
     center: Vec2,
     radius: f32,
     start_angle, end_angle: f32,
-    direction := Rotational_Direction.CCW) {
-    _arc(path, center.x, center.y, radius, start_angle, end_angle, direction)
+    counterclockwise := false,
+) {
+    _arc(path, center.x, center.y, radius, start_angle, end_angle, counterclockwise)
 }
 
 // Adds an arc segment at the corner defined by the last path point, and two control points.
@@ -117,8 +98,8 @@ arc_to :: proc(path: ^Path, control1: Vec2, control2: Vec2, radius: f32) {
 }
 
 // Adds a new rectangle shaped sub-path.
-rect :: proc(path: ^Path, rect: Rect, polarity := Polarity.Solid) {
-    _rect(path, rect.x, rect.y, rect.size.x, rect.size.y, polarity)
+rect :: proc(path: ^Path, rect: Rect) {
+    _rect(path, rect.x, rect.y, rect.size.x, rect.size.y)
 }
 
 // Adds a new rounded rectangle shaped sub-path.
@@ -126,9 +107,8 @@ rounded_rect :: proc(
     path: ^Path,
     rect: Rect,
     radius: f32,
-    polarity := Polarity.Solid,
 ) {
-    rounded_rect_varying(path, rect, radius, radius, radius, radius, polarity)
+    rounded_rect_varying(path, rect, radius, radius, radius, radius)
 }
 
 // Adds a new rounded rectangle shaped sub-path with varying radii for each corner.
@@ -139,7 +119,6 @@ rounded_rect_varying :: proc(
     radius_top_right: f32,
     radius_bottom_right: f32,
     radius_bottom_left: f32,
-    polarity := Polarity.Solid,
 ) {
     _rounded_rect_varying(path,
         rect.position.x, rect.position.y,
@@ -148,18 +127,17 @@ rounded_rect_varying :: proc(
         radius_top_right,
         radius_bottom_right,
         radius_bottom_left,
-        polarity,
     )
 }
 
 // Adds an ellipse shaped sub-path.
-ellipse :: proc(path: ^Path, center, radius: Vec2, polarity := Polarity.Solid) {
-    _ellipse(path, center.x, center.y, radius.x, radius.y, polarity)
+ellipse :: proc(path: ^Path, center, radius: Vec2) {
+    _ellipse(path, center.x, center.y, radius.x, radius.y)
 }
 
 // Adds a circle shaped sub-path.
-circle :: proc(path: ^Path, center: Vec2, radius: f32, polarity := Polarity.Solid) {
-    _circle(path, center.x, center.y, radius, polarity)
+circle :: proc(path: ^Path, center: Vec2, radius: f32) {
+    _circle(path, center.x, center.y, radius)
 }
 
 
@@ -191,12 +169,12 @@ _quad_to :: proc(path: ^Path, cx, cy, x, y: f32) {
     quad_to(path, {cx, cy}, {x, y})
 }
 
-_arc :: proc(path: ^Path, cx, cy, r, a0, a1: f32, dir: Rotational_Direction) {
+_arc :: proc(path: ^Path, cx, cy, r, a0, a1: f32, counterclockwise: bool) {
     use_move_to := len(path.sub_paths) <= 0 || path.sub_paths[len(path.sub_paths) - 1].is_closed
 
     // Clamp angles
     da := a1 - a0
-    if dir == .CW {
+    if !counterclockwise {
         if abs(da) >= math.PI*2 {
             da = math.PI*2
         } else {
@@ -219,7 +197,7 @@ _arc :: proc(path: ^Path, cx, cy, r, a0, a1: f32, dir: Rotational_Direction) {
     hda := (da / f32(ndivs)) / 2.0
     kappa := abs(4.0 / 3.0 * (1.0 - math.cos(hda)) / math.sin(hda))
 
-    if dir == .CCW {
+    if counterclockwise {
         kappa = -kappa
     }
 
@@ -324,7 +302,7 @@ _arc_to :: proc(
     }
 
     a0, a1, cx, cy: f32
-    direction: Rotational_Direction
+    counterclockwise: bool
 
     __cross :: proc(dx0, dy0, dx1, dy1: f32) -> f32 {
         return dx1*dy0 - dx0*dy1
@@ -335,24 +313,24 @@ _arc_to :: proc(
         cy = y1 + dy0*d + -dx0*radius
         a0 = math.atan2(dx0, -dy0)
         a1 = math.atan2(-dx1, dy1)
-        direction = .CW
+        counterclockwise = false
     } else {
         cx = x1 + dx0*d + -dy0*radius
         cy = y1 + dy0*d + dx0*radius
         a0 = math.atan2(-dx0, dy0)
         a1 = math.atan2(dx1, -dy1)
-        direction = .CCW
+        counterclockwise = true
     }
 
-    _arc(path, cx, cy, radius, a0, a1, direction)
+    _arc(path, cx, cy, radius, a0, a1, counterclockwise)
 }
 
-_rect :: proc(path: ^Path, x, y, w, h: f32, polarity: Polarity) {
+_rect :: proc(path: ^Path, x, y, w, h: f32) {
     _move_to(path, x, y)
     _line_to(path, x, y + h)
     _line_to(path, x + w, y + h)
     _line_to(path, x + w, y)
-    _close(path, polarity)
+    _close(path)
 }
 
 _rounded_rect_varying :: proc(
@@ -363,10 +341,9 @@ _rounded_rect_varying :: proc(
     radius_top_right: f32,
     radius_bottom_right: f32,
     radius_bottom_left: f32,
-    polarity: Polarity,
 ) {
     if radius_top_left < 0.1 && radius_top_right < 0.1 && radius_bottom_right < 0.1 && radius_bottom_left < 0.1 {
-        _rect(path, x, y, w, h, polarity)
+        _rect(path, x, y, w, h)
     } else {
         halfw := abs(w) * 0.5
         halfh := abs(h) * 0.5
@@ -387,19 +364,19 @@ _rounded_rect_varying :: proc(
         _bezier_to(path, x + w, y + ryTR*(1 - KAPPA), x + w - rxTR*(1 - KAPPA), y, x + w - rxTR, y)
         _line_to(path, x + rxTL, y)
         _bezier_to(path, x + rxTL*(1 - KAPPA), y, x, y + ryTL*(1 - KAPPA), x, y + ryTL)
-        _close(path, polarity)
+        _close(path)
     }
 }
 
-_ellipse :: proc(path: ^Path, cx, cy, rx, ry: f32, polarity: Polarity) {
+_ellipse :: proc(path: ^Path, cx, cy, rx, ry: f32) {
     _move_to(path, cx-rx, cy)
     _bezier_to(path, cx-rx, cy+ry*KAPPA, cx-rx*KAPPA, cy+ry, cx, cy+ry)
     _bezier_to(path, cx+rx*KAPPA, cy+ry, cx+rx, cy+ry*KAPPA, cx+rx, cy)
     _bezier_to(path, cx+rx, cy-ry*KAPPA, cx+rx*KAPPA, cy-ry, cx, cy-ry)
     _bezier_to(path, cx-rx*KAPPA, cy-ry, cx-rx, cy-ry*KAPPA, cx-rx, cy)
-    _close(path, polarity)
+    _close(path)
 }
 
-_circle :: #force_inline proc(path: ^Path, cx, cy: f32, radius: f32, polarity: Polarity) {
-    _ellipse(path, cx, cy, radius, radius, polarity)
+_circle :: #force_inline proc(path: ^Path, cx, cy: f32, radius: f32) {
+    _ellipse(path, cx, cy, radius, radius)
 }

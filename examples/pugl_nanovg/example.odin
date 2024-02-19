@@ -61,15 +61,37 @@ update :: proc() {
     if gui.update(&window) {
         path := gui.temp_path()
 
-        paths.move_to(&path, {50, 50})
-        paths.line_to(&path, {100, 50})
-        paths.line_to(&path, {100, 100})
-        paths.line_to(&path, {75, 100})
-        paths.line_to(&path, {75, 75})
-        paths.line_to(&path, {50, 75})
+        // paths.move_to(&path, {50, 50})
+        // paths.line_to(&path, {100, 50})
+        // paths.line_to(&path, {100, 100})
+        // paths.line_to(&path, {75, 100})
+        // paths.line_to(&path, {75, 75})
+        // paths.line_to(&path, {50, 75})
+        // paths.close(&path)
+
+        // paths.rect(&path, {{400, 50}, {300, 200}})
+        // paths.rect(&path, {{25, 100}, {200, 100}})
+
+        // paths.move_to(&path, {50, 50})
+        // paths.line_to(&path, {200, 70})
+        // paths.line_to(&path, {100, 100})
+        // paths.line_to(&path, {75, 100})
+        // paths.line_to(&path, {80, 75})
+        // paths.line_to(&path, {20, 75})
+        // paths.close(&path)
+
+        // paths.circle(&path, {200, 200}, 100)
+        // paths.circle(&path, {280, 200}, 100)
+
+        paths.arc(&path, {100, 75}, 50, 0, 1.5 * gui.PI)
         paths.close(&path)
 
-        gui.fill_path(path, {1, 1, 1, 1})
+        if paths.hit_test(&path, gui.mouse_position()) {
+            gui.fill_path(path, {1, 1, 1, 1})
+        } else {
+            gui.fill_path(path, {1, 1, 1, 0.4})
+        }
+
     }
 
     if !window.is_open {

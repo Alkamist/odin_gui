@@ -81,29 +81,6 @@ render_draw_command :: proc(nvg_ctx: ^nvg.Context, command: gui.Draw_Command) {
             nvg.Restore(nvg_ctx)
         }
 
-    // case gui.Fill_Path_Command:
-    //     nvg.Save(nvg_ctx)
-
-    //     nvg.BeginPath(nvg_ctx)
-
-    //     if len(cmd.path.flattened_points) <= 0 {
-    //         return
-    //     }
-
-    //     nvg.MoveTo(nvg_ctx, cmd.path.flattened_points[0].x, cmd.path.flattened_points[0].y)
-
-    //     for i := 1; i < len(cmd.path.flattened_points); i += 1 {
-    //         p := cmd.path.flattened_points[i]
-    //         nvg.LineTo(nvg_ctx, p.x, p.y)
-    //     }
-
-    //     nvg.ClosePath(nvg_ctx)
-
-    //     nvg.FillColor(nvg_ctx, cmd.color)
-    //     nvg.Fill(nvg_ctx)
-
-    //     nvg.Restore(nvg_ctx)
-
     case gui.Fill_Path_Command:
         nvg.Save(nvg_ctx)
 
@@ -125,10 +102,6 @@ render_draw_command :: proc(nvg_ctx: ^nvg.Context, command: gui.Draw_Command) {
 
             if sub_path.is_closed {
                 nvg.ClosePath(nvg_ctx)
-            }
-
-            if sub_path.polarity == .Hole {
-                nvg.PathWinding(nvg_ctx, .CW)
             }
         }
 
