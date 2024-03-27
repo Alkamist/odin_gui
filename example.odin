@@ -34,7 +34,7 @@ test_window_destroy :: proc(window: ^Test_Window) {
 }
 
 test_window_update :: proc() {
-    window := current_window(Test_Window)
+    window := cast(^Test_Window)current_window()
 
     // if window.button.is_down && screen_mouse_moved() {
     //     window_set_position(window_position() + screen_mouse_delta())

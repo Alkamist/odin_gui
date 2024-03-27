@@ -20,7 +20,7 @@ OPENGL_VERSION_MINOR :: 3
 @(thread_local) _window_count: int
 @(thread_local) _open_gl_is_loaded: bool
 @(thread_local) _pugl_world: ^pugl.World
-@(thread_local) _gui_odin_context: runtime.Context
+@(thread_local) _pugl_odin_context: runtime.Context
 
 Window_Child_Kind :: enum {
     None,
@@ -92,15 +92,14 @@ Window :: struct {
     global_clip_rect_stack: [dynamic]Rectangle,
 }
 
-poll_events :: proc() {
-    _gui_odin_context = context
-    if _pugl_world == nil do return
-    pugl.Update(_pugl_world, 0)
+current_window :: proc() -> ^Window {
+    return _current_window
 }
 
-current_window :: proc {
-    _current_window_base,
-    _current_window_typeid,
+poll_events :: proc() {
+    _pugl_odin_context = context
+    if _pugl_world == nil do return
+    pugl.Update(_pugl_world, 0)
 }
 
 window_init :: proc(window: ^Window, allocator := context.allocator) -> runtime.Allocator_Error {
@@ -316,14 +315,6 @@ pixel_snapped :: proc(position: Vector2) -> Vector2 {
     }
 }
 
-_current_window_base :: proc() -> ^Window {
-    return _current_window
-}
-
-_current_window_typeid :: proc($T: typeid) -> ^T {
-    return cast(^T)_current_window
-}
-
 _force_close_window :: proc(window: ^Window) {
     if !window_is_open(window) do return
 
@@ -397,7 +388,7 @@ _update_window :: proc(window: ^Window) {
 _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
     window := cast(^Window)pugl.GetHandle(view)
     window.view = view
-    context = _gui_odin_context
+    context = _pugl_odin_context
     _current_window = window
 
     #partial switch event.type {
@@ -497,12 +488,12 @@ _reset_window_input :: proc(window: ^Window) {
 }
 
 _set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) {
-    pugl.SetCursor(_current_window.view, _cursor_style_to_pugl_cursor(style))
+    pugl.SetCursor(current_window().view, _cursor_style_to_pugl_cursor(style))
 }
 
 _get_clipboard :: proc() -> string {
     length: uint
-    clipboard_cstring := cast(cstring)pugl.GetClipboard(_current_window.view, 0, &length)
+    clipboard_cstring := cast(cstring)pugl.GetClipboard(current_window().view, 0, &length)
     if clipboard_cstring == nil {
         return ""
     }
@@ -512,7 +503,7 @@ _get_clipboard :: proc() -> string {
 _set_clipboard :: proc(data: string) {
     data_cstring, err := strings.clone_to_cstring(data, context.temp_allocator)
     if err != nil do return
-    pugl.SetClipboard(_current_window.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1)
+    pugl.SetClipboard(current_window().view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1)
 }
 
 _pugl_key_event_to_keyboard_key :: proc(event: ^pugl.KeyEvent) -> Keyboard_Key {

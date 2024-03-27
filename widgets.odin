@@ -19,51 +19,54 @@ get_gui_id :: proc "contextless" () -> Gui_Id {
 }
 
 mouse_hover :: proc() -> Gui_Id {
-    return _current_window.mouse_hover
+    return current_window().mouse_hover
 }
 
 mouse_hover_entered :: proc() -> Gui_Id {
-    if _current_window.mouse_hover != _current_window.previous_mouse_hover {
-        return _current_window.mouse_hover
+    window := current_window()
+    if window.mouse_hover != window.previous_mouse_hover {
+        return window.mouse_hover
     } else {
         return 0
     }
 }
 
 mouse_hover_exited :: proc() -> Gui_Id {
-    if _current_window.mouse_hover != _current_window.previous_mouse_hover {
-        return _current_window.previous_mouse_hover
+    window := current_window()
+    if window.mouse_hover != window.previous_mouse_hover {
+        return window.previous_mouse_hover
     } else {
         return 0
     }
 }
 
 mouse_hit :: proc() -> Gui_Id {
-    return _current_window.mouse_hit
+    return current_window().mouse_hit
 }
 
 request_mouse_hover :: proc(id: Gui_Id) {
-    _current_window.final_mouse_hover_request = id
+    current_window().final_mouse_hover_request = id
 }
 
 capture_mouse_hover :: proc() {
-    _current_window.mouse_hover_capture = _current_window.final_mouse_hover_request
+    window := current_window()
+    window.mouse_hover_capture = window.final_mouse_hover_request
 }
 
 release_mouse_hover :: proc() {
-    _current_window.mouse_hover_capture = 0
+    current_window().mouse_hover_capture = 0
 }
 
 keyboard_focus :: proc() -> Gui_Id {
-    return _current_window.keyboard_focus
+    return current_window().keyboard_focus
 }
 
 set_keyboard_focus :: proc(id: Gui_Id) {
-    _current_window.keyboard_focus = id
+    current_window().keyboard_focus = id
 }
 
 release_keyboard_focus :: proc() {
-    _current_window.keyboard_focus = 0
+    current_window().keyboard_focus = 0
 }
 
 // Local coordinates
