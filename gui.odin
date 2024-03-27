@@ -8,6 +8,7 @@ import "core:math"
 import "core:time"
 import "core:slice"
 import "core:strings"
+import text_edit "core:text/edit"
 import utf8 "core:unicode/utf8"
 import gl "vendor:OpenGL"
 import nvg "vendor:nanovg"
@@ -39,8 +40,6 @@ Window_Child_Kind :: enum {
 }
 
 Window :: struct {
-    open: proc(),
-    close: proc(),
     update: proc(),
 
     background_color: Color,
@@ -60,14 +59,15 @@ Window :: struct {
 
     close_pending: bool,
     close_button_pressed: bool,
+    was_open: bool,
 
     timer_id: uintptr,
     view: ^pugl.View,
 
     nvg_ctx: ^nvg.Context,
 
-    mouse_position: Vector2,
-    previous_mouse_position: Vector2,
+    global_mouse_position: Vector2,
+    previous_global_mouse_position: Vector2,
 
     screen_mouse_position: Vector2,
     previous_screen_mouse_position: Vector2,
@@ -95,6 +95,12 @@ Window :: struct {
     previous_mouse_hover: Gui_Id,
     mouse_hover_capture: Gui_Id,
     final_mouse_hover_request: Gui_Id,
+
+    loaded_fonts: map[string]struct{},
+
+    local_offset_stack: [dynamic]Vector2,
+    global_offset_stack: [dynamic]Vector2,
+    global_clip_rect_stack: [dynamic]Rectangle,
 }
 
 poll_events :: proc() {
@@ -108,7 +114,8 @@ current_window :: proc {
     _current_window_typeid,
 }
 
-window_init :: proc(window: ^Window) {
+window_init :: proc(window: ^Window, allocator := context.allocator) -> runtime.Allocator_Error {
+    window.loaded_fonts = make(map[string]struct{}, allocator = allocator) or_return
     _reset_window_input(window)
     window.size = {400, 300}
     window.swap_interval = 0
@@ -117,10 +124,12 @@ window_init :: proc(window: ^Window) {
     window.is_resizable = true
     window.double_buffer = true
     window.child_kind = .None
+    return nil
 }
 
 window_destroy :: proc(window: ^Window) {
     _force_close_window(window)
+    delete(window.loaded_fonts)
 }
 
 window_open :: proc(window: ^Window) {
@@ -226,6 +235,10 @@ window_is_open :: proc(window := _current_window) -> bool {
     return window.view != nil
 }
 
+window_opened :: proc(window := _current_window) -> bool {
+    return window_is_open(window) && !window.was_open
+}
+
 window_close :: proc(window := _current_window) {
     window.close_pending = true
 }
@@ -302,6 +315,18 @@ window_content_scale :: proc(window := _current_window) -> Vector2 {
     return {value, value}
 }
 
+pixel_size :: proc() -> Vector2 {
+    return 1.0 / window_content_scale()
+}
+
+pixel_snapped :: proc(position: Vector2) -> Vector2 {
+    pixel := pixel_size()
+    return {
+        math.round(position.x / pixel.x) * pixel.x,
+        math.round(position.y / pixel.y) * pixel.y,
+    }
+}
+
 _current_window_base :: proc() -> ^Window {
     return _current_window
 }
@@ -331,6 +356,10 @@ _force_close_window :: proc(window: ^Window) {
 }
 
 _update_window :: proc(window: ^Window) {
+    window.local_offset_stack = make([dynamic]Vector2, context.temp_allocator)
+    window.global_offset_stack = make([dynamic]Vector2, context.temp_allocator)
+    window.global_clip_rect_stack = make([dynamic]Rectangle, context.temp_allocator)
+
     pugl.EnterContext(window.view)
 
     size := window.size
@@ -368,6 +397,7 @@ _update_window :: proc(window: ^Window) {
     window.final_mouse_hover_request = 0
 
     _reset_window_input(window)
+    window.was_open = window_is_open(window)
 
     if window.close_pending {
         _force_close_window(window)
@@ -382,16 +412,6 @@ _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Stat
     _current_window = window
 
     #partial switch event.type {
-    case .REALIZE:
-        if window.open != nil {
-            window.open()
-        }
-
-    case .UNREALIZE:
-        if window.close != nil {
-            window.close()
-        }
-
     case .UPDATE:
         _update_window(window)
 
@@ -542,15 +562,23 @@ set_clipboard :: proc(data: string) {
     pugl.SetClipboard(_current_window.view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1)
 }
 
-mouse_position :: proc() -> Vector2 {
-    return _current_window.mouse_position
+mouse_position :: proc() -> (res: Vector2) {
+    return _current_window.global_mouse_position - global_offset()
 }
 
 mouse_delta :: proc() -> Vector2 {
-    return _current_window.mouse_position - _current_window.previous_mouse_position
+    return _current_window.global_mouse_position - _current_window.previous_global_mouse_position
 }
 
-raw_mouse_delta :: proc() -> Vector2 {
+global_mouse_position :: proc() -> (res: Vector2) {
+    return _current_window.global_mouse_position
+}
+
+screen_mouse_position :: proc() -> Vector2 {
+    return _current_window.screen_mouse_position
+}
+
+screen_mouse_delta :: proc() -> Vector2 {
     return _current_window.screen_mouse_position - _current_window.previous_screen_mouse_position
 }
 
@@ -570,8 +598,8 @@ mouse_moved :: proc() -> bool {
     return mouse_delta() != {0, 0}
 }
 
-raw_mouse_moved :: proc() -> bool {
-    return raw_mouse_delta() != {0, 0}
+screen_mouse_moved :: proc() -> bool {
+    return screen_mouse_delta() != {0, 0}
 }
 
 mouse_wheel_moved :: proc() -> bool {
@@ -636,7 +664,7 @@ text_input :: proc() -> string {
 }
 
 _input_mouse_move :: proc(window: ^Window, position: Vector2) {
-    window.mouse_position = position
+    window.global_mouse_position = position
     window.screen_mouse_position = position + window_position(window)
 }
 
@@ -843,7 +871,7 @@ _cursor_style_to_pugl_cursor :: proc(style: Mouse_Cursor_Style) -> pugl.Cursor {
 }
 
 _reset_window_input :: proc(window: ^Window) {
-    window.previous_mouse_position = window.mouse_position
+    window.previous_global_mouse_position = window.global_mouse_position
     window.previous_screen_mouse_position = window.screen_mouse_position
     window.mouse_presses = make([dynamic]Mouse_Button, context.temp_allocator)
     window.mouse_releases = make([dynamic]Mouse_Button, context.temp_allocator)
@@ -857,77 +885,104 @@ _reset_window_input :: proc(window: ^Window) {
 // Text
 //==========================================================================
 
-// Font :: struct {
-//     name: string,
-//     size: int,
-//     data: []byte,
-// }
+Font :: struct {
+    name: string,
+    size: int,
+    data: []byte,
+}
 
-// Font_Metrics :: struct {
-//     ascender: f32,
-//     descender: f32,
-//     line_height: f32,
-// }
+Font_Metrics :: struct {
+    ascender: f32,
+    descender: f32,
+    line_height: f32,
+}
 
-// Text_Glyph :: struct {
-//     byte_index: int,
-//     position: f32,
-//     width: f32,
-//     kerning: f32,
-// }
+Text_Glyph :: struct {
+    byte_index: int,
+    position: f32,
+    width: f32,
+    kerning: f32,
+}
 
-// load_font :: proc(nvg_ctx: ^nvg.Context, font: Font) {
-//     if len(font.data) <= 0 do return
-//     if nvg.CreateFontMem(nvg_ctx, font.name, font.data, false) == -1 {
-//         fmt.eprintf("Failed to load font: %v\n", font.name)
-//     }
-// }
+fill_text :: proc(text: string, position: Vector2, font: Font, color: Color) {
+    window := current_window()
+    nvg_ctx := window.nvg_ctx
+    _load_font(window, font)
+    position := pixel_snapped(position)
+    nvg.Save(nvg_ctx)
+    offset := global_offset()
+    nvg.Translate(nvg_ctx, offset.x, offset.y)
+    nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
+    nvg.FontFace(nvg_ctx, font.name)
+    nvg.FontSize(nvg_ctx, f32(font.size))
+    nvg.FillColor(nvg_ctx, color)
+    nvg.Text(nvg_ctx, position.x, position.y, text)
+    nvg.Restore(nvg_ctx)
+}
 
-// measure_text :: proc(
-//     nvg_ctx: ^nvg.Context,
-//     text: string,
-//     font: Font,
-//     glyphs: ^[dynamic]Text_Glyph,
-//     byte_index_to_rune_index: ^map[int]int,
-// ) -> (ok: bool) {
-//     clear(glyphs)
+measure_text :: proc(
+    text: string,
+    font: Font,
+    glyphs: ^[dynamic]Text_Glyph,
+    byte_index_to_rune_index: ^map[int]int,
+) {
+    window := current_window()
+    nvg_ctx := window.nvg_ctx
 
-//     if len(text) == 0 {
-//         return
-//     }
+    clear(glyphs)
 
-//     nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
-//     nvg.FontFace(nvg_ctx, font.name)
-//     nvg.FontSize(nvg_ctx, f32(font.size))
+    if len(text) == 0 {
+        return
+    }
 
-//     nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), context.temp_allocator)
+    _load_font(window, font)
 
-//     temp_slice := nvg_positions[:]
-//     position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, text, &temp_slice)
+    nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
+    nvg.FontFace(nvg_ctx, font.name)
+    nvg.FontSize(nvg_ctx, f32(font.size))
 
-//     resize(glyphs, position_count)
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), context.temp_allocator)
 
-//     for i in 0 ..< position_count {
-//         if byte_index_to_rune_index != nil {
-//             byte_index_to_rune_index[nvg_positions[i].str] = i
-//         }
-//         glyphs[i] = Text_Glyph{
-//             byte_index = nvg_positions[i].str,
-//             position = nvg_positions[i].x,
-//             width = nvg_positions[i].maxx - nvg_positions[i].minx,
-//             kerning = (nvg_positions[i].x - nvg_positions[i].minx),
-//         }
-//     }
+    temp_slice := nvg_positions[:]
+    position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, text, &temp_slice)
 
-//     return true
-// }
+    resize(glyphs, position_count)
 
-// font_metrics :: proc(nvg_ctx: ^nvg.Context, font: Font) -> (metrics: Font_Metrics) {
-//     nvg.FontFace(nvg_ctx, font.name)
-//     nvg.FontSize(nvg_ctx, f32(font.size))
-//     metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(nvg_ctx)
-//     return
-// }
+    for i in 0 ..< position_count {
+        if byte_index_to_rune_index != nil {
+            byte_index_to_rune_index[nvg_positions[i].str] = i
+        }
+        glyphs[i] = Text_Glyph{
+            byte_index = nvg_positions[i].str,
+            position = nvg_positions[i].x,
+            width = nvg_positions[i].maxx - nvg_positions[i].minx,
+            kerning = (nvg_positions[i].x - nvg_positions[i].minx),
+        }
+    }
+}
+
+font_metrics :: proc(font: Font) -> (metrics: Font_Metrics) {
+    window := current_window()
+    nvg_ctx := window.nvg_ctx
+    _load_font(window, font)
+    nvg.FontFace(nvg_ctx, font.name)
+    nvg.FontSize(nvg_ctx, f32(font.size))
+    metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(nvg_ctx)
+    pixel_height := pixel_size().y
+    metrics.line_height = math.ceil(metrics.line_height / pixel_height) * pixel_height
+    return
+}
+
+_load_font :: proc(window: ^Window, font: Font) {
+    if len(font.data) <= 0 do return
+    if font.name not_in window.loaded_fonts {
+        if nvg.CreateFontMem(window.nvg_ctx, font.name, font.data, false) == -1 {
+            fmt.eprintf("Failed to load font: %v\n", font.name)
+        } else {
+            window.loaded_fonts[font.name] = {}
+        }
+    }
+}
 
 //==========================================================================
 // Paths
@@ -954,6 +1009,9 @@ fill_path :: proc(path: Path, color: Color) {
     nvg_ctx := current_window().nvg_ctx
 
     nvg.Save(nvg_ctx)
+
+    offset := global_offset()
+    nvg.Translate(nvg_ctx, offset.x, offset.y)
 
     nvg.BeginPath(nvg_ctx)
 
@@ -1058,31 +1116,31 @@ path_arc_to :: proc(path: ^Path, control1: Vector2, control2: Vector2, radius: f
 }
 
 // Adds a new rectangle shaped sub-path.
-path_rectangle :: proc(path: ^Path, position, size: Vector2) {
-    _path_rect(path, position.x, position.y, size.x, size.y)
+path_rectangle :: proc(path: ^Path, rectangle: Rectangle) {
+    _path_rectangle(path, rectangle.x, rectangle.y, rectangle.size.x, rectangle.size.y)
 }
 
 // Adds a new rounded rectangle shaped sub-path.
 path_rounded_rectangle :: proc(
     path: ^Path,
-    position, size: Vector2,
+    rectangle: Rectangle,
     radius: f32,
 ) {
-    path_rounded_rectangle_varying(path, position, size, radius, radius, radius, radius)
+    path_rounded_rectangle_varying(path, rectangle, radius, radius, radius, radius)
 }
 
 // Adds a new rounded rectangle shaped sub-path with varying radii for each corner.
 path_rounded_rectangle_varying :: proc(
     path: ^Path,
-    position, size: Vector2,
+    rectangle: Rectangle,
     radius_top_left: f32,
     radius_top_right: f32,
     radius_bottom_right: f32,
     radius_bottom_left: f32,
 ) {
     _path_rounded_rect_varying(path,
-        position.x, position.y,
-        size.x, size.y,
+        rectangle.x, rectangle.y,
+        rectangle.size.x, rectangle.size.y,
         radius_top_left,
         radius_top_right,
         radius_bottom_right,
@@ -1392,7 +1450,7 @@ _path_arc_to :: proc(
     _path_arc(path, cx, cy, radius, a0, a1, counterclockwise)
 }
 
-_path_rect :: proc(path: ^Path, x, y, w, h: f32) {
+_path_rectangle :: proc(path: ^Path, x, y, w, h: f32) {
     _path_move_to(path, x, y)
     _path_line_to(path, x, y + h)
     _path_line_to(path, x + w, y + h)
@@ -1410,7 +1468,7 @@ _path_rounded_rect_varying :: proc(
     radius_bottom_left: f32,
 ) {
     if radius_top_left < 0.1 && radius_top_right < 0.1 && radius_bottom_right < 0.1 && radius_bottom_left < 0.1 {
-        _path_rect(path, x, y, w, h)
+        _path_rectangle(path, x, y, w, h)
     } else {
         halfw := abs(w) * 0.5
         halfh := abs(h) * 0.5
@@ -1449,7 +1507,216 @@ _path_circle :: #force_inline proc(path: ^Path, cx, cy: f32, radius: f32) {
 }
 
 //==========================================================================
-// Hover
+// Rectangle
+//==========================================================================
+
+Rectangle :: struct {
+    using position: Vector2,
+    size: Vector2,
+}
+
+rectangle_trim_left :: proc(rectangle: ^Rectangle, amount: f32, min_amount: f32 = 0) -> Rectangle {
+    amount := max(clamp(amount, min_amount, rectangle.size.x), min_amount)
+    rectangle.position.x += amount
+    rectangle.size.x -= amount
+    return {
+        {rectangle.position.x - amount, rectangle.position.y},
+        {amount, rectangle.size.y},
+    }
+}
+
+rectangle_peek_trim_left :: proc(rectangle: Rectangle, amount: f32, min_amount: f32 = 0) -> Rectangle {
+    amount := max(clamp(amount, min_amount, rectangle.size.x), min_amount)
+    return {
+        {rectangle.position.x, rectangle.position.y},
+        {amount, rectangle.size.y},
+    }
+}
+
+rectangle_trim_right :: proc(rectangle: ^Rectangle, amount: f32, min_amount: f32 = 0) -> Rectangle {
+    amount := max(clamp(amount, 0, rectangle.size.x), min_amount)
+    rectangle.size.x -= amount
+    return {
+        {rectangle.position.x + rectangle.size.x, rectangle.position.y},
+        {amount, rectangle.size.y},
+    }
+}
+
+rectangle_peek_trim_right :: proc(rectangle: Rectangle, amount: f32, min_amount: f32 = 0) -> Rectangle {
+    amount := max(clamp(amount, 0, rectangle.size.x), min_amount)
+    return {
+        {rectangle.position.x + rectangle.size.x - amount, rectangle.position.y},
+        {amount, rectangle.size.y},
+    }
+}
+
+rectangle_trim_top :: proc(rectangle: ^Rectangle, amount: f32, min_amount: f32 = 0) -> Rectangle {
+    amount := max(clamp(amount, 0, rectangle.size.x), min_amount)
+    rectangle.position.y += amount
+    rectangle.size.y -= amount
+    return {
+        {rectangle.position.x, rectangle.position.y - amount},
+        {rectangle.size.x, amount},
+    }
+}
+
+rectangle_peek_trim_top :: proc(rectangle: ^Rectangle, amount: f32, min_amount: f32 = 0) -> Rectangle {
+    amount := max(clamp(amount, 0, rectangle.size.x), min_amount)
+    return {
+        {rectangle.position.x, rectangle.position.y},
+        {rectangle.size.x, amount},
+    }
+}
+
+rectangle_trim_bottom :: proc(rectangle: ^Rectangle, amount: f32, min_amount: f32 = 0) -> Rectangle {
+    amount := max(clamp(amount, 0, rectangle.size.x), min_amount)
+    rectangle.size.y -= amount
+    return {
+        {rectangle.position.x, rectangle.position.y + rectangle.size.y},
+        {rectangle.size.x, amount},
+    }
+}
+
+rectangle_peek_trim_bottom :: proc(rectangle: ^Rectangle, amount: f32, min_amount: f32 = 0) -> Rectangle {
+    amount := max(clamp(amount, 0, rectangle.size.x), min_amount)
+    return {
+        {rectangle.position.x, rectangle.position.y + rectangle.size.y - amount},
+        {rectangle.size.x, amount},
+    }
+}
+
+rectangle_expanded :: proc(rectangle: Rectangle, amount: Vector2) -> Rectangle {
+    return {
+        position = {
+            min(rectangle.position.x + rectangle.size.x * 0.5, rectangle.position.x - amount.x),
+            min(rectangle.position.y + rectangle.size.y * 0.5, rectangle.position.y - amount.y),
+        },
+        size = {
+            max(0, rectangle.size.x + amount.x * 2),
+            max(0, rectangle.size.y + amount.y * 2),
+        },
+    }
+}
+
+rectangle_expand :: proc(rectangle: ^Rectangle, amount: Vector2) {
+    rectangle^ = rectangle_expanded(rectangle^, amount)
+}
+
+rectangle_padded :: proc(rectangle: Rectangle, amount: Vector2) -> Rectangle {
+    return rectangle_expanded(rectangle, -amount)
+}
+
+rectangle_pad :: proc(rectangle: ^Rectangle, amount: Vector2) {
+    rectangle^ = rectangle_padded(rectangle^, amount)
+}
+
+rectangle_snapped :: proc(rectangle: Rectangle, increment: Vector2) -> Rectangle {
+    return {
+        {
+            math.round(rectangle.position.x / increment.x) * increment.x,
+            math.round(rectangle.position.y / increment.y) * increment.y,
+        },
+        {
+            math.round(rectangle.size.x / increment.x) * increment.x,
+            math.round(rectangle.size.y / increment.y) * increment.y,
+        },
+    }
+}
+
+rectangle_snap :: proc(rectangle: ^Rectangle, increment: Vector2) {
+    rectangle^ = rectangle_snapped(rectangle^, increment)
+}
+
+rectangle_intersection :: proc(a, b: Rectangle) -> Rectangle {
+    assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
+
+    x1 := max(a.position.x, b.position.x)
+    y1 := max(a.position.y, b.position.y)
+    x2 := min(a.position.x + a.size.x, b.position.x + b.size.x)
+    y2 := min(a.position.y + a.size.y, b.position.y + b.size.y)
+
+    if x2 < x1 {
+        x2 = x1
+    }
+    if y2 < y1 {
+        y2 = y1
+    }
+
+    return {{x1, y1}, {x2 - x1, y2 - y1}}
+}
+
+rectangle_intersects :: proc(a, b: Rectangle, include_borders := false) -> bool {
+    assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
+
+    if include_borders {
+        if a.position.x > b.position.x + b.size.x {
+            return false
+        }
+        if a.position.x + a.size.x < b.position.x {
+            return false
+        }
+        if a.position.y > b.position.y + b.size.y {
+            return false
+        }
+        if a.position.y + a.size.y < b.position.y {
+            return false
+        }
+    } else {
+        if a.position.x >= b.position.x + b.size.x {
+            return false
+        }
+        if a.position.x + a.size.x <= b.position.x {
+            return false
+        }
+        if a.position.y >= b.position.y + b.size.y {
+            return false
+        }
+        if a.position.y + a.size.y <= b.position.y {
+            return false
+        }
+    }
+
+    return true
+}
+
+rectangle_encloses :: proc{
+    rectangle_encloses_rect,
+    rectangle_encloses_vector2,
+}
+
+rectangle_encloses_rect :: proc(a, b: Rectangle, include_borders := false) -> bool {
+    assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
+    if include_borders {
+        return b.position.x >= a.position.x &&
+               b.position.y >= a.position.y &&
+               b.position.x + b.size.x <= a.position.x + a.size.x &&
+               b.position.y + b.size.y <= a.position.y + a.size.y
+    } else {
+        return b.position.x > a.position.x &&
+               b.position.y > a.position.y &&
+               b.position.x + b.size.x < a.position.x + a.size.x &&
+               b.position.y + b.size.y < a.position.y + a.size.y
+    }
+}
+
+rectangle_encloses_vector2 :: proc(a: Rectangle, b: Vector2, include_borders := false) -> bool {
+    assert(a.size.x >= 0 && a.size.y >= 0)
+    if include_borders {
+        return b.x >= a.position.x && b.x <= a.position.x + a.size.x &&
+               b.y >= a.position.y && b.y <= a.position.y + a.size.y
+    } else {
+        return b.x > a.position.x && b.x < a.position.x + a.size.x &&
+               b.y > a.position.y && b.y < a.position.y + a.size.y
+    }
+}
+
+rectangle_hit_test :: proc(a: Rectangle, b: Vector2) -> bool {
+    return rectangle_encloses_vector2(a, b, include_borders = false) &&
+           rectangle_encloses_vector2(clip_rectangle(), b, include_borders = false)
+}
+
+//==========================================================================
+// Tools
 //==========================================================================
 
 Gui_Id :: u64
@@ -1507,25 +1774,94 @@ release_keyboard_focus :: proc() {
     _current_window.keyboard_focus = 0
 }
 
-rectangle_encloses_vector2 :: proc(position, size, vector: Vector2, include_borders := false) -> bool {
-    assert(size.x >= 0 && size.y >= 0)
-    if include_borders {
-        return vector.x >= position.x && vector.x <= position.x + size.x &&
-               vector.y >= position.y && vector.y <= position.y + size.y
-    } else {
-        return vector.x > position.x && vector.x < position.x + size.x &&
-               vector.y > position.y && vector.y < position.y + size.y
+// Local coordinates
+offset :: proc() -> Vector2 {
+    window := current_window()
+    if len(window.local_offset_stack) <= 0 do return {0, 0}
+    return window.local_offset_stack[len(window.local_offset_stack) - 1]
+}
+
+// Global coordinates
+global_offset :: proc() -> Vector2 {
+    window := current_window()
+    if len(window.global_offset_stack) <= 0 do return {0, 0}
+    return window.global_offset_stack[len(window.global_offset_stack) - 1]
+}
+
+// Set in local coordinates
+begin_offset :: proc(offset: Vector2) {
+    window := current_window()
+    append(&window.local_offset_stack, offset)
+    append(&window.global_offset_stack, global_offset() + offset)
+}
+
+end_offset :: proc() {
+    window := current_window()
+    if len(window.local_offset_stack) <= 0 ||
+       len(window.global_offset_stack) <= 0 {
+        return
     }
+    pop(&window.local_offset_stack)
+    pop(&window.global_offset_stack)
 }
 
-rectangle_hit_test :: proc(position, size, target: Vector2, include_borders := false) -> bool {
-    return rectangle_encloses_vector2(position, size, target, include_borders)
+@(deferred_none=end_offset)
+scoped_offset :: proc(offset: Vector2) {
+    begin_offset(offset)
 }
 
-// rectangle_hit_test :: proc(position, size, target: Vector2) -> bool {
-//     return rectangle_encloses_vector2(position, size, target, include_borders = false) &&
-//            rectangle_encloses_vector2(clip_rect(), target, include_borders = false)
-// }
+// Local coordinates
+clip_rectangle :: proc() -> Rectangle {
+    window := current_window()
+    if len(window.global_clip_rect_stack) <= 0 do return {-global_offset(), window.size}
+    global_rect := window.global_clip_rect_stack[len(window.global_clip_rect_stack) - 1]
+    global_rect.position -= global_offset()
+    return global_rect
+}
+
+// Global coordinates
+global_clip_rectangle :: proc() -> Rectangle {
+    window := current_window()
+    if len(window.global_clip_rect_stack) <= 0 do return {{0, 0}, window.size}
+    return window.global_clip_rect_stack[len(window.global_clip_rect_stack) - 1]
+}
+
+// Set in local coordinates
+begin_clip :: proc(rectangle: Rectangle, intersect := true) {
+    window := current_window()
+
+    offset := global_offset()
+    global_rect := Rectangle{offset + rectangle.position, rectangle.size}
+
+    if intersect && len(window.global_clip_rect_stack) > 0 {
+        global_rect = rectangle_intersection(global_rect, window.global_clip_rect_stack[len(window.global_clip_rect_stack) - 1])
+    }
+
+    append(&window.global_clip_rect_stack, global_rect)
+    nvg.Scissor(window.nvg_ctx, global_rect.x, global_rect.y, global_rect.size.x, global_rect.size.y)
+}
+
+end_clip :: proc() {
+    window := current_window()
+
+    if len(window.global_clip_rect_stack) <= 0 {
+        return
+    }
+
+    pop(&window.global_clip_rect_stack)
+
+    if len(window.global_clip_rect_stack) <= 0 {
+        return
+    }
+
+    global_rect := window.global_clip_rect_stack[len(window.global_clip_rect_stack) - 1]
+    nvg.Scissor(window.nvg_ctx, global_rect.x, global_rect.y, global_rect.size.x, global_rect.size.y)
+}
+
+@(deferred_none=end_clip)
+scoped_clip :: proc(rectangle: Rectangle, intersect := true) {
+    begin_clip(rectangle, intersect = intersect)
+}
 
 //==========================================================================
 // Button
@@ -1533,8 +1869,7 @@ rectangle_hit_test :: proc(position, size, target: Vector2, include_borders := f
 
 Button_Base :: struct {
     id: Gui_Id,
-    position: Vector2,
-    size: Vector2,
+    using rectangle: Rectangle,
     is_down: bool,
     pressed: bool,
     released: bool,
@@ -1550,7 +1885,7 @@ button_base_update :: proc(button: ^Button_Base, press, release: bool) {
     button.released = false
     button.clicked = false
 
-    if rectangle_hit_test(button.position, button.size, mouse_position()) {
+    if rectangle_hit_test(button, mouse_position()) {
         request_mouse_hover(button.id)
     }
 
@@ -1593,7 +1928,7 @@ button_update :: proc(button: ^Button) {
 
 button_draw :: proc(button: ^Button) {
     path := temp_path()
-    path_rectangle(&path, button.position, button.size)
+    path_rectangle(&path, button)
 
     fill_path(path, button.color)
     if button.is_down {
@@ -1601,4 +1936,548 @@ button_draw :: proc(button: ^Button) {
     } else if mouse_hover() == button.id {
         fill_path(path, {1, 1, 1, 0.05})
     }
+}
+
+//==========================================================================
+// Text Line
+//
+// This is a simple text line that measures itself and
+// updates its rectangle accordingly. It is aware of the
+// current clip rectangle and will only draw the portion
+// of the string that is visible on screen for optimization.
+// The text does not own its string.
+//==========================================================================
+
+Text_Line :: struct {
+    using rectangle: Rectangle,
+    str: string,
+    color: Color,
+    font: Font,
+    glyphs: [dynamic]Text_Glyph,
+    byte_index_to_rune_index: map[int]int,
+    needs_remeasure: bool, // Set this to true to ask the text to remeasure
+}
+
+text_line_init :: proc(text: ^Text_Line, font: Font, allocator := context.allocator) -> runtime.Allocator_Error {
+    text.glyphs = make([dynamic]Text_Glyph, allocator = allocator)
+    text.byte_index_to_rune_index = make(map[int]int, allocator = allocator)
+    text.font = font
+    text.color = {1, 1, 1, 1}
+    text.needs_remeasure = true
+    return nil
+}
+
+text_line_destroy :: proc(text: ^Text_Line) {
+    delete(text.glyphs)
+    delete(text.byte_index_to_rune_index)
+}
+
+text_line_update :: proc(text: ^Text_Line) {
+    if text.needs_remeasure {
+        measure_text(text.str, text.font, &text.glyphs, &text.byte_index_to_rune_index)
+        text.needs_remeasure = false
+    }
+
+    text.size.y = font_metrics(text.font).line_height
+    if len(text.glyphs) <= 0 {
+        text.size.x = 0
+    } else {
+        left := text.glyphs[0]
+        right := text.glyphs[len(text.glyphs) - 1]
+        text.size.x = right.position + right.width - left.position
+    }
+}
+
+text_line_draw :: proc(text: ^Text_Line) {
+    str, x_compensation := text_line_visible_string(text)
+    position := text.position
+    position.x += x_compensation
+    fill_text(str, position, text.font, text.color)
+}
+
+text_line_visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f32) {
+    glyph_count := len(text.glyphs)
+    if glyph_count <= 0 do return "", 0
+
+    left, right_exclusive := text_line_visible_glyph_range(text)
+    if right_exclusive - left <= 0 do return "", 0
+
+    left_byte_index := text.glyphs[left].byte_index
+    byte_count := len(text.str)
+    if left_byte_index >= byte_count do return "", 0
+
+    x_compensation = text.glyphs[left].position
+
+    if right_exclusive >= glyph_count {
+        str = text.str[left_byte_index:]
+    } else {
+        right_byte_index := text.glyphs[right_exclusive].byte_index
+        if right_byte_index < byte_count {
+            str = text.str[left_byte_index:right_byte_index]
+        } else {
+            str = text.str[left_byte_index:]
+        }
+    }
+
+    return
+}
+
+text_line_byte_index_to_rune_index :: proc(text: ^Text_Line, byte_index: int) -> (rune_index: int, out_of_bounds: bool) {
+    if byte_index >= len(text.str) {
+        return 0, true
+    } else {
+        return text.byte_index_to_rune_index[byte_index], false
+    }
+}
+
+text_line_visible_glyph_range :: proc(text: ^Text_Line) -> (left, right_exclusive: int) {
+    clip_rect := clip_rectangle()
+    if clip_rect.size.x <= 0 || clip_rect.size.y <= 0 {
+        return 0, 0
+    }
+
+    position := text.position
+    height := text.size.y
+    left_set := false
+
+    for glyph, i in text.glyphs {
+        glyph_rect := Rectangle{position + {glyph.position, 0}, {glyph.width, height}}
+        glyph_visible := rectangle_intersects(clip_rect, glyph_rect, include_borders = false)
+
+        if !left_set {
+            if glyph_visible {
+                left = i
+                left_set = true
+            }
+        } else {
+            if !glyph_visible {
+                right_exclusive = max(0, i)
+                return
+            }
+        }
+    }
+
+    if left_set {
+        right_exclusive = len(text.glyphs)
+    }
+
+    return
+}
+
+//==========================================================================
+// Editable Text Line
+//
+// This is an editable extension of Text_Line.
+// It owns a strings.Builder and will update the string
+// of its Text_Line to reference that when editing occurs.
+// It will not behave properly if you set the Text_Line str
+// directly.
+//==========================================================================
+
+POSITIONAL_SELECTION_HORIZONTAL_BIAS :: 3 // Bias positional selection to the right a little for feel.
+CARET_WIDTH :: 2
+
+Text_Edit_Command :: text_edit.Command
+
+Editable_Text_Line :: struct {
+    using text_line: Text_Line,
+    id: Gui_Id,
+    builder: strings.Builder,
+    caret_color: Color,
+    focused_selection_color: Color,
+    unfocused_selection_color: Color,
+    is_editable: bool,
+    drag_selecting: bool,
+    edit_state: text_edit.State,
+}
+
+editable_text_line_init :: proc(text: ^Editable_Text_Line, font: Font, allocator := context.allocator) -> runtime.Allocator_Error {
+    text_line_init(text, font) or_return
+    strings.builder_init(&text.builder, allocator = allocator) or_return
+    text_edit.init(&text.edit_state, allocator, allocator)
+    text_edit.setup_once(&text.edit_state, &text.builder)
+    text.edit_state.selection = {0, 0}
+    text.edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
+        data = get_clipboard()
+        return _quick_remove_line_ends_UNSAFE(data), true
+    }
+    text.edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
+        set_clipboard(data)
+        return true
+    }
+    text.id = get_gui_id()
+    text.caret_color = Color{0.7, .9, 1, 1}
+    text.focused_selection_color = Color{0, .4, 0.8, 0.8}
+    text.unfocused_selection_color = Color{0, .4, 0.8, 0.65}
+    text.is_editable = true
+    return nil
+}
+
+editable_text_line_destroy :: proc(text: ^Editable_Text_Line) {
+    strings.builder_destroy(&text.builder)
+    text_edit.destroy(&text.edit_state)
+    text_line_destroy(text)
+}
+
+editable_text_line_update :: proc(text: ^Editable_Text_Line) {
+    text_line_update(text)
+
+    // Update the undo state timeout manually.
+    text.edit_state.current_time = time.tick_now()
+    if text.edit_state.undo_timeout <= 0 {
+        text.edit_state.undo_timeout = text_edit.DEFAULT_UNDO_TIMEOUT
+    }
+
+    editable_text_line_edit_with_keyboard(text)
+    editable_text_line_edit_with_mouse(text)
+}
+
+editable_text_line_draw :: proc(text: ^Editable_Text_Line) {
+    is_focus := keyboard_focus() == text.id
+
+    if text.is_editable {
+        if selection, exists := editable_text_line_selection_rectangle(text); exists {
+            color := text.focused_selection_color if is_focus else text.unfocused_selection_color
+            selection_path := temp_path()
+            path_rectangle(&selection_path, selection)
+            fill_path(selection_path, color)
+        }
+    }
+
+    text_line_draw(text)
+
+    if text.is_editable && is_focus {
+        caret_path := temp_path()
+        path_rectangle(&caret_path, editable_text_line_caret_rectangle(text))
+        fill_path(caret_path, text.caret_color)
+    }
+}
+
+editable_text_line_input_string :: proc(text: ^Editable_Text_Line, str: string) {
+    text_edit.input_text(&text.edit_state, _quick_remove_line_ends_UNSAFE(str))
+    _editable_text_line_update_str(text)
+}
+
+editable_text_line_input_runes :: proc(text: ^Editable_Text_Line, runes: []rune) {
+    str := utf8.runes_to_string(runes, context.temp_allocator)
+    editable_text_line_input_string(text, str)
+}
+
+editable_text_line_input_rune :: proc(text: ^Editable_Text_Line, r: rune) {
+    if r == '\n' || r == '\r' do return
+    text_edit.input_rune(&text.edit_state, r)
+    _editable_text_line_update_str(text)
+}
+
+editable_text_line_insert_string :: proc(text: ^Editable_Text_Line, at: int, str: string) {
+    text_edit.insert(&text.edit_state, at, _quick_remove_line_ends_UNSAFE(str))
+    _editable_text_line_update_str(text)
+}
+
+editable_text_line_remove_text_range :: proc(text: ^Editable_Text_Line, lo, hi: int) {
+    text_edit.remove(&text.edit_state, lo, hi)
+    _editable_text_line_update_str(text)
+}
+
+editable_text_line_has_selection :: proc(text: ^Editable_Text_Line) -> bool {
+    return text_edit.has_selection(&text.edit_state)
+}
+
+editable_text_line_sorted_selection :: proc(text: ^Editable_Text_Line) -> (lo, hi: int) {
+    return text_edit.sorted_selection(&text.edit_state)
+}
+
+editable_text_line_delete_selection :: proc(text: ^Editable_Text_Line) {
+    text_edit.selection_delete(&text.edit_state)
+    _editable_text_line_update_str(text)
+}
+
+editable_text_line_edit :: proc(text: ^Editable_Text_Line, command: Text_Edit_Command) {
+    #partial switch command {
+    case .New_Line:
+        return
+    case .Line_Start, .Line_End:
+        _editable_text_line_update_edit_state_line_start_and_end(text)
+    }
+
+    text_edit.perform_command(&text.edit_state, command)
+
+    #partial switch command {
+    case .Backspace, .Delete,
+            .Delete_Word_Left, .Delete_Word_Right,
+            .Paste, .Cut, .Undo, .Redo:
+        _editable_text_line_update_str(text)
+    }
+}
+
+editable_text_line_start_drag_selection :: proc(text: ^Editable_Text_Line, position: Vector2, only_head := false) {
+    set_keyboard_focus(text.id)
+    index := editable_text_line_byte_index_at_x(text, position.x)
+    text.drag_selecting = true
+    text.edit_state.selection[0] = index
+    if !only_head do text.edit_state.selection[1] = index
+}
+
+editable_text_line_move_drag_selection :: proc(text: ^Editable_Text_Line, position: Vector2) {
+    if !text.drag_selecting do return
+    text.edit_state.selection[0] = editable_text_line_byte_index_at_x(text, position.x)
+}
+
+editable_text_line_end_drag_selection :: proc(text: ^Editable_Text_Line) {
+    if !text.drag_selecting do return
+    text.drag_selecting = false
+}
+
+editable_text_line_edit_with_mouse :: proc(text: ^Editable_Text_Line) {
+    if !text.is_editable do return
+
+    if rectangle_hit_test(clip_rectangle(), mouse_position()) {
+        request_mouse_hover(text.id)
+    }
+
+    if mouse_hover_entered() == text.id {
+        set_mouse_cursor_style(.I_Beam)
+    }
+
+    if mouse_hover_exited() == text.id {
+        set_mouse_cursor_style(.Arrow)
+    }
+
+    is_hover := mouse_hover() == text.id
+    left_or_middle_pressed := mouse_pressed(.Left) || mouse_pressed(.Middle)
+    left_or_middle_released := mouse_released(.Left) || mouse_released(.Middle)
+
+    if left_or_middle_pressed {
+        if is_hover {
+            set_keyboard_focus(text.id)
+        } else {
+            release_keyboard_focus()
+        }
+    }
+
+    if left_or_middle_pressed && is_hover && !text.drag_selecting {
+        capture_mouse_hover()
+
+        switch mouse_repeat_count(.Left) {
+        case 0, 1: // Single click
+            shift := key_down(.Left_Shift) || key_down(.Right_Shift)
+            editable_text_line_start_drag_selection(text, mouse_position(), only_head = shift)
+
+        case 2: // Double click
+            editable_text_line_edit(text, .Word_Right)
+            editable_text_line_edit(text, .Word_Left)
+            editable_text_line_edit(text, .Select_Word_Right)
+
+        case 3: // Triple click
+            editable_text_line_edit(text, .Line_Start)
+            editable_text_line_edit(text, .Select_Line_End)
+
+        case: // Quadruple click and beyond
+            editable_text_line_edit(text, .Start)
+            editable_text_line_edit(text, .Select_End)
+        }
+    }
+
+    if text.drag_selecting {
+        editable_text_line_move_drag_selection(text, mouse_position())
+    }
+
+    if text.drag_selecting && left_or_middle_released {
+        editable_text_line_end_drag_selection(text)
+        release_mouse_hover()
+    }
+}
+
+editable_text_line_edit_with_keyboard :: proc(text: ^Editable_Text_Line) {
+    if !text.is_editable do return
+    if keyboard_focus() != text.id do return
+
+    text_input := text_input()
+    if len(text_input) > 0 {
+        editable_text_line_input_string(text, text_input)
+    }
+
+    ctrl := key_down(.Left_Control) || key_down(.Right_Control)
+    shift := key_down(.Left_Shift) || key_down(.Right_Shift)
+
+    for key in key_presses(repeating = true) {
+        #partial switch key {
+        case .Escape: release_keyboard_focus()
+        // case .Enter, .Pad_Enter: edit(text, .New_Line)
+        case .A: if ctrl do editable_text_line_edit(text, .Select_All)
+        case .C: if ctrl do editable_text_line_edit(text, .Copy)
+        case .V: if ctrl do editable_text_line_edit(text, .Paste)
+        case .X: if ctrl do editable_text_line_edit(text, .Cut)
+        case .Y: if ctrl do editable_text_line_edit(text, .Redo)
+        case .Z: if ctrl do editable_text_line_edit(text, .Undo)
+
+        case .Home:
+            switch {
+            case ctrl && shift: editable_text_line_edit(text, .Select_Start)
+            case shift: editable_text_line_edit(text, .Select_Line_Start)
+            case ctrl: editable_text_line_edit(text, .Start)
+            case: editable_text_line_edit(text, .Line_Start)
+            }
+
+        case .End:
+            switch {
+            case ctrl && shift: editable_text_line_edit(text, .Select_End)
+            case shift: editable_text_line_edit(text, .Select_Line_End)
+            case ctrl: editable_text_line_edit(text, .End)
+            case: editable_text_line_edit(text, .Line_End)
+            }
+
+        case .Insert:
+            switch {
+            case ctrl: editable_text_line_edit(text, .Copy)
+            case shift: editable_text_line_edit(text, .Paste)
+            }
+
+        case .Backspace:
+            switch {
+            case ctrl: editable_text_line_edit(text, .Delete_Word_Left)
+            case: editable_text_line_edit(text, .Backspace)
+            }
+
+        case .Delete:
+            switch {
+            case ctrl: editable_text_line_edit(text, .Delete_Word_Right)
+            case shift: editable_text_line_edit(text, .Cut)
+            case: editable_text_line_edit(text, .Delete)
+            }
+
+        case .Left_Arrow:
+            switch {
+            case ctrl && shift: editable_text_line_edit(text, .Select_Word_Left)
+            case shift: editable_text_line_edit(text, .Select_Left)
+            case ctrl: editable_text_line_edit(text, .Word_Left)
+            case: editable_text_line_edit(text, .Left)
+            }
+
+        case .Right_Arrow:
+            switch {
+            case ctrl && shift: editable_text_line_edit(text, .Select_Word_Right)
+            case shift: editable_text_line_edit(text, .Select_Right)
+            case ctrl: editable_text_line_edit(text, .Word_Right)
+            case: editable_text_line_edit(text, .Right)
+            }
+
+        // case .Up_Arrow:
+        //     switch {
+        //     case shift: edit(text, .Select_Up)
+        //     case: edit(text, .Up)
+        //     }
+
+        // case .Down_Arrow:
+        //     switch {
+        //     case shift: edit(text, .Select_Down)
+        //     case: edit(text, .Down)
+        //     }
+        }
+    }
+}
+
+editable_text_line_caret_rectangle :: proc(text: ^Editable_Text_Line) -> (rectangle: Rectangle) {
+    glyph_count := len(text.glyphs)
+
+    rectangle.position = text.position
+    rectangle.size = {CARET_WIDTH, text.size.y}
+
+    if glyph_count == 0 do return
+
+    head := text.edit_state.selection[0]
+    caret_rune_index, caret_oob := text_line_byte_index_to_rune_index(text, head)
+
+    if caret_oob {
+        rectangle.position.x += text.glyphs[glyph_count - 1].position + text.glyphs[glyph_count - 1].width
+    } else {
+        rectangle.position.x += text.glyphs[caret_rune_index].position
+    }
+
+    return
+}
+
+editable_text_line_selection_rectangle :: proc(text: ^Editable_Text_Line) -> (rectangle: Rectangle, exists: bool) {
+    glyph_count := len(text.glyphs)
+
+    if glyph_count == 0 do return
+
+    height := font_metrics(text.font).line_height
+
+    low, high := editable_text_line_sorted_selection(text)
+    if high > low {
+        left_rune_index, left_oob := text_line_byte_index_to_rune_index(text, low)
+        if left_oob do left_rune_index = glyph_count - 1
+
+        right_rune_index, right_oob := text_line_byte_index_to_rune_index(text, high)
+        if right_oob {
+            right_rune_index = glyph_count - 1
+        } else {
+            right_rune_index -= 1
+        }
+
+        left := text.glyphs[left_rune_index].position
+        right := text.glyphs[right_rune_index].position + text.glyphs[right_rune_index].width
+
+        rectangle.position = text.position + {left, 0}
+        rectangle.size = {right - left, height}
+
+        exists = true
+    }
+
+    return
+}
+
+editable_text_line_byte_index_at_x :: proc(text: ^Editable_Text_Line, x: f32) -> int {
+    glyph_count := len(text.glyphs)
+    if glyph_count == 0 do return 0
+
+    x := x + POSITIONAL_SELECTION_HORIZONTAL_BIAS
+    position := text.position
+
+    // There's almost certainly a better way to do this.
+    #reverse for glyph, i in text.glyphs {
+        left := position.x + glyph.position
+        right := position.x + glyph.position + glyph.width
+
+        if i == glyph_count - 1 && x >= right {
+            return len(text.builder.buf)
+        }
+
+        if x >= left && x < right {
+            return glyph.byte_index
+        }
+    }
+
+    return 0
+}
+
+_editable_text_line_update_str :: proc(text: ^Editable_Text_Line) {
+    text.str = strings.to_string(text.builder)
+    text.needs_remeasure = true
+}
+
+_editable_text_line_update_edit_state_line_start_and_end :: proc(text: ^Editable_Text_Line) {
+    text.edit_state.line_start = 0
+    text.edit_state.line_end = len(text.builder.buf)
+}
+
+_quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
+    bytes := make([dynamic]byte, len(str), allocator = context.temp_allocator)
+    copy_from_string(bytes[:], str)
+
+    keep_position := 0
+
+    for i in 0 ..< len(bytes) {
+        should_keep := bytes[i] != '\n' && bytes[i] != '\r'
+        if should_keep {
+            if keep_position != i {
+                bytes[keep_position] = bytes[i]
+            }
+            keep_position += 1
+        }
+    }
+
+    resize(&bytes, keep_position)
+    return string(bytes[:])
 }
