@@ -16,7 +16,7 @@ Path :: struct {
 }
 
 temp_path :: proc() -> (res: Path) {
-    path_init(&res, context.temp_allocator)
+    path_init(&res, arena_allocator())
     return
 }
 
