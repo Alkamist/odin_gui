@@ -428,7 +428,7 @@ _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Stat
 
         if !skip {
             r, len := utf8.decode_rune(event.string[:4])
-            input_text(ctx, r)
+            input_rune(ctx, r)
             _context_update(ctx)
             pugl.PostRedisplay(view)
         }

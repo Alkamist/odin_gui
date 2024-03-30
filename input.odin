@@ -126,8 +126,8 @@ input_key_release :: proc(ctx: ^Gui_Context, key: Keyboard_Key) {
     append(&ctx.key_releases, key)
 }
 
-input_text :: proc(ctx: ^Gui_Context, text: rune) {
-    strings.write_rune(&ctx.text_input, text)
+input_rune :: proc(ctx: ^Gui_Context, r: rune) {
+    strings.write_rune(&ctx.text_input, r)
 }
 
 mouse_position :: proc() -> (res: Vector2) {
