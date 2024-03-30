@@ -82,6 +82,120 @@ button_draw :: proc(button: ^Button) {
 }
 
 //==========================================================================
+// Slider
+//==========================================================================
+
+Slider :: struct {
+    id: Gui_Id,
+    using rectangle: Rectangle,
+    held: bool,
+    value: f32,
+    min_value: f32,
+    max_value: f32,
+    handle_length: f32,
+    value_when_grabbed: f32,
+    global_mouse_position_when_grabbed: Vector2,
+    mouse_button: Mouse_Button,
+    precision_key: Keyboard_Key,
+}
+
+slider_init :: proc(slider: ^Slider) {
+    slider.id = gui_id()
+    slider.size = Vector2{300, 24}
+    slider.max_value = 1
+    slider.handle_length = 16
+    slider.mouse_button = .Left
+    slider.precision_key = .Left_Shift
+}
+
+slider_handle_rectangle :: proc(slider: ^Slider) -> Rectangle {
+    return {
+        slider.position + {
+            (slider.size.x - slider.handle_length) * (slider.value - slider.min_value) / (slider.max_value - slider.min_value),
+            0,
+        },
+        {
+            slider.handle_length,
+            slider.size.y,
+        },
+    }
+}
+
+slider_set_value :: proc(slider: ^Slider, value: f32) {
+    slider.value = value
+    _slider_clamp_value(slider)
+}
+
+slider_set_min_value :: proc(slider: ^Slider, min_value: f32) {
+    slider.min_value = min_value
+    _slider_clamp_value(slider)
+}
+
+slider_set_max_value :: proc(slider: ^Slider, max_value: f32) {
+    slider.max_value = max_value
+    _slider_clamp_value(slider)
+}
+
+slider_update :: proc(slider: ^Slider) {
+    if mouse_hit_test(slider) {
+        request_mouse_hover(slider.id)
+    }
+
+    if slider.held {
+        if key_pressed(slider.precision_key) ||
+           key_released(slider.precision_key) {
+            _slider_reset_grab_info(slider)
+        }
+    }
+
+    if !slider.held && mouse_hover() == slider.id && mouse_pressed(slider.mouse_button) {
+        slider.held = true
+        _slider_reset_grab_info(slider)
+        capture_mouse_hover()
+    }
+
+    if slider.held {
+        sensitivity: f32 = key_down(slider.precision_key) ? 0.15 : 1.0
+        global_mouse_position := global_mouse_position()
+        grab_delta := global_mouse_position.x - slider.global_mouse_position_when_grabbed.x
+        slider.value = slider.value_when_grabbed + sensitivity * grab_delta * (slider.max_value - slider.min_value) / (slider.size.x - slider.handle_length)
+
+        if mouse_released(slider.mouse_button) {
+            slider.held = false
+            release_mouse_hover()
+        }
+    }
+
+    _slider_clamp_value(slider)
+}
+
+slider_draw :: proc(slider: ^Slider) {
+    slider_path := temp_path()
+    path_rectangle(&slider_path, slider)
+
+    fill_path(slider_path, {0.05, 0.05, 0.05, 1})
+
+    handle_path := temp_path()
+    path_rectangle(&handle_path, slider_handle_rectangle(slider))
+
+    fill_path(handle_path, {0.4, 0.4, 0.4, 1})
+    if slider.held {
+        fill_path(handle_path, {0, 0, 0, 0.2})
+    } else if mouse_hover() == slider.id {
+        fill_path(handle_path, {1, 1, 1, 0.05})
+    }
+}
+
+_slider_reset_grab_info :: proc(slider: ^Slider) {
+    slider.value_when_grabbed = slider.value
+    slider.global_mouse_position_when_grabbed = global_mouse_position()
+}
+
+_slider_clamp_value :: proc(slider: ^Slider) {
+    slider.value = clamp(slider.value, slider.min_value, slider.max_value)
+}
+
+//==========================================================================
 // Text Line
 //
 // This is a simple text line that measures itself and
