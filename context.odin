@@ -32,11 +32,11 @@ Gui_Context :: struct {
     key_releases: [dynamic]Keyboard_Key,
     text_input: strings.Builder,
 
-    keyboard_focus: Id,
-    mouse_hit: Id,
-    mouse_hover: Id,
-    previous_mouse_hover: Id,
-    mouse_hover_capture: Id,
+    keyboard_focus: Gui_Id,
+    mouse_hit: Gui_Id,
+    mouse_hover: Gui_Id,
+    previous_mouse_hover: Gui_Id,
+    mouse_hover_capture: Gui_Id,
 
     window_stack: [dynamic]^Window,
     active_windows: map[^Window]struct{},

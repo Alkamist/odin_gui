@@ -2,7 +2,6 @@ package main
 
 import "core:fmt"
 import "core:mem"
-import "core:runtime"
 
 consola_13 := Font{
     name = "consola_13",
@@ -10,13 +9,22 @@ consola_13 := Font{
     data = #load("consola.ttf"),
 }
 
+running := true
+
 window: Window
+window2: Window
+
+text: Editable_Text_Line
 
 update :: proc() {
     if window_update(&window) {
-        if key_pressed(.A, true) {
-            fmt.println("Ayy")
-        }
+        text.position = {100, 100}
+        widget_update(&text)
+        widget_draw(&text)
+    }
+
+    if window_closed(&window) {
+        running = false
     }
 }
 
@@ -51,7 +59,15 @@ main :: proc() {
     window_open(&window)
     defer window_destroy(&window)
 
-    for true {
+    window_init(&window2, {{600, 100}, {400, 300}})
+    window_open(&window2)
+    defer window_destroy(&window2)
+
+    widget_init(&text, consola_13)
+    defer widget_destroy(&text)
+    text_input_string(&text, "Hello World.")
+
+    for running {
         gui_update()
     }
 }

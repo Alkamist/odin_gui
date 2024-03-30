@@ -165,6 +165,10 @@ backend_close_window :: proc(window: ^Window) {
     window.view = nil
 }
 
+backend_window_native_handle :: proc(window: ^Window) -> Window_Native_Handle {
+    return cast(rawptr)pugl.GetNativeView(window.view)
+}
+
 backend_show_window :: proc(window: ^Window) {
     pugl.Show(window.view, .RAISE)
 }
@@ -208,7 +212,7 @@ backend_set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) {
     pugl.SetCursor(current_window().view, _cursor_style_to_pugl_cursor(style))
 }
 
-backend_get_clipboard :: proc() -> string {
+backend_clipboard :: proc() -> string {
     length: uint
     clipboard_cstring := cast(cstring)pugl.GetClipboard(current_window().view, 0, &length)
     if clipboard_cstring == nil {
@@ -224,16 +228,106 @@ backend_set_clipboard :: proc(data: string) {
 }
 
 backend_load_font :: proc(window: ^Window, font: Font) {
+    if len(font.data) <= 0 do return
+    if nvg.CreateFontMem(window.nvg_ctx, font.name, font.data, false) == -1 {
+        fmt.eprintf("Failed to load font: %v\n", font.name)
+    }
 }
 
 backend_measure_text :: proc(window: ^Window, text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) {
+    nvg_ctx := window.nvg_ctx
+
+    clear(glyphs)
+
+    if len(text) == 0 {
+        return
+    }
+
+    nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
+    nvg.FontFace(nvg_ctx, font.name)
+    nvg.FontSize(nvg_ctx, f32(font.size))
+
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), arena_allocator())
+
+    temp_slice := nvg_positions[:]
+    position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, text, &temp_slice)
+
+    resize(glyphs, position_count)
+
+    for i in 0 ..< position_count {
+        if byte_index_to_rune_index != nil {
+            byte_index_to_rune_index[nvg_positions[i].str] = i
+        }
+        glyphs[i] = Text_Glyph{
+            byte_index = nvg_positions[i].str,
+            position = nvg_positions[i].x,
+            width = nvg_positions[i].maxx - nvg_positions[i].minx,
+            kerning = (nvg_positions[i].x - nvg_positions[i].minx),
+        }
+    }
 }
 
-backend_font_metrics :: proc(window: ^Window, font: Font) -> Font_Metrics {
-    return {}
+backend_font_metrics :: proc(window: ^Window, font: Font) -> (metrics: Font_Metrics) {
+    nvg_ctx := window.nvg_ctx
+    nvg.FontFace(nvg_ctx, font.name)
+    nvg.FontSize(nvg_ctx, f32(font.size))
+    metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(nvg_ctx)
+    return
 }
 
 backend_render_draw_command :: proc(window: ^Window, command: Draw_Command) {
+    nvg_ctx := window.nvg_ctx
+    switch cmd in command {
+    case Custom_Draw_Command:
+        if cmd.custom != nil {
+            nvg.Save(nvg_ctx)
+            cmd.custom()
+            nvg.Restore(nvg_ctx)
+        }
+
+    case Fill_Path_Command:
+        nvg.Save(nvg_ctx)
+
+        nvg.BeginPath(nvg_ctx)
+
+        for sub_path in cmd.path.sub_paths {
+            nvg.MoveTo(nvg_ctx, sub_path.points[0].x, sub_path.points[0].y)
+
+            for i := 1; i < len(sub_path.points); i += 3 {
+                c1 := sub_path.points[i]
+                c2 := sub_path.points[i + 1]
+                point := sub_path.points[i + 2]
+                nvg.BezierTo(nvg_ctx,
+                    c1.x, c1.y,
+                    c2.x, c2.y,
+                    point.x, point.y,
+                )
+            }
+
+            if sub_path.is_closed {
+                nvg.ClosePath(nvg_ctx)
+            }
+        }
+
+        nvg.FillColor(nvg_ctx, cmd.color)
+        nvg.Fill(nvg_ctx)
+
+        nvg.Restore(nvg_ctx)
+
+    case Fill_Text_Command:
+        nvg.Save(nvg_ctx)
+        position := pixel_snapped(cmd.position)
+        nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
+        nvg.FontFace(nvg_ctx, cmd.font.name)
+        nvg.FontSize(nvg_ctx, f32(cmd.font.size))
+        nvg.FillColor(nvg_ctx, cmd.color)
+        nvg.Text(nvg_ctx, position.x, position.y, cmd.text)
+        nvg.Restore(nvg_ctx)
+
+    case Clip_Drawing_Command:
+        rect := pixel_snapped(cmd.global_clip_rect)
+        nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
+    }
 }
 
 _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {

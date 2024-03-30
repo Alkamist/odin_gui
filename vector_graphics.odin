@@ -1,145 +1,126 @@
 package main
 
-// import "core:fmt"
-// import "core:math"
-// import nvg "vendor:nanovg"
+import "core:math"
 
-// Color :: [4]f32
+Color :: [4]f32
 
-// Font :: struct {
-//     name: string,
-//     size: int,
-//     data: []byte,
-// }
+Font :: struct {
+    name: string,
+    size: int,
+    data: []byte,
+}
 
-// Font_Metrics :: struct {
-//     ascender: f32,
-//     descender: f32,
-//     line_height: f32,
-// }
+Font_Metrics :: struct {
+    ascender: f32,
+    descender: f32,
+    line_height: f32,
+}
 
-// Text_Glyph :: struct {
-//     byte_index: int,
-//     position: f32,
-//     width: f32,
-//     kerning: f32,
-// }
+Text_Glyph :: struct {
+    byte_index: int,
+    position: f32,
+    width: f32,
+    kerning: f32,
+}
 
-// measure_text :: proc(
-//     text: string,
-//     font: Font,
-//     glyphs: ^[dynamic]Text_Glyph,
-//     byte_index_to_rune_index: ^map[int]int,
-// ) {
-//     window := current_window()
-//     nvg_ctx := window.nvg_ctx
+Draw_Command :: union {
+    Custom_Draw_Command,
+    Fill_Path_Command,
+    Fill_Text_Command,
+    Clip_Drawing_Command,
+}
 
-//     clear(glyphs)
+Custom_Draw_Command :: struct {
+    custom: proc(),
+    global_offset: Vector2,
+    global_clip_rectangle: Rectangle,
+}
 
-//     if len(text) == 0 {
-//         return
-//     }
+Fill_Path_Command :: struct {
+    path: Path,
+    color: Color,
+}
 
-//     _load_font(window, font)
+Fill_Text_Command :: struct {
+    text: string,
+    position: Vector2,
+    font: Font,
+    color: Color,
+}
 
-//     nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
-//     nvg.FontFace(nvg_ctx, font.name)
-//     nvg.FontSize(nvg_ctx, f32(font.size))
+Clip_Drawing_Command :: struct {
+    global_clip_rect: Rectangle,
+}
 
-//     nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), context.temp_allocator)
+pixel_size :: proc() -> Vector2 {
+    return 1.0 / current_window().content_scale
+}
 
-//     temp_slice := nvg_positions[:]
-//     position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, text, &temp_slice)
+pixel_snapped :: proc{
+    vector2_pixel_snapped,
+    rectangle_pixel_snapped,
+}
 
-//     resize(glyphs, position_count)
+vector2_pixel_snapped :: proc(position: Vector2) -> Vector2 {
+    pixel := pixel_size()
+    return {
+        math.round(position.x / pixel.x) * pixel.x,
+        math.round(position.y / pixel.y) * pixel.y,
+    }
+}
 
-//     for i in 0 ..< position_count {
-//         if byte_index_to_rune_index != nil {
-//             byte_index_to_rune_index[nvg_positions[i].str] = i
-//         }
-//         glyphs[i] = Text_Glyph{
-//             byte_index = nvg_positions[i].str,
-//             position = nvg_positions[i].x,
-//             width = nvg_positions[i].maxx - nvg_positions[i].minx,
-//             kerning = (nvg_positions[i].x - nvg_positions[i].minx),
-//         }
-//     }
-// }
+rectangle_pixel_snapped :: proc(rect: Rectangle) -> Rectangle {
+    return rectangle_snapped(rect, pixel_size())
+}
 
-// font_metrics :: proc(font: Font) -> (metrics: Font_Metrics) {
-//     window := current_window()
-//     nvg_ctx := window.nvg_ctx
-//     _load_font(window, font)
-//     nvg.FontFace(nvg_ctx, font.name)
-//     nvg.FontSize(nvg_ctx, f32(font.size))
-//     metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(nvg_ctx)
-//     pixel_height := pixel_size().y
-//     metrics.line_height = math.ceil(metrics.line_height / pixel_height) * pixel_height
-//     return
-// }
+draw_custom :: proc(custom: proc()) {
+    window := current_window()
+    _process_draw_command(window, Custom_Draw_Command{custom, global_offset(), global_clip_rectangle()})
+}
 
-// fill_text :: proc(text: string, position: Vector2, font: Font, color: Color) {
-//     window := current_window()
-//     nvg_ctx := window.nvg_ctx
-//     _load_font(window, font)
-//     position := pixel_snapped(position)
-//     nvg.Save(nvg_ctx)
-//     offset := global_offset()
-//     nvg.Translate(nvg_ctx, offset.x, offset.y)
-//     nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
-//     nvg.FontFace(nvg_ctx, font.name)
-//     nvg.FontSize(nvg_ctx, f32(font.size))
-//     nvg.FillColor(nvg_ctx, color)
-//     nvg.Text(nvg_ctx, position.x, position.y, text)
-//     nvg.Restore(nvg_ctx)
-// }
+fill_text :: proc(text: string, position: Vector2, font: Font, color: Color) {
+    window := current_window()
+    _load_font_if_not_loaded(window, font)
+    _process_draw_command(window, Fill_Text_Command{text, global_offset() + position, font, color})
+}
 
-// fill_path :: proc(path: Path, color: Color) {
-//     nvg_ctx := current_window().nvg_ctx
+clip_drawing :: proc(rect: Rectangle) {
+    window := current_window()
+    rect := rect
+    rect.position += global_offset()
+    _process_draw_command(window, Clip_Drawing_Command{rect})
+}
 
-//     nvg.Save(nvg_ctx)
+fill_path :: proc(path: Path, color: Color) {
+    window := current_window()
+    path := path
+    path_translate(&path, global_offset())
+    _process_draw_command(window, Fill_Path_Command{path, color})
+}
 
-//     offset := global_offset()
-//     nvg.Translate(nvg_ctx, offset.x, offset.y)
+measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) {
+    window := current_window()
+    _load_font_if_not_loaded(window, font)
+    backend_measure_text(window, text, font, glyphs, byte_index_to_rune_index)
+}
 
-//     nvg.BeginPath(nvg_ctx)
+font_metrics :: proc(font: Font) -> Font_Metrics {
+    window := current_window()
+    _load_font_if_not_loaded(window, font)
+    return backend_font_metrics(window, font)
+}
 
-//     for sub_path in path.sub_paths {
-//         nvg.MoveTo(nvg_ctx, sub_path.points[0].x, sub_path.points[0].y)
+_load_font_if_not_loaded :: proc(window: ^Window, font: Font) {
+    if font.name not_in window.loaded_fonts {
+        backend_load_font(window, font)
+        window.loaded_fonts[font.name] = {}
+    }
+}
 
-//         for i := 1; i < len(sub_path.points); i += 3 {
-//             c1 := sub_path.points[i]
-//             c2 := sub_path.points[i + 1]
-//             point := sub_path.points[i + 2]
-//             nvg.BezierTo(nvg_ctx,
-//                 c1.x, c1.y,
-//                 c2.x, c2.y,
-//                 point.x, point.y,
-//             )
-//         }
-
-//         if sub_path.is_closed {
-//             nvg.ClosePath(nvg_ctx)
-//         }
-//     }
-
-//     nvg.FillColor(nvg_ctx, color)
-//     nvg.Fill(nvg_ctx)
-
-//     nvg.Restore(nvg_ctx)
-// }
-
-// set_visual_clip_rectangle :: proc(rectangle: Rectangle) {
-//     nvg.Scissor(_current_window.nvg_ctx, rectangle.x, rectangle.y, rectangle.size.x, rectangle.size.y)
-// }
-
-// _load_font :: proc(window: ^Window, font: Font) {
-//     if len(font.data) <= 0 do return
-//     if font.name not_in window.loaded_fonts {
-//         if nvg.CreateFontMem(window.nvg_ctx, font.name, font.data, false) == -1 {
-//             fmt.eprintf("Failed to load font: %v\n", font.name)
-//         } else {
-//             window.loaded_fonts[font.name] = {}
-//         }
-//     }
-// }
+_process_draw_command :: proc(window: ^Window, command: Draw_Command) {
+    if window.is_rendering_draw_commands {
+        backend_render_draw_command(window, command)
+    } else {
+        append(&_current_layer(window).draw_commands, command)
+    }
+}

@@ -32,6 +32,12 @@ Window_Base :: struct {
     was_open: bool,
 }
 
+current_window :: proc() -> ^Window {
+    ctx := gui_context()
+    if len(ctx.window_stack) <= 0 do return nil
+    return ctx.window_stack[len(ctx.window_stack) - 1]
+}
+
 window_init :: proc(window: ^Window, rectangle: Rectangle) {
     window.rectangle = rectangle
     window.actual_rectangle = rectangle
@@ -60,6 +66,22 @@ window_closed :: proc(window: ^Window) -> bool {
     return !window.is_open && window.was_open
 }
 
+window_position :: proc(window: ^Window) -> Vector2 {
+    return window.actual_rectangle.position
+}
+
+window_set_position :: proc(window: ^Window, position: Vector2) {
+    window.rectangle.position = position
+}
+
+window_size :: proc(window: ^Window) -> Vector2 {
+    return window.actual_rectangle.size
+}
+
+window_set_size :: proc(window: ^Window, size: Vector2) {
+    window.rectangle.size = size
+}
+
 window_moved :: proc(window: ^Window) -> bool {
     return window.actual_rectangle.position != window.previous_actual_rectangle.position
 }
@@ -83,18 +105,6 @@ window_show :: proc(window: ^Window) {
 window_hide :: proc(window: ^Window) {
     window.should_hide = true
 }
-
-// measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) -> (ok: bool) {
-//     window := current_window()
-//     load_font(window, font)
-//     return backend_measure_text(window, text, font, glyphs, byte_index_to_rune_index)
-// }
-
-// font_metrics :: proc(font: Font) -> (metrics: Font_Metrics, ok: bool) {
-//     window := current_window()
-//     load_font(window, font)
-//     return backend_font_metrics(window, font)
-// }
 
 @(deferred_in=window_end)
 window_update :: proc(window: ^Window) -> bool {
@@ -172,7 +182,7 @@ window_end :: proc(window: ^Window) {
 
     for layer in window.layers {
         for command in layer.draw_commands {
-            c, is_custom := command.(Draw_Custom_Command)
+            c, is_custom := command.(Custom_Draw_Command)
             if is_custom {
                 begin_clip(c.global_clip_rectangle)
                 begin_offset(c.global_offset)
@@ -197,22 +207,6 @@ window_end :: proc(window: ^Window) {
     if len(ctx.window_stack) > 0 {
         backend_activate_gl_context(ctx.window_stack[len(ctx.window_stack) - 1])
     }
-}
-
-// load_font :: proc(window: ^Window, font: Font) -> (ok: bool) {
-//     if font not_in window.loaded_fonts {
-//         if backend_load_font(window, font) {
-//             window.loaded_fonts[font] = {}
-//             return true
-//         }
-//     }
-//     return false
-// }
-
-current_window :: proc() -> ^Window {
-    ctx := gui_context()
-    if len(ctx.window_stack) <= 0 do return nil
-    return ctx.window_stack[len(ctx.window_stack) - 1]
 }
 
 _open_window :: proc(window: ^Window) {

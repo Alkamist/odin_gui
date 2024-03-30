@@ -1,29 +1,28 @@
 package main
 
 import "base:intrinsics"
-import "core:time"
 
-Id :: u64
+Gui_Id :: u64
 Vector2 :: [2]f32
 
 Layer :: struct {
     local_z_index: int,
     global_z_index: int,
     draw_commands: [dynamic]Draw_Command,
-    final_mouse_hover_request: Id,
+    final_mouse_hover_request: Gui_Id,
 }
 
-gui_id :: proc "contextless" () -> Id {
-    @(static) id: Id
+gui_id :: proc "contextless" () -> Gui_Id {
+    @(static) id: Gui_Id
     return 1 + intrinsics.atomic_add(&id, 1)
 }
 
-mouse_hover :: proc() -> Id {
+mouse_hover :: proc() -> Gui_Id {
     ctx := gui_context()
     return ctx.mouse_hover
 }
 
-mouse_hover_entered :: proc() -> Id {
+mouse_hover_entered :: proc() -> Gui_Id {
     ctx := gui_context()
     if ctx.mouse_hover != ctx.previous_mouse_hover {
         return ctx.mouse_hover
@@ -32,7 +31,7 @@ mouse_hover_entered :: proc() -> Id {
     }
 }
 
-mouse_hover_exited :: proc() -> Id {
+mouse_hover_exited :: proc() -> Gui_Id {
     ctx := gui_context()
     if ctx.mouse_hover != ctx.previous_mouse_hover {
         return ctx.previous_mouse_hover
@@ -41,12 +40,12 @@ mouse_hover_exited :: proc() -> Id {
     }
 }
 
-mouse_hit :: proc() -> Id {
+mouse_hit :: proc() -> Gui_Id {
     ctx := gui_context()
     return ctx.mouse_hit
 }
 
-request_mouse_hover :: proc(id: Id) {
+request_mouse_hover :: proc(id: Gui_Id) {
     _current_layer(current_window()).final_mouse_hover_request = id
 }
 
@@ -60,12 +59,12 @@ release_mouse_hover :: proc() {
     ctx.mouse_hover_capture = 0
 }
 
-keyboard_focus :: proc() -> Id {
+keyboard_focus :: proc() -> Gui_Id {
     ctx := gui_context()
     return ctx.keyboard_focus
 }
 
-set_keyboard_focus :: proc(id: Id) {
+set_keyboard_focus :: proc(id: Gui_Id) {
     ctx := gui_context()
     ctx.keyboard_focus = id
 }

@@ -47,6 +47,10 @@ Keyboard_Key :: enum {
     Pad_Decimal, Print_Screen,
 }
 
+clipboard :: backend_clipboard
+set_clipboard :: backend_set_clipboard
+set_mouse_cursor_style :: backend_set_mouse_cursor_style
+
 input_window_move :: proc(window: ^Window, position: Vector2) {
     window.actual_rectangle.position = position
     window.position = position
