@@ -117,7 +117,7 @@ text_line_destroy :: proc(text: ^Text_Line) {
 
 text_line_update :: proc(text: ^Text_Line) {
     if text.needs_remeasure {
-        measure_text(text.str, text.font, &text.glyphs, &text.byte_index_to_rune_index)
+        measure_string(text.str, text.font, &text.glyphs, &text.byte_index_to_rune_index)
         text.needs_remeasure = false
     }
 
@@ -135,7 +135,7 @@ text_line_draw :: proc(text: ^Text_Line) {
     str, x_compensation := text_visible_string(text)
     position := text.position
     position.x += x_compensation
-    fill_text(str, position, text.font, text.color)
+    fill_string(str, position, text.font, text.color)
 }
 
 text_visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f32) {

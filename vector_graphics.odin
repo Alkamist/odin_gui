@@ -26,7 +26,7 @@ Text_Glyph :: struct {
 Draw_Command :: union {
     Custom_Draw_Command,
     Fill_Path_Command,
-    Fill_Text_Command,
+    Fill_String_Command,
     Clip_Drawing_Command,
 }
 
@@ -41,7 +41,7 @@ Fill_Path_Command :: struct {
     color: Color,
 }
 
-Fill_Text_Command :: struct {
+Fill_String_Command :: struct {
     text: string,
     position: Vector2,
     font: Font,
@@ -78,10 +78,10 @@ draw_custom :: proc(custom: proc()) {
     _process_draw_command(window, Custom_Draw_Command{custom, global_offset(), global_clip_rectangle()})
 }
 
-fill_text :: proc(text: string, position: Vector2, font: Font, color: Color) {
+fill_string :: proc(str: string, position: Vector2, font: Font, color: Color) {
     window := current_window()
     _load_font_if_not_loaded(window, font)
-    _process_draw_command(window, Fill_Text_Command{text, global_offset() + position, font, color})
+    _process_draw_command(window, Fill_String_Command{str, global_offset() + position, font, color})
 }
 
 clip_drawing :: proc(rect: Rectangle) {
@@ -98,10 +98,10 @@ fill_path :: proc(path: Path, color: Color) {
     _process_draw_command(window, Fill_Path_Command{path, color})
 }
 
-measure_text :: proc(text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) {
+measure_string :: proc(str: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) {
     window := current_window()
     _load_font_if_not_loaded(window, font)
-    backend_measure_text(window, text, font, glyphs, byte_index_to_rune_index)
+    backend_measure_string(window, str, font, glyphs, byte_index_to_rune_index)
 }
 
 font_metrics :: proc(font: Font) -> Font_Metrics {

@@ -11,7 +11,7 @@ import "core:strings"
 @(thread_local) _gui_context: Gui_Context
 
 Gui_Context :: struct {
-    update: proc(), // User update code goes in here
+    update: proc(),
 
     tick: time.Tick,
 

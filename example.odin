@@ -56,11 +56,11 @@ main :: proc() {
     defer gui_shutdown()
 
     window_init(&window, {{100, 100}, {400, 300}})
-    window_open(&window)
+    window.should_open = true
     defer window_destroy(&window)
 
     window_init(&window2, {{600, 100}, {400, 300}})
-    window_open(&window2)
+    window2.should_open = true
     defer window_destroy(&window2)
 
     widget_init(&text, consola_13)

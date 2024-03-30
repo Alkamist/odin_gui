@@ -234,12 +234,12 @@ backend_load_font :: proc(window: ^Window, font: Font) {
     }
 }
 
-backend_measure_text :: proc(window: ^Window, text: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) {
+backend_measure_string :: proc(window: ^Window, str: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) {
     nvg_ctx := window.nvg_ctx
 
     clear(glyphs)
 
-    if len(text) == 0 {
+    if len(str) == 0 {
         return
     }
 
@@ -247,10 +247,10 @@ backend_measure_text :: proc(window: ^Window, text: string, font: Font, glyphs: 
     nvg.FontFace(nvg_ctx, font.name)
     nvg.FontSize(nvg_ctx, f32(font.size))
 
-    nvg_positions := make([dynamic]nvg.Glyph_Position, len(text), arena_allocator())
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(str), arena_allocator())
 
     temp_slice := nvg_positions[:]
-    position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, text, &temp_slice)
+    position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, str, &temp_slice)
 
     resize(glyphs, position_count)
 
@@ -314,7 +314,7 @@ backend_render_draw_command :: proc(window: ^Window, command: Draw_Command) {
 
         nvg.Restore(nvg_ctx)
 
-    case Fill_Text_Command:
+    case Fill_String_Command:
         nvg.Save(nvg_ctx)
         position := pixel_snapped(cmd.position)
         nvg.TextAlign(nvg_ctx, .LEFT, .TOP)

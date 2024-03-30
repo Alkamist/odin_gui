@@ -54,9 +54,9 @@ window_destroy :: proc(window: ^Window) {
     delete(window.loaded_fonts)
 }
 
-window_is_open :: proc(window: ^Window) -> bool {
-    return window.is_open
-}
+// window_is_open :: proc(window: ^Window) -> bool {
+//     return window.is_open
+// }
 
 window_opened :: proc(window: ^Window) -> bool {
     return window.is_open && !window.was_open
@@ -66,21 +66,21 @@ window_closed :: proc(window: ^Window) -> bool {
     return !window.is_open && window.was_open
 }
 
-window_position :: proc(window: ^Window) -> Vector2 {
-    return window.actual_rectangle.position
-}
+// window_position :: proc(window: ^Window) -> Vector2 {
+//     return window.actual_rectangle.position
+// }
 
-window_set_position :: proc(window: ^Window, position: Vector2) {
-    window.rectangle.position = position
-}
+// window_set_position :: proc(window: ^Window, position: Vector2) {
+//     window.rectangle.position = position
+// }
 
-window_size :: proc(window: ^Window) -> Vector2 {
-    return window.actual_rectangle.size
-}
+// window_size :: proc(window: ^Window) -> Vector2 {
+//     return window.actual_rectangle.size
+// }
 
-window_set_size :: proc(window: ^Window, size: Vector2) {
-    window.rectangle.size = size
-}
+// window_set_size :: proc(window: ^Window, size: Vector2) {
+//     window.rectangle.size = size
+// }
 
 window_moved :: proc(window: ^Window) -> bool {
     return window.actual_rectangle.position != window.previous_actual_rectangle.position
@@ -90,21 +90,21 @@ window_resized :: proc(window: ^Window) -> bool {
     return window.actual_rectangle.position != window.previous_actual_rectangle.position
 }
 
-window_open :: proc(window: ^Window) {
-    window.should_open = true
-}
+// window_open :: proc(window: ^Window) {
+//     window.should_open = true
+// }
 
-window_close :: proc(window: ^Window) {
-    window.should_close = true
-}
+// window_close :: proc(window: ^Window) {
+//     window.should_close = true
+// }
 
-window_show :: proc(window: ^Window) {
-    window.should_show = true
-}
+// window_show :: proc(window: ^Window) {
+//     window.should_show = true
+// }
 
-window_hide :: proc(window: ^Window) {
-    window.should_hide = true
-}
+// window_hide :: proc(window: ^Window) {
+//     window.should_hide = true
+// }
 
 @(deferred_in=window_end)
 window_update :: proc(window: ^Window) -> bool {
