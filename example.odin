@@ -16,6 +16,7 @@ track_manager: Track_Manager
 
 update :: proc() {
     if window_update(&window) {
+        scoped_clip({{20, 20}, {200, 200}})
         track_manager_update(&track_manager)
         track_manager_draw(&track_manager)
     }

@@ -320,7 +320,11 @@ text_line_draw :: proc(text: ^Text_Line) {
     str, x_compensation := text_visible_string(text)
     position := text.position
     position.x += x_compensation
-    fill_string(str, position, text.font, text.color)
+    if len(text.glyphs) > 0 {
+        fill_string(str, position + {text.glyphs[0].kerning, 0}, text.font, text.color)
+    } else {
+        fill_string(str, position, text.font, text.color)
+    }
 }
 
 text_visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f32) {
@@ -334,7 +338,7 @@ text_visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f
     byte_count := len(text.str)
     if left_byte_index >= byte_count do return "", 0
 
-    x_compensation = text.glyphs[left].kerning
+    x_compensation = text.glyphs[left].position
 
     if right_exclusive >= glyph_count {
         str = text.str[left_byte_index:]
