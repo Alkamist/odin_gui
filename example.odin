@@ -3,7 +3,7 @@ package main
 import "core:fmt"
 import "core:mem"
 
-consola_13 := Font{
+default_font := Font{
     name = "consola_13",
     size = 13,
     data = #load("consola.ttf"),
@@ -12,15 +12,12 @@ consola_13 := Font{
 running := true
 
 window: Window
-window2: Window
-
-text: Editable_Text_Line
+track_manager: Track_Manager
 
 update :: proc() {
     if window_update(&window) {
-        text.position = {100, 100}
-        widget_update(&text)
-        widget_draw(&text)
+        track_manager_update(&track_manager)
+        track_manager_draw(&track_manager)
     }
 
     if window_closed(&window) {
@@ -57,15 +54,19 @@ main :: proc() {
 
     window_init(&window, {{100, 100}, {400, 300}})
     window.should_open = true
+    window.background_color = {0.2, 0.2, 0.2, 1}
     defer window_destroy(&window)
 
-    window_init(&window2, {{600, 100}, {400, 300}})
-    window2.should_open = true
-    defer window_destroy(&window2)
+    track_manager_init(&track_manager)
+    defer track_manager_destroy(&track_manager)
 
-    widget_init(&text, consola_13)
-    defer widget_destroy(&text)
-    text_input_string(&text, "Hello World.")
+    for i in 0 ..< 5 {
+        group := new(Track_Group)
+        track_group_init(group)
+        group.position = {0, f32(i) * 50}
+        text_input_string(&group.name, "Ayy LMao!@")
+        append(&track_manager.groups, group)
+    }
 
     for running {
         gui_update()

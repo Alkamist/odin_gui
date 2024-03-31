@@ -306,6 +306,9 @@ backend_render_draw_command :: proc(window: ^Window, command: Draw_Command) {
 
             if sub_path.is_closed {
                 nvg.ClosePath(nvg_ctx)
+                if sub_path.is_hole {
+                    nvg.PathWinding(nvg_ctx, .CW)
+                }
             }
         }
 
@@ -325,7 +328,7 @@ backend_render_draw_command :: proc(window: ^Window, command: Draw_Command) {
         nvg.Restore(nvg_ctx)
 
     case Clip_Drawing_Command:
-        rect := pixel_snapped(cmd.global_clip_rect)
+        rect := pixel_snapped(cmd.global_clip_rectangle)
         nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
     }
 }

@@ -196,6 +196,77 @@ _slider_clamp_value :: proc(slider: ^Slider) {
 }
 
 //==========================================================================
+// Box Select
+//==========================================================================
+
+Box_Select :: struct {
+    selected: bool,
+    is_active: bool,
+    start: Vector2,
+    finish: Vector2,
+    mouse_button: Mouse_Button,
+}
+
+box_select_update :: proc(box_select: ^Box_Select) {
+    box_select.selected = false
+
+    mp := mouse_position()
+
+    if mouse_pressed(box_select.mouse_button) {
+        box_select.is_active = true
+        box_select.start = mp
+        box_select.finish = mp
+    }
+
+    if box_select.is_active {
+        if mouse_down(box_select.mouse_button) {
+            box_select.finish = mp
+        }
+
+        if mouse_released(box_select.mouse_button) {
+            box_select.is_active = false
+            box_select.selected = true
+        }
+    }
+}
+
+box_select_draw :: proc(box_select: ^Box_Select) {
+    if box_select.is_active {
+        pixel := pixel_size()
+        outer := box_select_rectangle(box_select)
+        inner := rectangle_expanded(outer, -pixel)
+
+        background_path := temp_path()
+        path_rectangle(&background_path, inner)
+        fill_path(background_path, {0, 0, 0, 0.3})
+
+        outline_path := temp_path()
+
+        outer.size.x = max(outer.size.x, pixel.x)
+        outer.size.y = max(outer.size.y, pixel.y)
+        path_rectangle(&outline_path, outer)
+
+        if inner.size.x > 0 && inner.size.y > 0 {
+            path_rectangle(&outline_path, inner, true)
+        }
+
+        fill_path(outline_path, {1, 1, 1, 0.3})
+    }
+}
+
+box_select_rectangle :: proc(box_select: ^Box_Select) -> Rectangle {
+    position := Vector2{
+        min(box_select.start.x, box_select.finish.x),
+        min(box_select.start.y, box_select.finish.y),
+    }
+    bottom_right := Vector2{
+        max(box_select.start.x, box_select.finish.x),
+        max(box_select.start.y, box_select.finish.y),
+    }
+    return {position, bottom_right - position}
+}
+
+//==========================================================================
 // Text Line
 //
 // This is a simple text line that measures itself and
@@ -263,7 +334,7 @@ text_visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f
     byte_count := len(text.str)
     if left_byte_index >= byte_count do return "", 0
 
-    x_compensation = text.glyphs[left].position
+    x_compensation = text.glyphs[left].kerning
 
     if right_exclusive >= glyph_count {
         str = text.str[left_byte_index:]
@@ -486,6 +557,10 @@ text_end_drag_selection :: proc(text: ^Editable_Text_Line) {
 }
 
 text_edit_with_mouse :: proc(text: ^Editable_Text_Line) {
+    if mouse_hover_exited() == text.id {
+        set_mouse_cursor_style(.Arrow)
+    }
+
     if !text.is_editable do return
 
     if rectangle_hit_test(clip_rectangle(), mouse_position()) {
@@ -494,10 +569,6 @@ text_edit_with_mouse :: proc(text: ^Editable_Text_Line) {
 
     if mouse_hover_entered() == text.id {
         set_mouse_cursor_style(.I_Beam)
-    }
-
-    if mouse_hover_exited() == text.id {
-        set_mouse_cursor_style(.Arrow)
     }
 
     is_hover := mouse_hover() == text.id
@@ -743,27 +814,22 @@ _quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
 // Overloads
 //==========================================================================
 
-widget_init :: proc {
-    button_base_init,
-    button_init,
+text_init :: proc {
     text_line_init,
     editable_text_line_init,
 }
 
-widget_destroy :: proc {
+text_destroy :: proc {
     text_line_destroy,
     editable_text_line_destroy,
 }
 
-widget_update :: proc {
-    button_base_update,
-    button_update,
+text_update :: proc {
     text_line_update,
     editable_text_line_update,
 }
 
-widget_draw :: proc {
-    button_draw,
+text_draw :: proc {
     text_line_draw,
     editable_text_line_draw,
 }

@@ -49,7 +49,7 @@ Fill_String_Command :: struct {
 }
 
 Clip_Drawing_Command :: struct {
-    global_clip_rect: Rectangle,
+    global_clip_rectangle: Rectangle,
 }
 
 pixel_size :: proc() -> Vector2 {
@@ -69,8 +69,8 @@ vector2_pixel_snapped :: proc(position: Vector2) -> Vector2 {
     }
 }
 
-rectangle_pixel_snapped :: proc(rect: Rectangle) -> Rectangle {
-    return rectangle_snapped(rect, pixel_size())
+rectangle_pixel_snapped :: proc(rectangle: Rectangle) -> Rectangle {
+    return rectangle_snapped(rectangle, pixel_size())
 }
 
 draw_custom :: proc(custom: proc()) {
@@ -84,11 +84,11 @@ fill_string :: proc(str: string, position: Vector2, font: Font, color: Color) {
     _process_draw_command(window, Fill_String_Command{str, global_offset() + position, font, color})
 }
 
-clip_drawing :: proc(rect: Rectangle) {
+clip_drawing :: proc(rectangle: Rectangle) {
     window := current_window()
-    rect := rect
-    rect.position += global_offset()
-    _process_draw_command(window, Clip_Drawing_Command{rect})
+    rectangle := rectangle
+    rectangle.position += global_offset()
+    _process_draw_command(window, Clip_Drawing_Command{rectangle})
 }
 
 fill_path :: proc(path: Path, color: Color) {
@@ -108,6 +108,40 @@ font_metrics :: proc(font: Font) -> Font_Metrics {
     window := current_window()
     _load_font_if_not_loaded(window, font)
     return backend_font_metrics(window, font)
+}
+
+fill_rectangle :: proc(rectangle: Rectangle, color: Color) {
+    path := temp_path()
+    path_rectangle(&path, rectangle)
+    fill_path(path, color)
+}
+
+outline_rectangle :: proc(rectangle: Rectangle, thickness: f32, color: Color) {
+    path := temp_path()
+    path_rectangle(&path, rectangle)
+    path_rectangle(&path, rectangle_expanded(rectangle, -thickness), true)
+    fill_path(path, color)
+}
+
+pixel_outline_rectangle :: proc(rectangle: Rectangle, color: Color) {
+    outline_rectangle(rectangle, pixel_size().x, color)
+}
+
+fill_rounded_rectangle :: proc(rectangle: Rectangle, radius: f32, color: Color) {
+    path := temp_path()
+    path_rounded_rectangle(&path, rectangle, radius)
+    fill_path(path, color)
+}
+
+outline_rounded_rectangle :: proc(rectangle: Rectangle, radius, thickness: f32, color: Color) {
+    path := temp_path()
+    path_rounded_rectangle(&path, rectangle, radius)
+    path_rounded_rectangle(&path, rectangle_expanded(rectangle, -thickness), radius, true)
+    fill_path(path, color)
+}
+
+pixel_outline_rounded_rectangle :: proc(rectangle: Rectangle, radius: f32, color: Color) {
+    outline_rounded_rectangle(rectangle, radius, pixel_size().x, color)
 }
 
 _load_font_if_not_loaded :: proc(window: ^Window, font: Font) {
