@@ -3,26 +3,40 @@ package main
 import "core:fmt"
 import "core:mem"
 
-default_font := Font{
-    name = "consola_13",
-    size = 13,
-    data = #load("consola.ttf"),
-}
+// default_font := Font{
+//     name = "consola_13",
+//     size = 13,
+//     data = #load("consola.ttf"),
+// }
 
 running := true
 
-window: Window
-track_manager: Track_Manager
+window1 := get_id()
+window2 := get_id()
 
 update :: proc() {
-    if window_update(&window) {
-        scoped_clip({{20, 20}, {200, 200}})
-        track_manager_update(&track_manager)
-        track_manager_draw(&track_manager)
+    if window(window1, {{100, 200}, {400, 300}}, "Window 1") {
+        fill_rectangle({{50, 50}, {50, 50}}, {1, 0, 0, 1})
+
+        if window(window2, {{600, 200}, {400, 300}}, "Window 2") {
+            fill_rectangle({{50, 50}, {50, 50}}, {0, 1, 0, 1})
+        }
     }
 
-    if window_closed(&window) {
+    if key_pressed(.D) {
         running = false
+    }
+
+    if key_pressed(.A) {
+        ctx := gui_context()
+        w := ctx.windows[window1]
+        w.should_close = true
+    }
+
+    if key_pressed(.S) {
+        ctx := gui_context()
+        w := ctx.windows[window2]
+        w.should_close = true
     }
 }
 
@@ -52,22 +66,6 @@ main :: proc() {
 
     gui_startup(update)
     defer gui_shutdown()
-
-    window_init(&window, {{100, 100}, {400, 300}})
-    window.should_open = true
-    window.background_color = {0.2, 0.2, 0.2, 1}
-    defer window_destroy(&window)
-
-    track_manager_init(&track_manager)
-    defer track_manager_destroy(&track_manager)
-
-    for i in 0 ..< 5 {
-        group := new(Track_Group)
-        track_group_init(group)
-        group.position = {0, f32(i) * 50}
-        text_input_string(&group.name, "Ayy LMao!@")
-        append(&track_manager.groups, group)
-    }
 
     for running {
         gui_update()

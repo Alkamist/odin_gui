@@ -4,6 +4,7 @@ import "base:runtime"
 import "base:intrinsics"
 import "core:c"
 import "core:fmt"
+import "core:time"
 import "core:strings"
 import utf8 "core:unicode/utf8"
 import gl "vendor:OpenGL"
@@ -30,14 +31,16 @@ Window :: struct {
     using base: Window_Base,
 
     title: string,
-    min_size: Maybe(Vector2),
-    max_size: Maybe(Vector2),
     swap_interval: int,
     dark_mode: bool,
+    is_visible: bool,
     is_resizable: bool,
     double_buffer: bool,
     child_kind: Window_Child_Kind,
     parent_handle: Window_Native_Handle,
+    min_size: Maybe(Vector2),
+    max_size: Maybe(Vector2),
+    background_color: Color,
 
     timer_id: uintptr,
     view: ^pugl.View,
@@ -58,8 +61,8 @@ backend_startup :: proc() {
         return 1 + intrinsics.atomic_add(&id, 1)
     }
 
-    world_id := fmt.aprint("WindowThread", _generate_world_id(), arena_allocator())
-    world_id_cstring := strings.clone_to_cstring(world_id, arena_allocator())
+    world_id := fmt.aprint("WindowThread", _generate_world_id(), context.temp_allocator)
+    world_id_cstring := strings.clone_to_cstring(world_id, context.temp_allocator)
 
     pugl.SetWorldString(_pugl_world, .CLASS_NAME, world_id_cstring)
 }
@@ -75,14 +78,72 @@ backend_poll_events :: proc() {
     pugl.Update(_pugl_world, 0)
 }
 
-backend_init_window :: proc(window: ^Window) {
-    window.dark_mode = true
-    window.is_visible = true
-    window.is_resizable = true
-    window.double_buffer = true
+window_begin :: proc(
+    id: Id,
+    initial_rectangle: Rectangle,
+    title := "",
+    color := Color{0, 0, 0, 1},
+    is_visible := true,
+    is_resizable := true,
+    min_size: Maybe(Vector2) = nil,
+    max_size: Maybe(Vector2) = nil,
+) -> bool {
+    window_base_init(id, {
+        content_scale = {1, 1},
+        should_open = true,
+        rectangle = initial_rectangle,
+        title = title,
+        swap_interval = 0,
+        dark_mode = true,
+        is_visible = is_visible,
+        is_resizable = is_resizable,
+        double_buffer = true,
+        child_kind = .None,
+        parent_handle = nil,
+        min_size = min_size,
+        max_size = max_size,
+        background_color = color,
+    })
+    return window_base_begin(id)
 }
 
-backend_destroy_window :: proc(window: ^Window) {
+window_end :: proc() {
+    window_base_end()
+}
+
+@(deferred_none=window_end)
+window :: proc(
+    id: Id,
+    initial_rectangle: Rectangle,
+    title := "",
+    color := Color{0, 0, 0, 1},
+    is_visible := true,
+    is_resizable := true,
+    min_size: Maybe(Vector2) = nil,
+    max_size: Maybe(Vector2) = nil,
+) -> bool {
+    return window_begin(id, initial_rectangle, title, color, is_visible, is_resizable, min_size, max_size)
+}
+
+backend_window_begin_frame :: proc(window: ^Window) {
+    if !window.is_open do return
+
+    pugl.EnterContext(window.view)
+
+    size := window.size
+    window.content_scale = f32(pugl.GetScaleFactor(window.view))
+
+    bg := window.background_color
+    gl.Viewport(0, 0, i32(size.x), i32(size.y))
+    gl.ClearColor(bg.r, bg.g, bg.b, bg.a)
+    gl.Clear(gl.COLOR_BUFFER_BIT)
+
+    nvg.BeginFrame(window.nvg_ctx, size.x, size.y, window.content_scale.x)
+}
+
+backend_window_end_frame :: proc(window: ^Window) {
+    if !window.is_open do return
+    nvg.EndFrame(window.nvg_ctx)
 }
 
 backend_open_window :: proc(window: ^Window) {
@@ -92,7 +153,7 @@ backend_open_window :: proc(window: ^Window) {
 
     view := pugl.NewView(_pugl_world)
 
-    title_cstring, err := strings.clone_to_cstring(window.title, arena_allocator())
+    title_cstring, err := strings.clone_to_cstring(window.title, context.temp_allocator)
     if err != nil do return
 
     pugl.SetViewString(view, .WINDOW_TITLE, title_cstring)
@@ -165,52 +226,35 @@ backend_close_window :: proc(window: ^Window) {
     window.view = nil
 }
 
-backend_window_native_handle :: proc(window: ^Window) -> Window_Native_Handle {
-    return cast(rawptr)pugl.GetNativeView(window.view)
-}
-
-backend_show_window :: proc(window: ^Window) {
-    pugl.Show(window.view, .RAISE)
-}
-
-backend_hide_window :: proc(window: ^Window) {
-    pugl.Hide(window.view)
-}
-
-backend_set_window_position :: proc(window: ^Window, position: Vector2) {
-    pugl.SetPosition(window.view, i32(position.x), i32(position.y))
-    pugl.EnterContext(window.view)
-}
-
-backend_set_window_size :: proc(window: ^Window, size: Vector2) {
-    pugl.SetSize(window.view, c.uint(size.x), c.uint(size.y))
-    pugl.EnterContext(window.view)
-}
-
 backend_activate_gl_context :: proc(window: ^Window) {
     pugl.EnterContext(window.view)
 }
 
-backend_begin_window :: proc(window: ^Window) {
-    size := window.actual_rectangle.size
-    scale := f32(pugl.GetScaleFactor(window.view))
-    input_window_content_scale(window, {scale, scale})
+// backend_window_native_handle :: proc(window: ^Window) -> Window_Native_Handle {
+//     return cast(rawptr)pugl.GetNativeView(window.view)
+// }
 
-    bg := window.background_color
-    gl.Viewport(0, 0, i32(size.x), i32(size.y))
-    gl.ClearColor(bg.r, bg.g, bg.b, bg.a)
-    gl.Clear(gl.COLOR_BUFFER_BIT)
+// backend_show_window :: proc(window: ^Window) {
+//     pugl.Show(window.view, .RAISE)
+// }
 
-    nvg.BeginFrame(window.nvg_ctx, size.x, size.y, window.content_scale.x)
-}
+// backend_hide_window :: proc(window: ^Window) {
+//     pugl.Hide(window.view)
+// }
 
-backend_end_window :: proc(window: ^Window) {
-    nvg.EndFrame(window.nvg_ctx)
-}
+// backend_set_window_position :: proc(window: ^Window, position: Vector2) {
+//     pugl.SetPosition(window.view, i32(position.x), i32(position.y))
+//     pugl.EnterContext(window.view)
+// }
 
-backend_set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) {
-    pugl.SetCursor(current_window().view, _cursor_style_to_pugl_cursor(style))
-}
+// backend_set_window_size :: proc(window: ^Window, size: Vector2) {
+//     pugl.SetSize(window.view, c.uint(size.x), c.uint(size.y))
+//     pugl.EnterContext(window.view)
+// }
+
+// backend_set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) {
+//     pugl.SetCursor(current_window().view, _cursor_style_to_pugl_cursor(style))
+// }
 
 backend_clipboard :: proc() -> string {
     length: uint
@@ -222,7 +266,7 @@ backend_clipboard :: proc() -> string {
 }
 
 backend_set_clipboard :: proc(data: string) {
-    data_cstring, err := strings.clone_to_cstring(data, arena_allocator())
+    data_cstring, err := strings.clone_to_cstring(data, context.temp_allocator)
     if err != nil do return
     pugl.SetClipboard(current_window().view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1)
 }
@@ -247,7 +291,7 @@ backend_measure_string :: proc(window: ^Window, str: string, font: Font, glyphs:
     nvg.FontFace(nvg_ctx, font.name)
     nvg.FontSize(nvg_ctx, f32(font.size))
 
-    nvg_positions := make([dynamic]nvg.Glyph_Position, len(str), arena_allocator())
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(str), context.temp_allocator)
 
     temp_slice := nvg_positions[:]
     position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, str, &temp_slice)
@@ -278,13 +322,6 @@ backend_font_metrics :: proc(window: ^Window, font: Font) -> (metrics: Font_Metr
 backend_render_draw_command :: proc(window: ^Window, command: Draw_Command) {
     nvg_ctx := window.nvg_ctx
     switch cmd in command {
-    case Custom_Draw_Command:
-        if cmd.custom != nil {
-            nvg.Save(nvg_ctx)
-            cmd.custom()
-            nvg.Restore(nvg_ctx)
-        }
-
     case Fill_Path_Command:
         nvg.Save(nvg_ctx)
 
@@ -357,67 +394,51 @@ _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Stat
 
     case .CONFIGURE:
         event := event.configure
+        window.position = Vector2{f32(event.x), f32(event.y)}
+        window.size = Vector2{f32(event.width), f32(event.height)}
 
-        position := Vector2{f32(event.x), f32(event.y)}
-        size := Vector2{f32(event.width), f32(event.height)}
+    // case .POINTER_IN:
+    //     context_update(ctx)
+    //     pugl.PostRedisplay(view)
 
-        input_window_move(window, position)
-
-        if size != window.actual_rectangle.size {
-            was_set_by_user := window.size != window.actual_rectangle.size
-            input_window_size(window, {f32(event.width), f32(event.height)})
-
-            // Update the context while avoiding recursion.
-            if !was_set_by_user {
-                _context_update(ctx)
-                pugl.PostRedisplay(view)
-            }
-        }
-
-    case .POINTER_IN:
-        input_window_mouse_enter(window)
-        _context_update(ctx)
-        pugl.PostRedisplay(view)
-
-    case .POINTER_OUT:
-        input_window_mouse_exit(window)
-        _context_update(ctx)
-        pugl.PostRedisplay(view)
+    // case .POINTER_OUT:
+    //     context_update(ctx)
+    //     pugl.PostRedisplay(view)
 
     case .MOTION:
         event := event.motion
         input_mouse_move(ctx, {f32(event.xRoot), f32(event.yRoot)})
-        _context_update(ctx)
+        context_update(ctx)
         pugl.PostRedisplay(view)
 
     case .SCROLL:
         event := &event.scroll
         input_mouse_scroll(ctx, {f32(event.dx), f32(event.dy)})
-        _context_update(ctx)
+        context_update(ctx)
         pugl.PostRedisplay(view)
 
     case .BUTTON_PRESS:
         event := &event.button
         input_mouse_press(ctx, _pugl_button_to_mouse_button(event.button))
-        _context_update(ctx)
+        context_update(ctx)
         pugl.PostRedisplay(view)
 
     case .BUTTON_RELEASE:
         event := &event.button
         input_mouse_release(ctx, _pugl_button_to_mouse_button(event.button))
-        _context_update(ctx)
+        context_update(ctx)
         pugl.PostRedisplay(view)
 
     case .KEY_PRESS:
         event := &event.key
         input_key_press(ctx, _pugl_key_event_to_keyboard_key(event))
-        _context_update(ctx)
+        context_update(ctx)
         pugl.PostRedisplay(view)
 
     case .KEY_RELEASE:
         event := &event.key
         input_key_release(ctx, _pugl_key_event_to_keyboard_key(event))
-        _context_update(ctx)
+        context_update(ctx)
         pugl.PostRedisplay(view)
 
     case .TEXT:
@@ -432,12 +453,12 @@ _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Stat
         if !skip {
             r, len := utf8.decode_rune(event.string[:4])
             input_rune(ctx, r)
-            _context_update(ctx)
+            context_update(ctx)
             pugl.PostRedisplay(view)
         }
 
-    case .CLOSE:
-        window.should_close = true
+    // case .CLOSE:
+    //     window.should_close = true
     }
 
     return .SUCCESS
