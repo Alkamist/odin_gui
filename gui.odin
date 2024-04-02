@@ -53,9 +53,6 @@ Context :: struct {
     last_id: Id,
     is_first_frame: bool,
 
-    // container_stack: [dynamic]Id,
-    // containers: map[Id]Container,
-
     window_stack: [dynamic]Id,
     windows: map[Id]^Window,
 
@@ -69,7 +66,6 @@ gui_context :: proc() -> ^Context {
 
 gui_startup :: proc(update: proc()) {
     ctx := gui_context()
-    _remake_input_buffers(ctx)
     ctx.update = update
     ctx.mouse_repeat_duration = 300 * time.Millisecond
     ctx.mouse_repeat_movement_tolerance = 3
@@ -89,12 +85,18 @@ gui_shutdown :: proc() {
     }
     backend_shutdown()
     delete(ctx.windows)
-    free_all(context.temp_allocator)
+    delete(ctx.mouse_presses)
+    delete(ctx.mouse_releases)
+    delete(ctx.key_presses)
+    delete(ctx.key_repeats)
+    delete(ctx.key_releases)
+    strings.builder_destroy(&ctx.text_input)
 }
 
 gui_update :: proc() {
     context_update(gui_context())
     backend_poll_events()
+    free_all(context.temp_allocator)
 }
 
 context_update :: proc(ctx: ^Context) {
@@ -105,7 +107,7 @@ context_update :: proc(ctx: ^Context) {
         ctx.previous_global_mouse_position = ctx.global_mouse_position
     }
 
-    ctx.window_stack = make([dynamic]Id, allocator = context.temp_allocator)
+    ctx.window_stack = make([dynamic]Id, context.temp_allocator)
 
     if ctx.update != nil {
         ctx.update()
@@ -117,18 +119,12 @@ context_update :: proc(ctx: ^Context) {
 
     ctx.is_first_frame = false
 
-    free_all(context.temp_allocator)
-
-    _remake_input_buffers(ctx)
-}
-
-_remake_input_buffers :: proc(ctx: ^Context) {
-    ctx.mouse_presses = make([dynamic]Mouse_Button, context.temp_allocator)
-    ctx.mouse_releases = make([dynamic]Mouse_Button, context.temp_allocator)
-    ctx.key_presses = make([dynamic]Keyboard_Key, context.temp_allocator)
-    ctx.key_repeats = make([dynamic]Keyboard_Key, context.temp_allocator)
-    ctx.key_releases = make([dynamic]Keyboard_Key, context.temp_allocator)
-    strings.builder_init(&ctx.text_input, context.temp_allocator)
+    clear(&ctx.mouse_presses)
+    clear(&ctx.mouse_releases)
+    clear(&ctx.key_presses)
+    clear(&ctx.key_repeats)
+    clear(&ctx.key_releases)
+    strings.builder_reset(&ctx.text_input)
 }
 
 //==========================================================================
@@ -341,43 +337,59 @@ text_input :: proc() -> string {
 // Container
 //==========================================================================
 
-// Container :: struct {
-//     position: Vector2,
-//     global_position: Vector2,
-//     size: Vector2,
-//     z_index: int,
-//     global_z_index: int,
-//     // draw_commands: [dynamic]Draw_Command,
-// }
+Container :: struct {
+    using rectangle: Rectangle, // Window coordinates
+    z_index: int,
+    draw_commands: [dynamic]Draw_Command,
+    child_containers: [dynamic]Container,
+}
 
-// current_container :: proc() -> ^Container {
-//     ctx := gui_context()
-//     if len(ctx.container_stack) <= 0 do return nil
-//     return &ctx.containers[ctx.container_stack[len(ctx.container_stack) - 1]]
-// }
+container_begin :: proc(rectangle: Rectangle, z_index := 0) {
+    container := Container{}
+    container.z_index = z_index
 
-// container_begin :: proc(id: Id) -> bool {
-//     ctx := gui_context()
+    parent := _current_container()
+    if parent != nil {
+        container.position = parent.position + rectangle.position
+    } else {
+        container.position = rectangle.position
+    }
 
-//     container, exists := &ctx.containers[id]
-//     if !exists {
-//         ctx.containers[id] = Container{}
-//     }
+    container.draw_commands = make([dynamic]Draw_Command, context.temp_allocator)
+    container.child_containers = make([dynamic]Container, context.temp_allocator)
 
-//     append(&ctx.container_stack, id)
+    window := current_window()
+    append(&window.container_stack, container)
+}
 
-//     return true
-// }
+container_end :: proc() {
+    window := current_window()
 
-// container_end :: proc() {
-//     ctx := gui_context()
-//     pop(&ctx.container_stack)
-// }
+    container := _current_container()
 
-// @(deferred_none=container_end)
-// container :: proc(id: Id) -> bool {
-//     return container_begin(id)
-// }
+    pop(&window.container_stack)
+
+    parent := _current_container()
+    if parent != nil {
+        append(&parent.child_containers, container^)
+    } else {
+        window := current_window()
+        if window != nil {
+            append(&window.containers, container^)
+        }
+    }
+}
+
+@(deferred_none=container_end)
+container :: proc(rectangle: Rectangle, z_index := 0) {
+    container_begin(rectangle, z_index)
+}
+
+_current_container :: proc() -> ^Container {
+    window := current_window()
+    if len(window.container_stack) <= 0 do return nil
+    return &window.container_stack[len(window.container_stack) - 1]
+}
 
 //==========================================================================
 // Window
@@ -388,21 +400,19 @@ Window_Base :: struct {
     is_open: bool,
     should_open: bool,
     should_close: bool,
+    is_focused: bool,
+    is_mouse_hovered: bool,
     content_scale: Vector2,
     loaded_fonts: map[string]struct{},
     child_windows: [dynamic]Id,
+    container_stack: [dynamic]Container,
+    containers: [dynamic]Container,
 }
 
 current_window :: proc() -> ^Window {
     ctx := gui_context()
     if len(ctx.window_stack) <= 0 do return nil
     return ctx.windows[ctx.window_stack[len(ctx.window_stack) - 1]]
-}
-
-parent_window :: proc() -> ^Window {
-    ctx := gui_context()
-    if len(ctx.window_stack) <= 1 do return nil
-    return ctx.windows[ctx.window_stack[len(ctx.window_stack) - 2]]
 }
 
 window_base_init :: proc(id: Id, initial_state: Window) {
@@ -415,20 +425,24 @@ window_base_init :: proc(id: Id, initial_state: Window) {
 }
 
 window_base_begin :: proc(id: Id) -> bool {
+    parent := current_window()
+
     ctx := gui_context()
     append(&ctx.window_stack, id)
 
     window := current_window()
+    window.container_stack = make([dynamic]Container, context.temp_allocator)
+    window.containers = make([dynamic]Container, context.temp_allocator)
 
     clear(&window.child_windows)
     backend_window_begin_frame(window)
 
     if window.is_open {
         backend_activate_gl_context(window)
-        parent := parent_window()
         if parent != nil {
             append(&parent.child_windows, id)
         }
+        container_begin({{0, 0}, window.size}, 0)
     }
 
     return window.is_open
@@ -438,6 +452,14 @@ window_base_end :: proc() {
     ctx := gui_context()
 
     window := current_window()
+
+    if window.is_open {
+        container_end()
+        for container in window.containers {
+            _window_render_container(window, container)
+        }
+    }
+
     backend_window_end_frame(window)
 
     if window.should_open {
@@ -479,6 +501,18 @@ _window_close :: proc(window: ^Window) {
     }
 }
 
+_window_render_container :: proc(window: ^Window, container: Container) {
+    for command in container.draw_commands {
+        backend_render_draw_command(window, container.position, command)
+    }
+    slice.stable_sort_by(container.child_containers[:], proc(i, j: Container) -> bool {
+        return i.z_index < j.z_index
+    })
+    for child in container.child_containers {
+        _window_render_container(window, child)
+    }
+}
+
 //==========================================================================
 // Vector Graphics
 //==========================================================================
@@ -507,7 +541,7 @@ Text_Glyph :: struct {
 Draw_Command :: union {
     Fill_Path_Command,
     Fill_String_Command,
-    Clip_Drawing_Command,
+    Set_Clip_Rectangle_Command,
 }
 
 Fill_Path_Command :: struct {
@@ -522,7 +556,7 @@ Fill_String_Command :: struct {
     color: Color,
 }
 
-Clip_Drawing_Command :: struct {
+Set_Clip_Rectangle_Command :: struct {
     global_clip_rectangle: Rectangle,
 }
 
@@ -550,19 +584,18 @@ rectangle_pixel_snapped :: proc(rectangle: Rectangle) -> Rectangle {
 fill_string :: proc(str: string, position: Vector2, font: Font, color: Color) {
     window := current_window()
     _load_font_if_not_loaded(window, font)
-    backend_render_draw_command(window, Fill_String_Command{str, position, font, color})
+    container := _current_container()
+    append(&container.draw_commands, Fill_String_Command{str, position, font, color})
 }
 
-clip_drawing :: proc(rectangle: Rectangle) {
-    window := current_window()
-    backend_render_draw_command(window, Clip_Drawing_Command{rectangle})
+set_clip_rectangle :: proc(rectangle: Rectangle) {
+    container := _current_container()
+    append(&container.draw_commands, Set_Clip_Rectangle_Command{rectangle})
 }
 
 fill_path :: proc(path: Path, color: Color) {
-    window := current_window()
-    // path := path
-    // path_translate(&path, global_offset())
-    backend_render_draw_command(window, Fill_Path_Command{path, color})
+    container := _current_container()
+    append(&container.draw_commands, Fill_Path_Command{path, color})
 }
 
 measure_string :: proc(str: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) {

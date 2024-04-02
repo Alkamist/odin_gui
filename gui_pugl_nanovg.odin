@@ -153,8 +153,7 @@ backend_open_window :: proc(window: ^Window) {
 
     view := pugl.NewView(_pugl_world)
 
-    title_cstring, err := strings.clone_to_cstring(window.title, context.temp_allocator)
-    if err != nil do return
+    title_cstring := strings.clone_to_cstring(window.title, context.temp_allocator)
 
     pugl.SetViewString(view, .WINDOW_TITLE, title_cstring)
     pugl.SetSizeHint(view, .DEFAULT_SIZE, u16(window.size.x), u16(window.size.y))
@@ -266,8 +265,7 @@ backend_clipboard :: proc() -> string {
 }
 
 backend_set_clipboard :: proc(data: string) {
-    data_cstring, err := strings.clone_to_cstring(data, context.temp_allocator)
-    if err != nil do return
+    data_cstring := strings.clone_to_cstring(data, context.temp_allocator)
     pugl.SetClipboard(current_window().view, "text/plain", cast(rawptr)data_cstring, len(data_cstring) + 1)
 }
 
@@ -319,8 +317,11 @@ backend_font_metrics :: proc(window: ^Window, font: Font) -> (metrics: Font_Metr
     return
 }
 
-backend_render_draw_command :: proc(window: ^Window, command: Draw_Command) {
+backend_render_draw_command :: proc(window: ^Window, offset: Vector2, command: Draw_Command) {
     nvg_ctx := window.nvg_ctx
+
+    nvg.Translate(nvg_ctx, offset.x, offset.y)
+
     switch cmd in command {
     case Fill_Path_Command:
         nvg.Save(nvg_ctx)
@@ -364,10 +365,12 @@ backend_render_draw_command :: proc(window: ^Window, command: Draw_Command) {
         nvg.Text(nvg_ctx, position.x, position.y, cmd.text)
         nvg.Restore(nvg_ctx)
 
-    case Clip_Drawing_Command:
+    case Set_Clip_Rectangle_Command:
         rect := pixel_snapped(cmd.global_clip_rectangle)
         nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
     }
+
+    nvg.Translate(nvg_ctx, -offset.x, -offset.y)
 }
 
 _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {
@@ -397,13 +400,17 @@ _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Stat
         window.position = Vector2{f32(event.x), f32(event.y)}
         window.size = Vector2{f32(event.width), f32(event.height)}
 
-    // case .POINTER_IN:
-    //     context_update(ctx)
-    //     pugl.PostRedisplay(view)
+    case .POINTER_IN:
+        window.is_mouse_hovered = true
 
-    // case .POINTER_OUT:
-    //     context_update(ctx)
-    //     pugl.PostRedisplay(view)
+    case .POINTER_OUT:
+        window.is_mouse_hovered = false
+
+    case .FOCUS_IN:
+        window.is_focused = true
+
+    case .FOCUS_OUT:
+        window.is_focused = false
 
     case .MOTION:
         event := event.motion
@@ -457,8 +464,8 @@ _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Stat
             pugl.PostRedisplay(view)
         }
 
-    // case .CLOSE:
-    //     window.should_close = true
+    case .CLOSE:
+        window.should_close = true
     }
 
     return .SUCCESS

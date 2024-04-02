@@ -18,6 +18,15 @@ update :: proc() {
     if window(window1, {{100, 200}, {400, 300}}, "Window 1") {
         fill_rectangle({{50, 50}, {50, 50}}, {1, 0, 0, 1})
 
+        {
+            container({{50, 50}, {200, 200}})
+            fill_rectangle({{50, 50}, {50, 50}}, {0, 0, 1, 1})
+        }
+
+        if key_pressed(.A) {
+            fmt.println("Yee")
+        }
+
         if window(window2, {{600, 200}, {400, 300}}, "Window 2") {
             fill_rectangle({{50, 50}, {50, 50}}, {0, 1, 0, 1})
         }
@@ -25,18 +34,6 @@ update :: proc() {
 
     if key_pressed(.D) {
         running = false
-    }
-
-    if key_pressed(.A) {
-        ctx := gui_context()
-        w := ctx.windows[window1]
-        w.should_close = true
-    }
-
-    if key_pressed(.S) {
-        ctx := gui_context()
-        w := ctx.windows[window2]
-        w.should_close = true
     }
 }
 
