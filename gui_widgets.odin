@@ -1,17 +1,17 @@
 package main
 
-import "base:runtime"
-import "core:time"
-import "core:strings"
-import utf8 "core:unicode/utf8"
-import core_text_edit "core:text/edit"
+// import "base:runtime"
+// import "core:time"
+// import "core:strings"
+// import utf8 "core:unicode/utf8"
+// import core_text_edit "core:text/edit"
 
 // //==========================================================================
 // // Button
 // //==========================================================================
 
 // Button_Base :: struct {
-//     id: Gui_Id,
+//     id: Id,
 //     using rectangle: Rectangle,
 //     is_down: bool,
 //     pressed: bool,
@@ -20,7 +20,7 @@ import core_text_edit "core:text/edit"
 // }
 
 // button_base_init :: proc(button: ^Button_Base) {
-//     button.id = gui_id()
+//     button.id = get_id()
 // }
 
 // button_base_update :: proc(button: ^Button_Base, press, release: bool) {
@@ -28,7 +28,7 @@ import core_text_edit "core:text/edit"
 //     button.released = false
 //     button.clicked = false
 
-//     if rectangle_hit_test(button, mouse_position()) {
+//     if mouse_hit_test(button) {
 //         request_mouse_hover(button.id)
 //     }
 
@@ -86,7 +86,7 @@ import core_text_edit "core:text/edit"
 // //==========================================================================
 
 // Slider :: struct {
-//     id: Gui_Id,
+//     id: Id,
 //     using rectangle: Rectangle,
 //     held: bool,
 //     value: f32,
@@ -100,7 +100,7 @@ import core_text_edit "core:text/edit"
 // }
 
 // slider_init :: proc(slider: ^Slider) {
-//     slider.id = gui_id()
+//     slider.id = get_id()
 //     slider.size = Vector2{300, 24}
 //     slider.max_value = 1
 //     slider.handle_length = 16
@@ -413,7 +413,7 @@ import core_text_edit "core:text/edit"
 
 // Editable_Text_Line :: struct {
 //     using text_line: Text_Line,
-//     id: Gui_Id,
+//     id: Id,
 //     builder: strings.Builder,
 //     caret_color: Color,
 //     focused_selection_color: Color,
@@ -437,7 +437,7 @@ import core_text_edit "core:text/edit"
 //         set_clipboard(data)
 //         return true
 //     }
-//     text.id = gui_id()
+//     text.id = get_id()
 //     text.caret_color = Color{0.7, .9, 1, 1}
 //     text.focused_selection_color = Color{0, .4, 0.8, 0.8}
 //     text.unfocused_selection_color = Color{0, .4, 0.8, 0.65}
@@ -567,7 +567,7 @@ import core_text_edit "core:text/edit"
 
 //     if !text.is_editable do return
 
-//     if rectangle_hit_test(clip_rectangle(), mouse_position()) {
+//     if mouse_hit_test(clip_rectangle()) {
 //         request_mouse_hover(text.id)
 //     }
 

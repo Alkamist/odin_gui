@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:mem"
+import "core:time"
 
 // default_font := Font{
 //     name = "consola_13",
@@ -11,25 +12,63 @@ import "core:mem"
 
 running := true
 
-window1 := get_id()
-window2 := get_id()
+window1: Window
+window2: Window
+
+// button1: Button
+// button2: Button
+
+container1: Container
+container2: Container
 
 update :: proc() {
-    if window(window1, {{100, 200}, {400, 300}}, "Window 1") {
-        fill_rectangle({{50, 50}, {50, 50}}, {1, 0, 0, 1})
+    if window_update(&window1) {
+        // scoped_clip({{58, 58}, {70, 70}})
 
-        {
-            container({{50, 50}, {200, 200}})
-            fill_rectangle({{50, 50}, {50, 50}}, {0, 0, 1, 1})
+        // button1.position = {50, 50}
+        // button2.position = {65, 65}
+
+        // button_update(&button1)
+        // button_draw(&button1)
+
+        // button_update(&button2)
+        // button_draw(&button2)
+
+        container1.position = {50, 50}
+        container1.size = {100, 100}
+        if container_update(&container1) {
+            fill_rectangle({{0, 0}, current_container().size}, {1, 0, 0, 1})
+
+            container2.position = {25, 25}
+            container2.size = {100, 100}
+            if container_update(&container2) {
+                fill_rectangle({{0, 0}, current_container().size}, {0, 1, 0, 1})
+            }
         }
 
-        if key_pressed(.A) {
-            fmt.println("Yee")
-        }
+        fmt.println(cast(rawptr)window1.mouse_hovered_container)
 
-        if window(window2, {{600, 200}, {400, 300}}, "Window 2") {
-            fill_rectangle({{50, 50}, {50, 50}}, {0, 1, 0, 1})
-        }
+
+        // container1.position = {50, 50}
+        // container1.size = {100, 100}
+
+        // container2.position = {50, 50}
+        // container2.size = {100, 100}
+
+        // if container_update(&container1) {
+        //     fill_rectangle({{0, 0}, current_container().size}, {1, 0, 0, 1})
+        //     if container_update(&container2) {
+        //         fill_rectangle({{0, 0}, current_container().size}, {0, 1, 0, 1})
+        //     }
+        // }
+
+        // if key_pressed(.A) {
+        //     container1.is_open = !container1.is_open
+        // }
+
+        // if window_update(&window2) {
+        //     fill_rectangle({{0, 0}, current_container().size}, {0, 1, 0, 1})
+        // }
     }
 
     if key_pressed(.D) {
@@ -63,6 +102,18 @@ main :: proc() {
 
     gui_startup(update)
     defer gui_shutdown()
+
+    window_init(&window1, {{100, 100}, {400, 300}})
+    defer window_destroy(&window1)
+
+    window_init(&window2, {{600, 100}, {400, 300}})
+    defer window_destroy(&window2)
+
+    // button_init(&button1)
+    // button_init(&button2)
+
+    container_init(&container1)
+    container_init(&container2)
 
     for running {
         gui_update()
