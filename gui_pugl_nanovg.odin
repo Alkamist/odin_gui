@@ -282,65 +282,52 @@ backend_font_metrics :: proc(window: ^Window, font: Font) -> (metrics: Font_Metr
     return
 }
 
-backend_render_container :: proc(window: ^Window, container: ^Container) {
+backend_render_draw_command :: proc(window: ^Window, command: Draw_Command) {
     nvg_ctx := window.nvg_ctx
 
-    global_clip_rectangle := pixel_snapped(container.global_clip_rectangle)
-    nvg.Scissor(nvg_ctx, global_clip_rectangle.position.x, global_clip_rectangle.position.y, max(0, global_clip_rectangle.size.x), max(0, global_clip_rectangle.size.y))
+    switch cmd in command {
+    case Fill_Path_Command:
+        nvg.Save(nvg_ctx)
 
-    nvg.Translate(nvg_ctx, container.global_position.x, container.global_position.y)
+        nvg.BeginPath(nvg_ctx)
 
-    for command in container.draw_commands {
-        switch cmd in command {
-        case Fill_Path_Command:
-            nvg.Save(nvg_ctx)
+        for sub_path in cmd.path.sub_paths {
+            nvg.MoveTo(nvg_ctx, sub_path.points[0].x, sub_path.points[0].y)
 
-            nvg.BeginPath(nvg_ctx)
-
-            for sub_path in cmd.path.sub_paths {
-                nvg.MoveTo(nvg_ctx, sub_path.points[0].x, sub_path.points[0].y)
-
-                for i := 1; i < len(sub_path.points); i += 3 {
-                    c1 := sub_path.points[i]
-                    c2 := sub_path.points[i + 1]
-                    point := sub_path.points[i + 2]
-                    nvg.BezierTo(nvg_ctx,
-                        c1.x, c1.y,
-                        c2.x, c2.y,
-                        point.x, point.y,
-                    )
-                }
-
-                if sub_path.is_closed {
-                    nvg.ClosePath(nvg_ctx)
-                    if sub_path.is_hole {
-                        nvg.PathWinding(nvg_ctx, .CW)
-                    }
-                }
+            for i := 1; i < len(sub_path.points); i += 3 {
+                c1 := sub_path.points[i]
+                c2 := sub_path.points[i + 1]
+                point := sub_path.points[i + 2]
+                nvg.BezierTo(nvg_ctx,
+                    c1.x, c1.y,
+                    c2.x, c2.y,
+                    point.x, point.y,
+                )
             }
 
-            nvg.FillColor(nvg_ctx, cmd.color)
-            nvg.Fill(nvg_ctx)
-
-            nvg.Restore(nvg_ctx)
-
-        case Fill_String_Command:
-            nvg.Save(nvg_ctx)
-            position := pixel_snapped(cmd.position)
-            nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
-            nvg.FontFace(nvg_ctx, cmd.font.name)
-            nvg.FontSize(nvg_ctx, f32(cmd.font.size))
-            nvg.FillColor(nvg_ctx, cmd.color)
-            nvg.Text(nvg_ctx, position.x, position.y, cmd.text)
-            nvg.Restore(nvg_ctx)
-
-        // case Set_Clip_Rectangle_Command:
-        //     rect := pixel_snapped(cmd.global_clip_rectangle)
-        //     nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
+            if sub_path.is_closed {
+                nvg.ClosePath(nvg_ctx)
+                if sub_path.is_hole {
+                    nvg.PathWinding(nvg_ctx, .CW)
+                }
+            }
         }
-    }
 
-    nvg.Translate(nvg_ctx, -container.global_position.x, -container.global_position.y)
+        nvg.FillColor(nvg_ctx, cmd.color)
+        nvg.Fill(nvg_ctx)
+
+        nvg.Restore(nvg_ctx)
+
+    case Fill_String_Command:
+        nvg.Save(nvg_ctx)
+        position := pixel_snapped(cmd.position)
+        nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
+        nvg.FontFace(nvg_ctx, cmd.font.name)
+        nvg.FontSize(nvg_ctx, f32(cmd.font.size))
+        nvg.FillColor(nvg_ctx, cmd.color)
+        nvg.Text(nvg_ctx, position.x, position.y, cmd.text)
+        nvg.Restore(nvg_ctx)
+    }
 }
 
 _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Status {

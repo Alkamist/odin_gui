@@ -8,14 +8,17 @@ import "core:slice"
 import "core:strings"
 
 Vector2 :: [2]f32
-// Id :: u64
+Id :: u64
 
 // get_id :: proc "contextless" () -> Id {
 //     @(static) id: Id
 //     return 1 + intrinsics.atomic_add(&id, 1)
 // }
 
-set_mouse_cursor_style :: backend_set_mouse_cursor_style
+// get_id :: proc(str: string) -> Id {
+//     return
+// }
+
 clipboard :: backend_clipboard
 set_clipboard :: backend_set_clipboard
 
@@ -47,16 +50,19 @@ Context :: struct {
     key_releases: [dynamic]Keyboard_Key,
     text_input: strings.Builder,
 
-    // keyboard_focus: Id,
-    // mouse_hit: Id,
-    // mouse_hover: Id,
-    // previous_mouse_hover: Id,
-    // mouse_hover_capture: Id,
-    // final_mouse_hover_request: Id,
+    keyboard_focus: Id,
+    mouse_hit: Id,
+    mouse_hover: Id,
+    previous_mouse_hover: Id,
+    mouse_hover_capture: Id,
+    final_mouse_hover_request: Id,
 
+    last_id: Id,
     is_first_frame: bool,
 
     window_stack: [dynamic]^Window,
+
+    retained_state: map[Id]rawptr,
 
     previous_tick: time.Tick,
     previous_screen_mouse_position: Vector2,
@@ -92,6 +98,18 @@ gui_update :: proc() {
     free_all(context.temp_allocator)
 }
 
+get_state :: proc(id: Id, initial_value: $T) -> (state: ^T) {
+    ctx := gui_context()
+    if id not_in ctx.retained_state {
+        state = new(T)
+        state^ = initial_value
+        ctx.retained_state[id] = state
+    } else {
+        state = cast(^T)ctx.retained_state[id]
+    }
+    return
+}
+
 context_update :: proc(ctx: ^Context) {
     ctx.tick = time.tick_now()
 
@@ -106,17 +124,16 @@ context_update :: proc(ctx: ^Context) {
         ctx.update()
     }
 
-    // // Update the mouse hover
-    // ctx.previous_mouse_hover = ctx.mouse_hover
-    // ctx.mouse_hit = ctx.final_mouse_hover_request
+    ctx.previous_mouse_hover = ctx.mouse_hover
+    ctx.mouse_hit = ctx.final_mouse_hover_request
 
-    // if ctx.mouse_hover_capture != 0 {
-    //     ctx.mouse_hover = ctx.mouse_hover_capture
-    // } else {
-    //     ctx.mouse_hover = ctx.final_mouse_hover_request
-    // }
+    if ctx.mouse_hover_capture != 0 {
+        ctx.mouse_hover = ctx.mouse_hover_capture
+    } else {
+        ctx.mouse_hover = ctx.final_mouse_hover_request
+    }
 
-    // ctx.final_mouse_hover_request = 0
+    ctx.final_mouse_hover_request = 0
 
     ctx.mouse_wheel = {0, 0}
     ctx.previous_tick = ctx.tick
@@ -244,22 +261,6 @@ mouse_position :: proc() -> (res: Vector2) {
         return
     }
     res -= window.position
-    container := current_container()
-    if container == nil {
-        return
-    }
-    res -= container.global_position
-    return
-}
-
-global_mouse_position :: proc() -> (res: Vector2) {
-    ctx := gui_context()
-    res = ctx.screen_mouse_position
-    window := current_window()
-    if window == nil {
-        return
-    }
-    res -= window.position
     return
 }
 
@@ -350,66 +351,10 @@ text_input :: proc() -> string {
     return strings.to_string(gui_context().text_input)
 }
 
-//==========================================================================
-// Container
-//==========================================================================
-
-Container :: struct {
-    using rectangle: Rectangle,
-    global_position: Vector2,
-    global_clip_rectangle: Rectangle,
-    z_index: int,
-    is_open: bool,
-    draw_commands: [dynamic]Draw_Command,
-    containers: [dynamic]^Container,
-    // final_mouse_hover_request: Id,
-}
-
-current_container :: proc() -> ^Container {
+set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) {
     window := current_window()
-    if len(window.container_stack) <= 0 do return nil
-    return window.container_stack[len(window.container_stack) - 1]
-}
-
-container_init :: proc(container: ^Container) {
-    container.is_open = true
-}
-
-container_begin :: proc(container: ^Container) -> bool {
-    window := current_window()
-    assert(window != nil)
-
-    parent := current_container()
-    if parent != nil {
-        append(&parent.containers, container)
-        container.global_position = parent.global_position + container.position
-        container.global_clip_rectangle = rectangle_intersection(parent.global_clip_rectangle, container_global_rectangle(container))
-    } else {
-        container.global_position = container.position
-        container.global_clip_rectangle = {container.position, container.size}
-    }
-
-    container.draw_commands = make([dynamic]Draw_Command, context.temp_allocator)
-    container.containers = make([dynamic]^Container, context.temp_allocator)
-
-    append(&window.container_stack, container)
-
-    return container.is_open
-}
-
-container_end :: proc() {
-    window := current_window()
-    assert(window != nil)
-    pop(&window.container_stack)
-}
-
-@(deferred_none=container_end)
-container_update :: proc(container: ^Container) -> bool {
-    return container_begin(container)
-}
-
-container_global_rectangle :: proc(container: ^Container) -> Rectangle {
-    return {container.global_position, container.size}
+    if window == nil do return
+    window.mouse_cursor_style = style
 }
 
 //==========================================================================
@@ -418,23 +363,16 @@ container_global_rectangle :: proc(container: ^Container) -> Rectangle {
 
 Window_Base :: struct {
     using rectangle: Rectangle,
-
     is_open: bool,
     should_open: bool,
     should_close: bool,
     is_focused: bool,
     is_mouse_hovered: bool,
     content_scale: Vector2,
-
     loaded_fonts: map[string]struct{},
-
     child_windows: [dynamic]^Window,
-
-    root_container: Container,
-    container_stack: [dynamic]^Container,
-
-    mouse_hovered_container: ^Container,
-    focused_container: ^Container,
+    mouse_cursor_style: Mouse_Cursor_Style,
+    previous_mouse_cursor_style: Mouse_Cursor_Style,
 }
 
 current_window :: proc() -> ^Window {
@@ -461,8 +399,6 @@ window_begin :: proc(window: ^Window) -> bool {
     ctx := gui_context()
     append(&ctx.window_stack, window)
 
-    window.container_stack = make([dynamic]^Container, context.temp_allocator)
-
     clear(&window.child_windows)
     backend_window_begin_frame(window)
 
@@ -471,9 +407,7 @@ window_begin :: proc(window: ^Window) -> bool {
         if parent != nil {
             append(&parent.child_windows, window)
         }
-        window.root_container.z_index = 0
-        window.root_container.rectangle = {{0, 0}, window.size}
-        container_begin(&window.root_container)
+        window.mouse_cursor_style = .Arrow
     }
 
     return window.is_open
@@ -483,14 +417,13 @@ window_end :: proc() {
     ctx := gui_context()
 
     window := current_window()
-    window.mouse_hovered_container = nil
-
-    if window.is_open {
-        container_end()
-        _window_render_container(window, &window.root_container)
-    }
 
     backend_window_end_frame(window)
+
+    if window.mouse_cursor_style != window.previous_mouse_cursor_style {
+        backend_set_mouse_cursor_style(window.mouse_cursor_style)
+    }
+    window.previous_mouse_cursor_style = window.mouse_cursor_style
 
     if window.should_open {
         _window_open(window)
@@ -536,21 +469,6 @@ _window_close :: proc(window: ^Window) {
     }
 }
 
-_window_render_container :: proc(window: ^Window, container: ^Container) {
-    if rectangle_encloses(container.global_clip_rectangle, global_mouse_position(), include_borders = true) {
-        window.mouse_hovered_container = container
-    }
-
-    backend_render_container(window, container)
-
-    slice.stable_sort_by(container.containers[:], proc(i, j: ^Container) -> bool {
-        return i.z_index < j.z_index
-    })
-    for child in container.containers {
-        _window_render_container(window, child)
-    }
-}
-
 //==========================================================================
 // Vector Graphics
 //==========================================================================
@@ -579,7 +497,6 @@ Text_Glyph :: struct {
 Draw_Command :: union {
     Fill_Path_Command,
     Fill_String_Command,
-    // Set_Clip_Rectangle_Command,
 }
 
 Fill_Path_Command :: struct {
@@ -593,10 +510,6 @@ Fill_String_Command :: struct {
     font: Font,
     color: Color,
 }
-
-// Set_Clip_Rectangle_Command :: struct {
-//     global_clip_rectangle: Rectangle,
-// }
 
 pixel_size :: proc() -> Vector2 {
     return 1.0 / current_window().content_scale
@@ -622,17 +535,12 @@ rectangle_pixel_snapped :: proc(rectangle: Rectangle) -> Rectangle {
 fill_string :: proc(str: string, position: Vector2, font: Font, color: Color) {
     window := current_window()
     _load_font_if_not_loaded(window, font)
-    append(&current_container().draw_commands, Fill_String_Command{str, position, font, color})
+    backend_render_draw_command(window, Fill_String_Command{str, position, font, color})
 }
-
-// set_clip_rectangle :: proc(rectangle: Rectangle) {
-//     window := current_window()
-//     append(&current_container().draw_commands, Set_Clip_Rectangle_Command{rectangle})
-// }
 
 fill_path :: proc(path: Path, color: Color) {
     window := current_window()
-    append(&current_container().draw_commands, Fill_Path_Command{path, color})
+    backend_render_draw_command(window, Fill_Path_Command{path, color})
 }
 
 measure_string :: proc(str: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) {
@@ -688,78 +596,207 @@ _load_font_if_not_loaded :: proc(window: ^Window, font: Font) {
     }
 }
 
-//==========================================================================
-// Tools
-//==========================================================================
 
-// mouse_hover :: proc() -> Id {
-//     ctx := gui_context()
-//     return ctx.mouse_hover
+
+
+
+
+
+
+
+
+
+
+mouse_hover :: proc() -> Id {
+    ctx := gui_context()
+    return ctx.mouse_hover
+}
+
+mouse_hover_entered :: proc() -> Id {
+    ctx := gui_context()
+    if ctx.mouse_hover != ctx.previous_mouse_hover {
+        return ctx.mouse_hover
+    } else {
+        return 0
+    }
+}
+
+mouse_hover_exited :: proc() -> Id {
+    ctx := gui_context()
+    if ctx.mouse_hover != ctx.previous_mouse_hover {
+        return ctx.previous_mouse_hover
+    } else {
+        return 0
+    }
+}
+
+mouse_hit :: proc() -> Id {
+    ctx := gui_context()
+    return ctx.mouse_hit
+}
+
+request_mouse_hover :: proc(id: Id) {
+    gui_context().final_mouse_hover_request = id
+}
+
+capture_mouse_hover :: proc() {
+    ctx := gui_context()
+    ctx.mouse_hover_capture = ctx.final_mouse_hover_request
+}
+
+release_mouse_hover :: proc() {
+    ctx := gui_context()
+    ctx.mouse_hover_capture = 0
+}
+
+keyboard_focus :: proc() -> Id {
+    ctx := gui_context()
+    return ctx.keyboard_focus
+}
+
+set_keyboard_focus :: proc(id: Id) {
+    ctx := gui_context()
+    ctx.keyboard_focus = id
+}
+
+release_keyboard_focus :: proc() {
+    ctx := gui_context()
+    ctx.keyboard_focus = 0
+}
+
+hit_test :: proc(rectangle: Rectangle, target: Vector2) -> bool {
+    return rectangle_encloses(rectangle, target, include_borders = false)// &&
+        //    rectangle_encloses(clip_rectangle(), target, include_borders = false)
+}
+
+mouse_hit_test :: proc(rectangle: Rectangle) -> bool {
+    return hit_test(rectangle, mouse_position())
+}
+
+// // Local coordinates
+// offset :: proc() -> Vector2 {
+//     window := current_window()
+//     if len(window.local_offset_stack) <= 0 do return {0, 0}
+//     return window.local_offset_stack[len(window.local_offset_stack) - 1]
 // }
 
-// mouse_hover_entered :: proc() -> Id {
-//     ctx := gui_context()
-//     if ctx.mouse_hover != ctx.previous_mouse_hover {
-//         return ctx.mouse_hover
-//     } else {
-//         return 0
+// // Global coordinates
+// global_offset :: proc() -> Vector2 {
+//     window := current_window()
+//     if len(window.global_offset_stack) <= 0 do return {0, 0}
+//     return window.global_offset_stack[len(window.global_offset_stack) - 1]
+// }
+
+// // Set in local coordinates
+// begin_offset :: proc(offset: Vector2) {
+//     window := current_window()
+//     append(&window.local_offset_stack, offset)
+//     append(&window.global_offset_stack, global_offset() + offset)
+// }
+
+// end_offset :: proc() {
+//     window := current_window()
+//     if len(window.local_offset_stack) <= 0 ||
+//        len(window.global_offset_stack) <= 0 {
+//         return
 //     }
+//     pop(&window.local_offset_stack)
+//     pop(&window.global_offset_stack)
 // }
 
-// mouse_hover_exited :: proc() -> Id {
-//     ctx := gui_context()
-//     if ctx.mouse_hover != ctx.previous_mouse_hover {
-//         return ctx.previous_mouse_hover
-//     } else {
-//         return 0
+// @(deferred_none=end_offset)
+// scoped_offset :: proc(offset: Vector2) {
+//     begin_offset(offset)
+// }
+
+// // Local coordinates
+// clip_rectangle :: proc() -> Rectangle {
+//     window := current_window()
+//     if len(window.global_clip_rectangle_stack) <= 0 do return {-global_offset(), window.size}
+//     global_rect := window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1]
+//     global_rect.position -= global_offset()
+//     return global_rect
+// }
+
+// // Global coordinates
+// global_clip_rectangle :: proc() -> Rectangle {
+//     window := current_window()
+//     if len(window.global_clip_rectangle_stack) <= 0 do return {{0, 0}, window.size}
+//     return window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1]
+// }
+
+// // Set in local coordinates
+// begin_clip :: proc(rectangle: Rectangle, intersect := true) {
+//     window := current_window()
+
+//     offset := global_offset()
+//     global_rect := Rectangle{offset + rectangle.position, rectangle.size}
+
+//     if intersect && len(window.global_clip_rectangle_stack) > 0 {
+//         global_rect = rectangle_intersection(global_rect, window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1])
 //     }
+
+//     append(&window.global_clip_rectangle_stack, global_rect)
+//     _process_draw_command(window, Clip_Drawing_Command{global_rect})
 // }
 
-// mouse_hit :: proc() -> Id {
-//     ctx := gui_context()
-//     return ctx.mouse_hit
-// }
-
-// request_mouse_hover :: proc(id: Id) {
+// end_clip :: proc() {
 //     window := current_window()
-//     if !window.is_focused do return
-//     gui_context().final_mouse_hover_request = id
+
+//     if len(window.global_clip_rectangle_stack) <= 0 {
+//         return
+//     }
+
+//     pop(&window.global_clip_rectangle_stack)
+
+//     if len(window.global_clip_rectangle_stack) <= 0 {
+//         return
+//     }
+
+//     global_rect := window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1]
+
+//     _process_draw_command(window, Clip_Drawing_Command{global_rect})
 // }
 
-// capture_mouse_hover :: proc() {
+// @(deferred_none=end_clip)
+// scoped_clip :: proc(rectangle: Rectangle, intersect := true) {
+//     begin_clip(rectangle, intersect = intersect)
+// }
+
+// z_index :: proc() -> int {
 //     window := current_window()
-//     if !window.is_focused do return
-//     ctx := gui_context()
-//     ctx.mouse_hover_capture = ctx.final_mouse_hover_request
+//     if len(window.layer_stack) <= 0 do return 0
+//     return _current_layer(window).local_z_index
 // }
 
-// release_mouse_hover :: proc() {
-//     ctx := gui_context()
-//     ctx.mouse_hover_capture = 0
-// }
-
-// keyboard_focus :: proc() -> Id {
-//     ctx := gui_context()
-//     return ctx.keyboard_focus
-// }
-
-// set_keyboard_focus :: proc(id: Id) {
+// global_z_index :: proc() -> int {
 //     window := current_window()
-//     if !window.is_focused do return
-//     ctx := gui_context()
-//     ctx.keyboard_focus = id
+//     if len(window.layer_stack) <= 0 do return 0
+//     return _current_layer(window).global_z_index
 // }
 
-// release_keyboard_focus :: proc() {
-//     ctx := gui_context()
-//     ctx.keyboard_focus = 0
+// // Local z index
+// begin_z_index :: proc(z_index: int) {
+//     window := current_window()
+//     layer: Layer
+//     layer.draw_commands = make([dynamic]Draw_Command, arena_allocator())
+//     layer.local_z_index = z_index
+//     layer.global_z_index = global_z_index() + z_index
+//     append(&window.layer_stack, layer)
 // }
 
-// hit_test :: proc(rectangle: Rectangle, target: Vector2) -> bool {
-//     return rectangle_encloses(rectangle, target, include_borders = false) &&
-//            rectangle_encloses(clip_rectangle(), target, include_borders = false)
+// end_z_index :: proc() {
+//     window := current_window()
+//     if len(window.layer_stack) <= 0 do return
+//     layer := pop(&window.layer_stack)
+//     append(&window.layers, layer)
 // }
 
-// mouse_hit_test :: proc(rectangle: Rectangle) -> bool {
-//     return hit_test(rectangle, mouse_position())
+// @(deferred_none=end_z_index)
+// scoped_z_index :: proc(z_index: int) {
+//     begin_z_index(z_index)
+// }
+
+// _current_layer :: proc(window: ^Window) -> ^Layer {
+//     return &window.layer_stack[len(window.layer_stack) - 1]
 // }

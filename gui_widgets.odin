@@ -1,85 +1,63 @@
 package main
 
-// import "base:runtime"
-// import "core:time"
-// import "core:strings"
-// import utf8 "core:unicode/utf8"
-// import core_text_edit "core:text/edit"
+// import "core:fmt"
+import "core:time"
+import "core:strings"
+import cte "core:text/edit"
 
-// //==========================================================================
-// // Button
-// //==========================================================================
+//==========================================================================
+// Button
+//==========================================================================
 
-// Button_Base :: struct {
-//     id: Id,
-//     using rectangle: Rectangle,
-//     is_down: bool,
-//     pressed: bool,
-//     released: bool,
-//     clicked: bool,
-// }
+Button_Response :: struct {
+    is_down: bool,
+    pressed: bool,
+    released: bool,
+    clicked: bool,
+}
 
-// button_base_init :: proc(button: ^Button_Base) {
-//     button.id = get_id()
-// }
+button :: proc(id: Id, rectangle: Rectangle, color: Color, mouse_button := Mouse_Button.Left) -> (res: Button_Response) {
+    is_down := get_state(id, false)
 
-// button_base_update :: proc(button: ^Button_Base, press, release: bool) {
-//     button.pressed = false
-//     button.released = false
-//     button.clicked = false
+    res.is_down = is_down^
+    res.pressed = false
+    res.released = false
+    res.clicked = false
 
-//     if mouse_hit_test(button) {
-//         request_mouse_hover(button.id)
-//     }
+    if mouse_hit_test(rectangle) {
+        request_mouse_hover(id)
+    }
 
-//     if !button.is_down && press && mouse_hover() == button.id {
-//         capture_mouse_hover()
-//         button.is_down = true
-//         button.pressed = true
-//     }
+    if !res.is_down && mouse_pressed(mouse_button) && mouse_hover() == id {
+        capture_mouse_hover()
+        res.is_down = true
+        res.pressed = true
+    }
 
-//     if button.is_down && release {
-//         release_mouse_hover()
-//         button.is_down = false
-//         button.released = true
-//         if mouse_hit() == button.id {
-//             button.is_down = false
-//             button.clicked = true
-//         }
-//     }
-// }
+    if res.is_down && mouse_released(mouse_button) {
+        release_mouse_hover()
+        res.is_down = false
+        res.released = true
+        if mouse_hit() == id {
+            res.is_down = false
+            res.clicked = true
+        }
+    }
 
-// Button :: struct {
-//     using base: Button_Base,
-//     mouse_button: Mouse_Button,
-//     color: Color,
-// }
+    path := temp_path()
+    path_rectangle(&path, rectangle)
 
-// button_init :: proc(button: ^Button) {
-//     button_base_init(button)
-//     button.size = {96, 32}
-//     button.mouse_button = .Left
-//     button.color = {0.5, 0.5, 0.5, 1}
-// }
+    fill_path(path, color)
+    if res.is_down {
+        fill_path(path, {0, 0, 0, 0.2})
+    } else if mouse_hover() == id {
+        fill_path(path, {1, 1, 1, 0.05})
+    }
 
-// button_update :: proc(button: ^Button) {
-//     button_base_update(button,
-//         press = mouse_pressed(button.mouse_button),
-//         release = mouse_released(button.mouse_button),
-//     )
-// }
+    is_down^ = res.is_down
 
-// button_draw :: proc(button: ^Button) {
-//     path := temp_path()
-//     path_rectangle(&path, button)
-
-//     fill_path(path, button.color)
-//     if button.is_down {
-//         fill_path(path, {0, 0, 0, 0.2})
-//     } else if mouse_hover() == button.id {
-//         fill_path(path, {1, 1, 1, 0.05})
-//     }
-// }
+    return
+}
 
 // //==========================================================================
 // // Slider
@@ -195,645 +173,276 @@ package main
 //     slider.value = clamp(slider.value, slider.min_value, slider.max_value)
 // }
 
-// //==========================================================================
-// // Box Select
-// //==========================================================================
-
-// Box_Select :: struct {
-//     selected: bool,
-//     is_active: bool,
-//     start: Vector2,
-//     finish: Vector2,
-//     mouse_button: Mouse_Button,
-// }
-
-// box_select_update :: proc(box_select: ^Box_Select) {
-//     box_select.selected = false
-
-//     mp := mouse_position()
-
-//     if mouse_pressed(box_select.mouse_button) {
-//         box_select.is_active = true
-//         box_select.start = mp
-//         box_select.finish = mp
-//     }
-
-//     if box_select.is_active {
-//         if mouse_down(box_select.mouse_button) {
-//             box_select.finish = mp
-//         }
-
-//         if mouse_released(box_select.mouse_button) {
-//             box_select.is_active = false
-//             box_select.selected = true
-//         }
-//     }
-// }
-
-// box_select_draw :: proc(box_select: ^Box_Select) {
-//     if box_select.is_active {
-//         pixel := pixel_size()
-//         outer := box_select_rectangle(box_select)
-//         inner := rectangle_expanded(outer, -pixel)
-
-//         background_path := temp_path()
-//         path_rectangle(&background_path, inner)
-//         fill_path(background_path, {0, 0, 0, 0.3})
-
-//         outline_path := temp_path()
-
-//         outer.size.x = max(outer.size.x, pixel.x)
-//         outer.size.y = max(outer.size.y, pixel.y)
-//         path_rectangle(&outline_path, outer)
-
-//         if inner.size.x > 0 && inner.size.y > 0 {
-//             path_rectangle(&outline_path, inner, true)
-//         }
-
-//         fill_path(outline_path, {1, 1, 1, 0.3})
-//     }
-// }
-
-// box_select_rectangle :: proc(box_select: ^Box_Select) -> Rectangle {
-//     position := Vector2{
-//         min(box_select.start.x, box_select.finish.x),
-//         min(box_select.start.y, box_select.finish.y),
-//     }
-//     bottom_right := Vector2{
-//         max(box_select.start.x, box_select.finish.x),
-//         max(box_select.start.y, box_select.finish.y),
-//     }
-//     return {position, bottom_right - position}
-// }
-
-// //==========================================================================
-// // Text Line
-// //
-// // This is a simple text line that measures itself and
-// // updates its rectangle accordingly. It is aware of the
-// // current clip rectangle and will only draw the portion
-// // of the string that is visible on screen for optimization.
-// // The text does not own its string.
-// //==========================================================================
-
-// Text_Line :: struct {
-//     using rectangle: Rectangle,
-//     str: string,
-//     color: Color,
-//     font: Font,
-//     glyphs: [dynamic]Text_Glyph,
-//     byte_index_to_rune_index: map[int]int,
-//     needs_remeasure: bool, // Set this to true to ask the text to remeasure
-// }
-
-// text_line_init :: proc(text: ^Text_Line, font: Font, allocator := context.allocator) -> runtime.Allocator_Error {
-//     text.glyphs = make([dynamic]Text_Glyph, allocator = allocator)
-//     text.byte_index_to_rune_index = make(map[int]int, allocator = allocator)
-//     text.font = font
-//     text.color = {1, 1, 1, 1}
-//     text.needs_remeasure = true
-//     return nil
-// }
-
-// text_line_destroy :: proc(text: ^Text_Line) {
-//     delete(text.glyphs)
-//     delete(text.byte_index_to_rune_index)
-// }
-
-// text_line_update :: proc(text: ^Text_Line) {
-//     if text.needs_remeasure {
-//         measure_string(text.str, text.font, &text.glyphs, &text.byte_index_to_rune_index)
-//         text.needs_remeasure = false
-//     }
-
-//     text.size.y = font_metrics(text.font).line_height
-//     if len(text.glyphs) <= 0 {
-//         text.size.x = 0
-//     } else {
-//         left := text.glyphs[0]
-//         right := text.glyphs[len(text.glyphs) - 1]
-//         text.size.x = right.position + right.width - left.position
-//     }
-// }
-
-// text_line_draw :: proc(text: ^Text_Line) {
-//     str, x_compensation := text_visible_string(text)
-//     position := text.position
-//     position.x += x_compensation
-//     if len(text.glyphs) > 0 {
-//         fill_string(str, position + {text.glyphs[0].kerning, 0}, text.font, text.color)
-//     } else {
-//         fill_string(str, position, text.font, text.color)
-//     }
-// }
-
-// text_visible_string :: proc(text: ^Text_Line) -> (str: string, x_compensation: f32) {
-//     glyph_count := len(text.glyphs)
-//     if glyph_count <= 0 do return "", 0
-
-//     left, right_exclusive := text_visible_glyph_range(text)
-//     if right_exclusive - left <= 0 do return "", 0
-
-//     left_byte_index := text.glyphs[left].byte_index
-//     byte_count := len(text.str)
-//     if left_byte_index >= byte_count do return "", 0
-
-//     x_compensation = text.glyphs[left].position
-
-//     if right_exclusive >= glyph_count {
-//         str = text.str[left_byte_index:]
-//     } else {
-//         right_byte_index := text.glyphs[right_exclusive].byte_index
-//         if right_byte_index < byte_count {
-//             str = text.str[left_byte_index:right_byte_index]
-//         } else {
-//             str = text.str[left_byte_index:]
-//         }
-//     }
-
-//     return
-// }
-
-// text_byte_index_to_rune_index :: proc(text: ^Text_Line, byte_index: int) -> (rune_index: int, out_of_bounds: bool) {
-//     if byte_index >= len(text.str) {
-//         return 0, true
-//     } else {
-//         return text.byte_index_to_rune_index[byte_index], false
-//     }
-// }
-
-// text_visible_glyph_range :: proc(text: ^Text_Line) -> (left, right_exclusive: int) {
-//     clip_rect := clip_rectangle()
-//     if clip_rect.size.x <= 0 || clip_rect.size.y <= 0 {
-//         return 0, 0
-//     }
-
-//     position := text.position
-//     height := text.size.y
-//     left_set := false
-
-//     for glyph, i in text.glyphs {
-//         glyph_rect := Rectangle{position + {glyph.position, 0}, {glyph.width, height}}
-//         glyph_visible := rectangle_intersects(clip_rect, glyph_rect, include_borders = false)
-
-//         if !left_set {
-//             if glyph_visible {
-//                 left = i
-//                 left_set = true
-//             }
-//         } else {
-//             if !glyph_visible {
-//                 right_exclusive = max(0, i)
-//                 return
-//             }
-//         }
-//     }
-
-//     if left_set {
-//         right_exclusive = len(text.glyphs)
-//     }
-
-//     return
-// }
-
-// //==========================================================================
-// // Editable Text Line
-// //
-// // This is an editable extension of Text_Line.
-// // It owns a strings.Builder and will update the string
-// // of its Text_Line to reference that when editing occurs.
-// // It will not behave properly if you set the Text_Line str
-// // directly.
-// //==========================================================================
-
-// POSITIONAL_SELECTION_HORIZONTAL_BIAS :: 3 // Bias positional selection to the right a little for feel.
-// CARET_WIDTH :: 2
-
-// Text_Edit_Command :: core_text_edit.Command
-
-// Editable_Text_Line :: struct {
-//     using text_line: Text_Line,
-//     id: Id,
-//     builder: strings.Builder,
-//     caret_color: Color,
-//     focused_selection_color: Color,
-//     unfocused_selection_color: Color,
-//     is_editable: bool,
-//     drag_selecting: bool,
-//     edit_state: core_text_edit.State,
-// }
-
-// editable_text_line_init :: proc(text: ^Editable_Text_Line, font: Font, allocator := context.allocator) -> runtime.Allocator_Error {
-//     text_line_init(text, font) or_return
-//     strings.builder_init(&text.builder, allocator = allocator) or_return
-//     core_text_edit.init(&text.edit_state, allocator, allocator)
-//     core_text_edit.setup_once(&text.edit_state, &text.builder)
-//     text.edit_state.selection = {0, 0}
-//     text.edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
-//         data = clipboard()
-//         return _quick_remove_line_ends_UNSAFE(data), true
-//     }
-//     text.edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
-//         set_clipboard(data)
-//         return true
-//     }
-//     text.id = get_id()
-//     text.caret_color = Color{0.7, .9, 1, 1}
-//     text.focused_selection_color = Color{0, .4, 0.8, 0.8}
-//     text.unfocused_selection_color = Color{0, .4, 0.8, 0.65}
-//     text.is_editable = true
-//     return nil
-// }
-
-// editable_text_line_destroy :: proc(text: ^Editable_Text_Line) {
-//     strings.builder_destroy(&text.builder)
-//     core_text_edit.destroy(&text.edit_state)
-//     text_line_destroy(text)
-// }
-
-// editable_text_line_update :: proc(text: ^Editable_Text_Line) {
-//     text_line_update(text)
-
-//     // Update the undo state timeout manually.
-//     text.edit_state.current_time = time.tick_now()
-//     if text.edit_state.undo_timeout <= 0 {
-//         text.edit_state.undo_timeout = core_text_edit.DEFAULT_UNDO_TIMEOUT
-//     }
-
-//     text_edit_with_keyboard(text)
-//     text_edit_with_mouse(text)
-// }
-
-// editable_text_line_draw :: proc(text: ^Editable_Text_Line) {
-//     is_focus := keyboard_focus() == text.id
-
-//     if text.is_editable {
-//         if selection, exists := text_selection_rectangle(text); exists {
-//             color := text.focused_selection_color if is_focus else text.unfocused_selection_color
-//             selection_path := temp_path()
-//             path_rectangle(&selection_path, selection)
-//             fill_path(selection_path, color)
-//         }
-//     }
-
-//     text_line_draw(text)
-
-//     if text.is_editable && is_focus {
-//         caret_path := temp_path()
-//         path_rectangle(&caret_path, text_caret_rectangle(text))
-//         fill_path(caret_path, text.caret_color)
-//     }
-// }
-
-// text_input_string :: proc(text: ^Editable_Text_Line, str: string) {
-//     core_text_edit.input_text(&text.edit_state, _quick_remove_line_ends_UNSAFE(str))
-//     _text_update_str(text)
-// }
-
-// text_input_runes :: proc(text: ^Editable_Text_Line, runes: []rune) {
-//     str := utf8.runes_to_string(runes, context.temp_allocator)
-//     text_input_string(text, str)
-// }
-
-// text_input_rune :: proc(text: ^Editable_Text_Line, r: rune) {
-//     if r == '\n' || r == '\r' do return
-//     core_text_edit.input_rune(&text.edit_state, r)
-//     _text_update_str(text)
-// }
-
-// text_insert_string :: proc(text: ^Editable_Text_Line, at: int, str: string) {
-//     core_text_edit.insert(&text.edit_state, at, _quick_remove_line_ends_UNSAFE(str))
-//     _text_update_str(text)
-// }
-
-// text_remove_range :: proc(text: ^Editable_Text_Line, lo, hi: int) {
-//     core_text_edit.remove(&text.edit_state, lo, hi)
-//     _text_update_str(text)
-// }
-
-// text_has_selection :: proc(text: ^Editable_Text_Line) -> bool {
-//     return core_text_edit.has_selection(&text.edit_state)
-// }
-
-// text_sorted_selection :: proc(text: ^Editable_Text_Line) -> (lo, hi: int) {
-//     return core_text_edit.sorted_selection(&text.edit_state)
-// }
-
-// text_delete_selection :: proc(text: ^Editable_Text_Line) {
-//     core_text_edit.selection_delete(&text.edit_state)
-//     _text_update_str(text)
-// }
-
-// text_edit :: proc(text: ^Editable_Text_Line, command: Text_Edit_Command) {
-//     #partial switch command {
-//     case .New_Line:
-//         return
-//     case .Line_Start, .Line_End:
-//         _text_update_edit_state_line_start_and_end(text)
-//     }
-
-//     core_text_edit.perform_command(&text.edit_state, command)
-
-//     #partial switch command {
-//     case .Backspace, .Delete,
-//             .Delete_Word_Left, .Delete_Word_Right,
-//             .Paste, .Cut, .Undo, .Redo:
-//         _text_update_str(text)
-//     }
-// }
-
-// text_start_drag_selection :: proc(text: ^Editable_Text_Line, position: Vector2, only_head := false) {
-//     set_keyboard_focus(text.id)
-//     index := text_byte_index_at_x(text, position.x)
-//     text.drag_selecting = true
-//     text.edit_state.selection[0] = index
-//     if !only_head do text.edit_state.selection[1] = index
-// }
-
-// text_move_drag_selection :: proc(text: ^Editable_Text_Line, position: Vector2) {
-//     if !text.drag_selecting do return
-//     text.edit_state.selection[0] = text_byte_index_at_x(text, position.x)
-// }
-
-// text_end_drag_selection :: proc(text: ^Editable_Text_Line) {
-//     if !text.drag_selecting do return
-//     text.drag_selecting = false
-// }
-
-// text_edit_with_mouse :: proc(text: ^Editable_Text_Line) {
-//     if mouse_hover_exited() == text.id {
-//         set_mouse_cursor_style(.Arrow)
-//     }
-
-//     if !text.is_editable do return
-
-//     if mouse_hit_test(clip_rectangle()) {
-//         request_mouse_hover(text.id)
-//     }
-
-//     if mouse_hover_entered() == text.id {
-//         set_mouse_cursor_style(.I_Beam)
-//     }
-
-//     is_hover := mouse_hover() == text.id
-//     left_or_middle_pressed := mouse_pressed(.Left) || mouse_pressed(.Middle)
-//     left_or_middle_released := mouse_released(.Left) || mouse_released(.Middle)
-
-//     if left_or_middle_pressed {
-//         if is_hover {
-//             set_keyboard_focus(text.id)
-//         } else {
-//             release_keyboard_focus()
-//         }
-//     }
-
-//     if left_or_middle_pressed && is_hover && !text.drag_selecting {
-//         capture_mouse_hover()
-
-//         switch mouse_repeat_count(.Left) {
-//         case 0, 1: // Single click
-//             shift := key_down(.Left_Shift) || key_down(.Right_Shift)
-//             text_start_drag_selection(text, mouse_position(), only_head = shift)
-
-//         case 2: // Double click
-//             text_edit(text, .Word_Right)
-//             text_edit(text, .Word_Left)
-//             text_edit(text, .Select_Word_Right)
-
-//         case 3: // Triple click
-//             text_edit(text, .Line_Start)
-//             text_edit(text, .Select_Line_End)
-
-//         case: // Quadruple click and beyond
-//             text_edit(text, .Start)
-//             text_edit(text, .Select_End)
-//         }
-//     }
-
-//     if text.drag_selecting {
-//         text_move_drag_selection(text, mouse_position())
-//     }
-
-//     if text.drag_selecting && left_or_middle_released {
-//         text_end_drag_selection(text)
-//         release_mouse_hover()
-//     }
-// }
-
-// text_edit_with_keyboard :: proc(text: ^Editable_Text_Line) {
-//     if !text.is_editable do return
-//     if keyboard_focus() != text.id do return
-
-//     text_input := text_input()
-//     if len(text_input) > 0 {
-//         text_input_string(text, text_input)
-//     }
-
-//     ctrl := key_down(.Left_Control) || key_down(.Right_Control)
-//     shift := key_down(.Left_Shift) || key_down(.Right_Shift)
-
-//     for key in key_presses(repeating = true) {
-//         #partial switch key {
-//         case .Escape: release_keyboard_focus()
-//         // case .Enter, .Pad_Enter: edit(text, .New_Line)
-//         case .A: if ctrl do text_edit(text, .Select_All)
-//         case .C: if ctrl do text_edit(text, .Copy)
-//         case .V: if ctrl do text_edit(text, .Paste)
-//         case .X: if ctrl do text_edit(text, .Cut)
-//         case .Y: if ctrl do text_edit(text, .Redo)
-//         case .Z: if ctrl do text_edit(text, .Undo)
-
-//         case .Home:
-//             switch {
-//             case ctrl && shift: text_edit(text, .Select_Start)
-//             case shift: text_edit(text, .Select_Line_Start)
-//             case ctrl: text_edit(text, .Start)
-//             case: text_edit(text, .Line_Start)
-//             }
-
-//         case .End:
-//             switch {
-//             case ctrl && shift: text_edit(text, .Select_End)
-//             case shift: text_edit(text, .Select_Line_End)
-//             case ctrl: text_edit(text, .End)
-//             case: text_edit(text, .Line_End)
-//             }
-
-//         case .Insert:
-//             switch {
-//             case ctrl: text_edit(text, .Copy)
-//             case shift: text_edit(text, .Paste)
-//             }
-
-//         case .Backspace:
-//             switch {
-//             case ctrl: text_edit(text, .Delete_Word_Left)
-//             case: text_edit(text, .Backspace)
-//             }
-
-//         case .Delete:
-//             switch {
-//             case ctrl: text_edit(text, .Delete_Word_Right)
-//             case shift: text_edit(text, .Cut)
-//             case: text_edit(text, .Delete)
-//             }
-
-//         case .Left_Arrow:
-//             switch {
-//             case ctrl && shift: text_edit(text, .Select_Word_Left)
-//             case shift: text_edit(text, .Select_Left)
-//             case ctrl: text_edit(text, .Word_Left)
-//             case: text_edit(text, .Left)
-//             }
-
-//         case .Right_Arrow:
-//             switch {
-//             case ctrl && shift: text_edit(text, .Select_Word_Right)
-//             case shift: text_edit(text, .Select_Right)
-//             case ctrl: text_edit(text, .Word_Right)
-//             case: text_edit(text, .Right)
-//             }
-
-//         // case .Up_Arrow:
-//         //     switch {
-//         //     case shift: edit(text, .Select_Up)
-//         //     case: edit(text, .Up)
-//         //     }
-
-//         // case .Down_Arrow:
-//         //     switch {
-//         //     case shift: edit(text, .Select_Down)
-//         //     case: edit(text, .Down)
-//         //     }
-//         }
-//     }
-// }
-
-// text_caret_rectangle :: proc(text: ^Editable_Text_Line) -> (rectangle: Rectangle) {
-//     glyph_count := len(text.glyphs)
-
-//     rectangle.position = text.position
-//     rectangle.size = {CARET_WIDTH, text.size.y}
-
-//     if glyph_count == 0 do return
-
-//     head := text.edit_state.selection[0]
-//     caret_rune_index, caret_oob := text_byte_index_to_rune_index(text, head)
-
-//     if caret_oob || caret_rune_index >= len(text.glyphs) {
-//         rectangle.position.x += text.glyphs[glyph_count - 1].position + text.glyphs[glyph_count - 1].width
-//     } else {
-//         rectangle.position.x += text.glyphs[caret_rune_index].position
-//     }
-
-//     return
-// }
-
-// text_selection_rectangle :: proc(text: ^Editable_Text_Line) -> (rectangle: Rectangle, exists: bool) {
-//     glyph_count := len(text.glyphs)
-
-//     if glyph_count == 0 do return
-
-//     height := font_metrics(text.font).line_height
-
-//     low, high := text_sorted_selection(text)
-//     if high > low {
-//         left_rune_index, left_oob := text_byte_index_to_rune_index(text, low)
-//         if left_oob do left_rune_index = glyph_count - 1
-
-//         right_rune_index, right_oob := text_byte_index_to_rune_index(text, high)
-//         if right_oob {
-//             right_rune_index = glyph_count - 1
-//         } else {
-//             right_rune_index -= 1
-//         }
-
-//         left := text.glyphs[left_rune_index].position
-//         right := text.glyphs[right_rune_index].position + text.glyphs[right_rune_index].width
-
-//         rectangle.position = text.position + {left, 0}
-//         rectangle.size = {right - left, height}
-
-//         exists = true
-//     }
-
-//     return
-// }
-
-// text_byte_index_at_x :: proc(text: ^Editable_Text_Line, x: f32) -> int {
-//     glyph_count := len(text.glyphs)
-//     if glyph_count == 0 do return 0
-
-//     x := x + POSITIONAL_SELECTION_HORIZONTAL_BIAS
-//     position := text.position
-
-//     // There's almost certainly a better way to do this.
-//     #reverse for glyph, i in text.glyphs {
-//         left := position.x + glyph.position
-//         right := position.x + glyph.position + glyph.width
-
-//         if i == glyph_count - 1 && x >= right {
-//             return len(text.builder.buf)
-//         }
-
-//         if x >= left && x < right {
-//             return glyph.byte_index
-//         }
-//     }
-
-//     return 0
-// }
-
-// _text_update_str :: proc(text: ^Editable_Text_Line) {
-//     text.str = strings.to_string(text.builder)
-//     text.needs_remeasure = true
-// }
-
-// _text_update_edit_state_line_start_and_end :: proc(text: ^Editable_Text_Line) {
-//     text.edit_state.line_start = 0
-//     text.edit_state.line_end = len(text.builder.buf)
-// }
-
-// _quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
-//     bytes := make([dynamic]byte, len(str), allocator = context.temp_allocator)
-//     copy_from_string(bytes[:], str)
-
-//     keep_position := 0
-
-//     for i in 0 ..< len(bytes) {
-//         should_keep := bytes[i] != '\n' && bytes[i] != '\r'
-//         if should_keep {
-//             if keep_position != i {
-//                 bytes[keep_position] = bytes[i]
-//             }
-//             keep_position += 1
-//         }
-//     }
-
-//     resize(&bytes, keep_position)
-//     return string(bytes[:])
-// }
-
-// //==========================================================================
-// // Overloads
-// //==========================================================================
-
-// text_init :: proc {
-//     text_line_init,
-//     editable_text_line_init,
-// }
-
-// text_destroy :: proc {
-//     text_line_destroy,
-//     editable_text_line_destroy,
-// }
-
-// text_update :: proc {
-//     text_line_update,
-//     editable_text_line_update,
-// }
-
-// text_draw :: proc {
-//     text_line_draw,
-//     editable_text_line_draw,
-// }
+//==========================================================================
+// Box Select
+//==========================================================================
+
+box_select :: proc(id: Id, mouse_button: Mouse_Button) -> (rectangle: Rectangle, selected: bool) {
+    start := get_state(id, Vector2{})
+
+    mp := mouse_position()
+
+    if mouse_pressed(mouse_button) {
+        start^ = mp
+    }
+
+    pixel := pixel_size()
+
+    position := Vector2{min(start.x, mp.x), min(start.y, mp.y)}
+    bottom_right := Vector2{max(start.x, mp.x), max(start.y, mp.y)}
+
+    rectangle = Rectangle{position, bottom_right - position}
+    rectangle.size.x = max(rectangle.size.x, pixel.x)
+    rectangle.size.y = max(rectangle.size.y, pixel.y)
+
+    if mouse_down(mouse_button) {
+        fill_rectangle(rectangle_expanded(rectangle, -pixel), {0, 0, 0, 0.3})
+        outline_rectangle(rectangle, pixel.x, {1, 1, 1, 0.3})
+    }
+
+    if mouse_released(mouse_button) {
+        selected = true
+    }
+
+    return
+}
+
+//==========================================================================
+// Editable Text Line
+//==========================================================================
+
+editable_text_line :: proc(id: Id, builder: ^strings.Builder, rectangle: Rectangle, font: Font, color := Color{1, 1, 1, 1}) {
+    quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
+        bytes := make([dynamic]byte, len(str), allocator = context.temp_allocator)
+        copy_from_string(bytes[:], str)
+
+        keep_position := 0
+
+        for i in 0 ..< len(bytes) {
+            should_keep := bytes[i] != '\n' && bytes[i] != '\r'
+            if should_keep {
+                if keep_position != i {
+                    bytes[keep_position] = bytes[i]
+                }
+                keep_position += 1
+            }
+        }
+
+        resize(&bytes, keep_position)
+        return string(bytes[:])
+    }
+
+    initial_edit_state :: proc(builder: ^strings.Builder) -> (edit_state: cte.State) {
+        cte.init(&edit_state, context.allocator, context.allocator)
+        cte.setup_once(&edit_state, builder)
+        edit_state.selection = {0, 0}
+        edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
+            data = clipboard()
+            return quick_remove_line_ends_UNSAFE(data), true
+        }
+        edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
+            set_clipboard(data)
+            return true
+        }
+        return
+    }
+
+    str := strings.to_string(builder^)
+    edit_state := get_state(id, initial_edit_state(builder))
+
+    glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
+    measure_string(str, font, &glyphs, nil)
+
+    line_height := font_metrics(font).line_height
+
+    edit_state.line_start = 0
+    edit_state.line_end = len(str)
+
+    // Update the undo state timeout manually.
+
+    edit_state.current_time = time.tick_now()
+    if edit_state.undo_timeout <= 0 {
+        edit_state.undo_timeout = cte.DEFAULT_UNDO_TIMEOUT
+    }
+
+    // Handle keyboard editing behavior.
+
+    is_keyboard_focus := keyboard_focus() == id
+
+    text_input := text_input()
+    if len(text_input) > 0 {
+        cte.input_text(edit_state, quick_remove_line_ends_UNSAFE(text_input))
+    }
+
+    ctrl := key_down(.Left_Control) || key_down(.Right_Control)
+    shift := key_down(.Left_Shift) || key_down(.Right_Shift)
+
+    for key in key_presses(repeating = true) {
+        #partial switch key {
+        case .Escape: release_keyboard_focus()
+
+        case .A: if ctrl do cte.perform_command(edit_state, .Select_All)
+        case .C: if ctrl do cte.perform_command(edit_state, .Copy)
+        case .V: if ctrl do cte.perform_command(edit_state, .Paste)
+        case .X: if ctrl do cte.perform_command(edit_state, .Cut)
+        case .Y: if ctrl do cte.perform_command(edit_state, .Redo)
+        case .Z: if ctrl do cte.perform_command(edit_state, .Undo)
+
+        case .Home:
+            switch {
+            case ctrl && shift: cte.perform_command(edit_state, .Select_Start)
+            case shift: cte.perform_command(edit_state, .Select_Line_Start)
+            case ctrl: cte.perform_command(edit_state, .Start)
+            case: cte.perform_command(edit_state, .Line_Start)
+            }
+
+        case .End:
+            switch {
+            case ctrl && shift: cte.perform_command(edit_state, .Select_End)
+            case shift: cte.perform_command(edit_state, .Select_Line_End)
+            case ctrl: cte.perform_command(edit_state, .End)
+            case: cte.perform_command(edit_state, .Line_End)
+            }
+
+        case .Insert:
+            switch {
+            case ctrl: cte.perform_command(edit_state, .Copy)
+            case shift: cte.perform_command(edit_state, .Paste)
+            }
+
+        case .Backspace:
+            switch {
+            case ctrl: cte.perform_command(edit_state, .Delete_Word_Left)
+            case: cte.perform_command(edit_state, .Backspace)
+            }
+
+        case .Delete:
+            switch {
+            case ctrl: cte.perform_command(edit_state, .Delete_Word_Right)
+            case shift: cte.perform_command(edit_state, .Cut)
+            case: cte.perform_command(edit_state, .Delete)
+            }
+
+        case .Left_Arrow:
+            switch {
+            case ctrl && shift: cte.perform_command(edit_state, .Select_Word_Left)
+            case shift: cte.perform_command(edit_state, .Select_Left)
+            case ctrl: cte.perform_command(edit_state, .Word_Left)
+            case: cte.perform_command(edit_state, .Left)
+            }
+
+        case .Right_Arrow:
+            switch {
+            case ctrl && shift: cte.perform_command(edit_state, .Select_Word_Right)
+            case shift: cte.perform_command(edit_state, .Select_Right)
+            case ctrl: cte.perform_command(edit_state, .Word_Right)
+            case: cte.perform_command(edit_state, .Right)
+            }
+        }
+    }
+
+    // Figure out where things of interest are in the string.
+
+    is_mouse_hover := mouse_hover() == id
+    relative_mp := mouse_position() - rectangle.position.x + 3 // Add a little bias for better feel.
+    mouse_byte_index: int
+
+    head := edit_state.selection[0]
+    caret_x: f32
+
+    selection_left, selection_right := cte.sorted_selection(edit_state)
+    selection_left_x: f32
+    selection_right_x: f32
+
+    for glyph in glyphs {
+        if head == glyph.byte_index {
+            caret_x = glyph.position
+        }
+        if selection_left == glyph.byte_index {
+            selection_left_x = glyph.position
+        }
+        if selection_right == glyph.byte_index {
+            selection_right_x = glyph.position
+        }
+        if relative_mp.x >= glyph.position && relative_mp.x < glyph.position + glyph.width {
+            mouse_byte_index = glyph.byte_index
+        }
+    }
+
+    if len(glyphs) > 0 {
+        last_glyph := glyphs[len(glyphs) - 1]
+        last_glyph_right := last_glyph.position + last_glyph.width
+        if head >= len(str) {
+            caret_x = last_glyph_right
+        }
+        if selection_left >= len(str) {
+            selection_left_x = last_glyph_right
+        }
+        if selection_right >= len(str) {
+            selection_right_x = last_glyph_right
+        }
+        if relative_mp.x >= last_glyph_right {
+            mouse_byte_index = len(str)
+        }
+    }
+
+    // Handle mouse editing behavior.
+
+    if mouse_hit_test(rectangle) {
+        request_mouse_hover(id)
+    }
+
+    if is_mouse_hover {
+        set_mouse_cursor_style(.I_Beam)
+
+        if mouse_pressed(.Left) {
+            capture_mouse_hover()
+            set_keyboard_focus(id)
+
+            switch mouse_repeat_count(.Left) {
+            case 0, 1: // Single click
+                edit_state.selection[0] = mouse_byte_index
+                if !shift do edit_state.selection[1] = mouse_byte_index
+
+            case 2: // Double click
+                cte.perform_command(edit_state, .Word_Right)
+                cte.perform_command(edit_state, .Word_Left)
+                cte.perform_command(edit_state, .Select_Word_Right)
+
+            case 3: // Triple click
+                cte.perform_command(edit_state, .Line_Start)
+                cte.perform_command(edit_state, .Select_Line_End)
+
+            case: // Quadruple click and beyond
+                cte.perform_command(edit_state, .Start)
+                cte.perform_command(edit_state, .Select_End)
+            }
+        }
+
+        if mouse_repeat_count(.Left) == 1 && mouse_down(.Left) {
+            edit_state.selection[0] = mouse_byte_index
+        }
+
+        if mouse_released(.Left) {
+            release_mouse_hover()
+        }
+    } else {
+        if mouse_pressed(.Left) {
+            if is_keyboard_focus {
+                release_keyboard_focus()
+            }
+        }
+    }
+
+    // Draw the selection, string, and then caret.
+    fill_rectangle(rectangle, {0.4, 0, 0, 1})
+
+    selection_color: Color = {0, 0.4, 0.8, 0.8} if is_keyboard_focus else {0, 0.4, 0.8, 0.65}
+    fill_rectangle({rectangle.position + {selection_left_x, 0}, {selection_right_x - selection_left_x, line_height}}, selection_color)
+
+    fill_string(str, rectangle.position, font, color)
+
+    if is_keyboard_focus {
+        fill_rectangle({rectangle.position + {caret_x, 0}, {2, line_height}}, {0.7, 0.9, 1, 1})
+    }
+}
