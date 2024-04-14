@@ -201,8 +201,3 @@ rectangle_encloses_vector2 :: proc(a: Rectangle, b: Vector2, include_borders := 
                b.y > a.position.y && b.y < a.position.y + a.size.y
     }
 }
-
-// rectangle_hit_test :: proc(a: Rectangle, b: Vector2) -> bool {
-//     return rectangle_encloses_vector2(a, b, include_borders = false) &&
-//            rectangle_encloses_vector2(clip_rectangle(), b, include_borders = false)
-// }

@@ -2,25 +2,13 @@ package main
 
 import "base:runtime"
 import "base:intrinsics"
+import "core:fmt"
 import "core:math"
 import "core:time"
 import "core:slice"
 import "core:strings"
 
 Vector2 :: [2]f32
-Id :: u64
-
-// get_id :: proc "contextless" () -> Id {
-//     @(static) id: Id
-//     return 1 + intrinsics.atomic_add(&id, 1)
-// }
-
-// get_id :: proc(str: string) -> Id {
-//     return
-// }
-
-clipboard :: backend_clipboard
-set_clipboard :: backend_set_clipboard
 
 //==========================================================================
 // Context
@@ -30,6 +18,8 @@ set_clipboard :: backend_set_clipboard
 
 Context :: struct {
     update: proc(),
+
+    is_running: bool,
 
     tick: time.Tick,
 
@@ -57,10 +47,11 @@ Context :: struct {
     mouse_hover_capture: Id,
     final_mouse_hover_request: Id,
 
-    last_id: Id,
     is_first_frame: bool,
 
     window_stack: [dynamic]^Window,
+
+    id_stack: [dynamic]Id,
 
     retained_state: map[Id]rawptr,
 
@@ -78,6 +69,7 @@ gui_startup :: proc(update: proc()) {
     ctx.mouse_repeat_duration = 300 * time.Millisecond
     ctx.mouse_repeat_movement_tolerance = 3
     ctx.is_first_frame = true
+    ctx.is_running = true
     backend_startup()
 }
 
@@ -90,6 +82,8 @@ gui_shutdown :: proc() {
     delete(ctx.key_repeats)
     delete(ctx.key_releases)
     strings.builder_destroy(&ctx.text_input)
+    delete(ctx.retained_state)
+    free_all(context.temp_allocator)
 }
 
 gui_update :: proc() {
@@ -98,16 +92,12 @@ gui_update :: proc() {
     free_all(context.temp_allocator)
 }
 
-get_state :: proc(id: Id, initial_value: $T) -> (state: ^T) {
-    ctx := gui_context()
-    if id not_in ctx.retained_state {
-        state = new(T)
-        state^ = initial_value
-        ctx.retained_state[id] = state
-    } else {
-        state = cast(^T)ctx.retained_state[id]
-    }
-    return
+gui_is_running :: proc() -> bool {
+    return gui_context().is_running
+}
+
+gui_stop :: proc() {
+    gui_context().is_running = false
 }
 
 context_update :: proc(ctx: ^Context) {
@@ -147,6 +137,100 @@ context_update :: proc(ctx: ^Context) {
     clear(&ctx.key_repeats)
     clear(&ctx.key_releases)
     strings.builder_reset(&ctx.text_input)
+}
+
+//==========================================================================
+// State
+//==========================================================================
+
+Id :: u32
+
+get_id :: proc {
+    get_id_id,
+    get_id_string,
+    get_id_ptr,
+}
+
+get_id_id :: #force_inline proc(id: Id) -> Id {
+    return id
+}
+
+get_id_string :: #force_inline proc(str: string) -> Id {
+    return _context_get_id_bytes(gui_context(), transmute([]byte)str)
+}
+
+get_id_ptr :: #force_inline proc(ptr: ^$T) -> Id {
+    ptr := ptr
+    return _context_get_id_bytes(gui_context(), ([^]u8)(&ptr)[:size_of(ptr)])
+}
+
+begin_id_space :: proc {
+    begin_id_space_id,
+    begin_id_space_str,
+    begin_id_space_ptr,
+}
+
+begin_id_space_id :: proc(id: Id) {
+    append(&gui_context().id_stack, id)
+}
+
+begin_id_space_str :: proc(str: string) {
+    append(&gui_context().id_stack, get_id(str))
+}
+
+begin_id_space_ptr :: proc(ptr: ^$P) {
+    append(&gui_context().id_stack, get_id(ptr))
+}
+
+end_id_space :: proc() {
+	pop(&gui_context().id_stack)
+}
+
+get_state :: proc {
+    get_state_id,
+    get_state_str,
+    get_state_ptr,
+}
+
+get_state_id :: proc(id: Id, $T: typeid) -> (state: ^T, init: bool) #optional_ok {
+    ctx := gui_context()
+    if id not_in ctx.retained_state {
+        state = new(T)
+        ctx.retained_state[id] = state
+        init = true
+        return
+    } else {
+        state = cast(^T)ctx.retained_state[id]
+    }
+    return
+}
+
+get_state_str :: proc(str: string, $T: typeid) -> (state: ^T, init: bool) #optional_ok {
+    return get_state_id(get_id(str), T)
+}
+
+get_state_ptr :: proc(ptr: ^$P, $T: typeid) -> (state: ^T, init: bool) #optional_ok {
+    return get_state_id(get_id(ptr), T)
+}
+
+state_destroyed :: proc() -> bool {
+    return !gui_is_running()
+}
+
+_context_get_id_bytes :: proc(ctx: ^Context, bytes: []byte) -> Id {
+	/* 32bit fnv-1a hash */
+	HASH_INITIAL :: 2166136261
+	hash :: proc(hash: ^Id, data: []byte) {
+		size := len(data)
+		cptr := ([^]u8)(raw_data(data))
+		for ; size > 0; size -= 1 {
+			hash^ = Id(u32(hash^) ~ u32(cptr[0])) * 16777619
+			cptr = cptr[1:]
+		}
+	}
+	res := ctx.id_stack[len(ctx.id_stack) - 1] if len(ctx.id_stack) > 0 else HASH_INITIAL
+	hash(&res, bytes)
+	return res
 }
 
 //==========================================================================
@@ -253,6 +337,13 @@ input_rune :: proc(ctx: ^Context, r: rune) {
     strings.write_rune(&ctx.text_input, r)
 }
 
+is_first_frame :: proc() -> bool {
+    return gui_context().is_first_frame
+}
+
+clipboard :: backend_clipboard
+set_clipboard :: backend_set_clipboard
+
 mouse_position :: proc() -> (res: Vector2) {
     ctx := gui_context()
     res = ctx.screen_mouse_position
@@ -261,6 +352,7 @@ mouse_position :: proc() -> (res: Vector2) {
         return
     }
     res -= window.position
+    res -= global_offset()
     return
 }
 
@@ -373,6 +465,9 @@ Window_Base :: struct {
     child_windows: [dynamic]^Window,
     mouse_cursor_style: Mouse_Cursor_Style,
     previous_mouse_cursor_style: Mouse_Cursor_Style,
+    global_clip_rectangle_stack: [dynamic]Rectangle,
+    local_offset_stack: [dynamic]Vector2,
+    global_offset_stack: [dynamic]Vector2,
 }
 
 current_window :: proc() -> ^Window {
@@ -381,23 +476,23 @@ current_window :: proc() -> ^Window {
     return ctx.window_stack[len(ctx.window_stack) - 1]
 }
 
-window_init :: proc(window: ^Window, rectangle: Rectangle) {
-    window.content_scale = {1, 1}
-    window.rectangle = rectangle
-    backend_window_init(window, rectangle)
-}
-
-window_destroy :: proc(window: ^Window) {
-    backend_window_destroy(window)
-    _window_close(window)
-    delete(window.child_windows)
-}
-
-window_begin :: proc(window: ^Window) -> bool {
+window_begin :: proc(id: Id, initial_rectangle: Rectangle) -> bool {
     parent := current_window()
 
     ctx := gui_context()
+
+    window, init := get_state(id, Window)
+    if init {
+        window.content_scale = {1, 1}
+        window.rectangle = initial_rectangle
+        backend_window_init(window, initial_rectangle)
+    }
+
     append(&ctx.window_stack, window)
+
+    window.global_clip_rectangle_stack = make([dynamic]Rectangle, context.temp_allocator)
+    window.local_offset_stack = make([dynamic]Vector2, context.temp_allocator)
+    window.global_offset_stack = make([dynamic]Vector2, context.temp_allocator)
 
     clear(&window.child_windows)
     backend_window_begin_frame(window)
@@ -432,6 +527,15 @@ window_end :: proc() {
         _window_close(window)
     }
 
+    if state_destroyed() {
+        backend_window_destroy(window)
+        _window_close(window)
+        delete(window.child_windows)
+        delete(window.loaded_fonts)
+        free(window)
+        fmt.println("Window Destroyed")
+    }
+
     pop(&ctx.window_stack)
 
     parent := current_window()
@@ -440,9 +544,19 @@ window_end :: proc() {
     }
 }
 
+window :: proc {
+    window_id,
+    window_str,
+}
+
 @(deferred_none=window_end)
-window_update :: proc(window: ^Window) -> bool {
-    return window_begin(window)
+window_id :: proc(id: Id, initial_rectangle: Rectangle) -> bool {
+    return window_begin(id, initial_rectangle)
+}
+
+@(deferred_none=window_end)
+window_str :: proc(str: string, initial_rectangle: Rectangle) -> bool {
+    return window_begin(get_id(str), initial_rectangle)
 }
 
 _window_open :: proc(window: ^Window) {
@@ -497,6 +611,7 @@ Text_Glyph :: struct {
 Draw_Command :: union {
     Fill_Path_Command,
     Fill_String_Command,
+    Set_Clip_Rectangle_Command,
 }
 
 Fill_Path_Command :: struct {
@@ -509,6 +624,10 @@ Fill_String_Command :: struct {
     position: Vector2,
     font: Font,
     color: Color,
+}
+
+Set_Clip_Rectangle_Command :: struct {
+    global_clip_rectangle: Rectangle,
 }
 
 pixel_size :: proc() -> Vector2 {
@@ -535,12 +654,21 @@ rectangle_pixel_snapped :: proc(rectangle: Rectangle) -> Rectangle {
 fill_string :: proc(str: string, position: Vector2, font: Font, color: Color) {
     window := current_window()
     _load_font_if_not_loaded(window, font)
-    backend_render_draw_command(window, Fill_String_Command{str, position, font, color})
+    backend_render_draw_command(window, Fill_String_Command{str, global_offset() + position, font, color})
 }
 
 fill_path :: proc(path: Path, color: Color) {
     window := current_window()
+    path := path
+    path_translate(&path, global_offset())
     backend_render_draw_command(window, Fill_Path_Command{path, color})
+}
+
+set_clip_rectangle :: proc(rectangle: Rectangle) {
+    window := current_window()
+    rectangle := rectangle
+    rectangle.position += global_offset()
+    backend_render_draw_command(window, Set_Clip_Rectangle_Command{rectangle})
 }
 
 measure_string :: proc(str: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) {
@@ -596,16 +724,9 @@ _load_font_if_not_loaded :: proc(window: ^Window, font: Font) {
     }
 }
 
-
-
-
-
-
-
-
-
-
-
+//==========================================================================
+// Tools
+//==========================================================================
 
 mouse_hover :: proc() -> Id {
     ctx := gui_context()
@@ -665,103 +786,99 @@ release_keyboard_focus :: proc() {
 }
 
 hit_test :: proc(rectangle: Rectangle, target: Vector2) -> bool {
-    return rectangle_encloses(rectangle, target, include_borders = false)// &&
-        //    rectangle_encloses(clip_rectangle(), target, include_borders = false)
+    return rectangle_encloses(rectangle, target, include_borders = false) &&
+           rectangle_encloses(local_clip_rectangle(), target, include_borders = false)
 }
 
 mouse_hit_test :: proc(rectangle: Rectangle) -> bool {
     return hit_test(rectangle, mouse_position())
 }
 
-// // Local coordinates
-// offset :: proc() -> Vector2 {
-//     window := current_window()
-//     if len(window.local_offset_stack) <= 0 do return {0, 0}
-//     return window.local_offset_stack[len(window.local_offset_stack) - 1]
-// }
+local_offset :: proc() -> Vector2 {
+    window := current_window()
+    if len(window.local_offset_stack) <= 0 do return {0, 0}
+    return window.local_offset_stack[len(window.local_offset_stack) - 1]
+}
 
-// // Global coordinates
-// global_offset :: proc() -> Vector2 {
-//     window := current_window()
-//     if len(window.global_offset_stack) <= 0 do return {0, 0}
-//     return window.global_offset_stack[len(window.global_offset_stack) - 1]
-// }
+global_offset :: proc() -> Vector2 {
+    window := current_window()
+    if len(window.global_offset_stack) <= 0 do return {0, 0}
+    return window.global_offset_stack[len(window.global_offset_stack) - 1]
+}
 
-// // Set in local coordinates
-// begin_offset :: proc(offset: Vector2) {
-//     window := current_window()
-//     append(&window.local_offset_stack, offset)
-//     append(&window.global_offset_stack, global_offset() + offset)
-// }
+// Set in local coordinates
+begin_offset :: proc(offset: Vector2) {
+    window := current_window()
+    append(&window.local_offset_stack, offset)
+    append(&window.global_offset_stack, global_offset() + offset)
+}
 
-// end_offset :: proc() {
-//     window := current_window()
-//     if len(window.local_offset_stack) <= 0 ||
-//        len(window.global_offset_stack) <= 0 {
-//         return
-//     }
-//     pop(&window.local_offset_stack)
-//     pop(&window.global_offset_stack)
-// }
+end_offset :: proc() {
+    window := current_window()
+    if len(window.local_offset_stack) <= 0 ||
+       len(window.global_offset_stack) <= 0 {
+        return
+    }
+    pop(&window.local_offset_stack)
+    pop(&window.global_offset_stack)
+}
 
-// @(deferred_none=end_offset)
-// scoped_offset :: proc(offset: Vector2) {
-//     begin_offset(offset)
-// }
+@(deferred_none=end_offset)
+scoped_offset :: proc(offset: Vector2) {
+    begin_offset(offset)
+}
 
-// // Local coordinates
-// clip_rectangle :: proc() -> Rectangle {
-//     window := current_window()
-//     if len(window.global_clip_rectangle_stack) <= 0 do return {-global_offset(), window.size}
-//     global_rect := window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1]
-//     global_rect.position -= global_offset()
-//     return global_rect
-// }
+local_clip_rectangle :: proc() -> Rectangle {
+    window := current_window()
+    if len(window.global_clip_rectangle_stack) <= 0 do return {-global_offset(), window.size}
+    global_rect := window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1]
+    global_rect.position -= global_offset()
+    return global_rect
+}
 
-// // Global coordinates
-// global_clip_rectangle :: proc() -> Rectangle {
-//     window := current_window()
-//     if len(window.global_clip_rectangle_stack) <= 0 do return {{0, 0}, window.size}
-//     return window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1]
-// }
+global_clip_rectangle :: proc() -> Rectangle {
+    window := current_window()
+    if len(window.global_clip_rectangle_stack) <= 0 do return {{0, 0}, window.size}
+    return window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1]
+}
 
-// // Set in local coordinates
-// begin_clip :: proc(rectangle: Rectangle, intersect := true) {
-//     window := current_window()
+// Set in local coordinates
+begin_clip :: proc(rectangle: Rectangle, intersect := true) {
+    window := current_window()
 
-//     offset := global_offset()
-//     global_rect := Rectangle{offset + rectangle.position, rectangle.size}
+    offset := global_offset()
+    global_rect := Rectangle{offset + rectangle.position, rectangle.size}
 
-//     if intersect && len(window.global_clip_rectangle_stack) > 0 {
-//         global_rect = rectangle_intersection(global_rect, window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1])
-//     }
+    if intersect && len(window.global_clip_rectangle_stack) > 0 {
+        global_rect = rectangle_intersection(global_rect, window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1])
+    }
 
-//     append(&window.global_clip_rectangle_stack, global_rect)
-//     _process_draw_command(window, Clip_Drawing_Command{global_rect})
-// }
+    append(&window.global_clip_rectangle_stack, global_rect)
+    backend_render_draw_command(window, Set_Clip_Rectangle_Command{global_rect})
+}
 
-// end_clip :: proc() {
-//     window := current_window()
+end_clip :: proc() {
+    window := current_window()
 
-//     if len(window.global_clip_rectangle_stack) <= 0 {
-//         return
-//     }
+    if len(window.global_clip_rectangle_stack) <= 0 {
+        return
+    }
 
-//     pop(&window.global_clip_rectangle_stack)
+    pop(&window.global_clip_rectangle_stack)
 
-//     if len(window.global_clip_rectangle_stack) <= 0 {
-//         return
-//     }
+    if len(window.global_clip_rectangle_stack) <= 0 {
+        return
+    }
 
-//     global_rect := window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1]
+    global_rect := window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1]
 
-//     _process_draw_command(window, Clip_Drawing_Command{global_rect})
-// }
+    backend_render_draw_command(window, Set_Clip_Rectangle_Command{global_rect})
+}
 
-// @(deferred_none=end_clip)
-// scoped_clip :: proc(rectangle: Rectangle, intersect := true) {
-//     begin_clip(rectangle, intersect = intersect)
-// }
+@(deferred_none=end_clip)
+scoped_clip :: proc(rectangle: Rectangle, intersect := true) {
+    begin_clip(rectangle, intersect = intersect)
+}
 
 // z_index :: proc() -> int {
 //     window := current_window()

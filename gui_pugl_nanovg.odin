@@ -327,6 +327,10 @@ backend_render_draw_command :: proc(window: ^Window, command: Draw_Command) {
         nvg.FillColor(nvg_ctx, cmd.color)
         nvg.Text(nvg_ctx, position.x, position.y, cmd.text)
         nvg.Restore(nvg_ctx)
+
+    case Set_Clip_Rectangle_Command:
+        rect := pixel_snapped(cmd.global_clip_rectangle)
+        nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
     }
 }
 

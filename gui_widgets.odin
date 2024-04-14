@@ -16,8 +16,12 @@ Button_Response :: struct {
     clicked: bool,
 }
 
-button :: proc(id: Id, rectangle: Rectangle, color: Color, mouse_button := Mouse_Button.Left) -> (res: Button_Response) {
-    is_down := get_state(id, false)
+button :: proc(name: string, rectangle: Rectangle, color: Color, mouse_button := Mouse_Button.Left) -> (res: Button_Response) {
+    id := get_id(name)
+    is_down := get_state(id, bool)
+    defer if state_destroyed() {
+        free(is_down)
+    }
 
     res.is_down = is_down^
     res.pressed = false
@@ -177,8 +181,11 @@ button :: proc(id: Id, rectangle: Rectangle, color: Color, mouse_button := Mouse
 // Box Select
 //==========================================================================
 
-box_select :: proc(id: Id, mouse_button: Mouse_Button) -> (rectangle: Rectangle, selected: bool) {
-    start := get_state(id, Vector2{})
+box_select :: proc(name: string, mouse_button: Mouse_Button) -> (rectangle: Rectangle, selected: bool) {
+    start := get_state(name, Vector2)
+    defer if state_destroyed() {
+        free(start)
+    }
 
     mp := mouse_position()
 
@@ -211,7 +218,7 @@ box_select :: proc(id: Id, mouse_button: Mouse_Button) -> (rectangle: Rectangle,
 // Editable Text Line
 //==========================================================================
 
-editable_text_line :: proc(id: Id, builder: ^strings.Builder, rectangle: Rectangle, font: Font, color := Color{1, 1, 1, 1}) {
+editable_text_line :: proc(builder: ^strings.Builder, rectangle: Rectangle, font: Font, color := Color{1, 1, 1, 1}) {
     quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
         bytes := make([dynamic]byte, len(str), allocator = context.temp_allocator)
         copy_from_string(bytes[:], str)
@@ -232,9 +239,13 @@ editable_text_line :: proc(id: Id, builder: ^strings.Builder, rectangle: Rectang
         return string(bytes[:])
     }
 
-    initial_edit_state :: proc(builder: ^strings.Builder) -> (edit_state: cte.State) {
-        cte.init(&edit_state, context.allocator, context.allocator)
-        cte.setup_once(&edit_state, builder)
+    id := get_id(builder)
+
+    str := strings.to_string(builder^)
+    edit_state, edit_state_init := get_state(id, cte.State)
+    if edit_state_init {
+        cte.init(edit_state, context.allocator, context.allocator)
+        cte.setup_once(edit_state, builder)
         edit_state.selection = {0, 0}
         edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
             data = clipboard()
@@ -244,11 +255,11 @@ editable_text_line :: proc(id: Id, builder: ^strings.Builder, rectangle: Rectang
             set_clipboard(data)
             return true
         }
-        return
     }
-
-    str := strings.to_string(builder^)
-    edit_state := get_state(id, initial_edit_state(builder))
+    defer if state_destroyed() {
+        cte.destroy(edit_state)
+        free(edit_state)
+    }
 
     glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
     measure_string(str, font, &glyphs, nil)
@@ -435,7 +446,9 @@ editable_text_line :: proc(id: Id, builder: ^strings.Builder, rectangle: Rectang
     }
 
     // Draw the selection, string, and then caret.
+
     fill_rectangle(rectangle, {0.4, 0, 0, 1})
+    scoped_clip(rectangle)
 
     selection_color: Color = {0, 0.4, 0.8, 0.8} if is_keyboard_focus else {0, 0.4, 0.8, 0.65}
     fill_rectangle({rectangle.position + {selection_left_x, 0}, {selection_right_x - selection_left_x, line_height}}, selection_color)
