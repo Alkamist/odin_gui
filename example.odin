@@ -11,37 +11,35 @@ default_font := Font{
     data = #load("consola.ttf"),
 }
 
+running := true
+
+window: Window
+
+ayy_lmao := false
+
+box_select: Box_Select
+
+editable_text_line: Editable_Text_Line
+
+some_text: strings.Builder
+
 update :: proc() {
+    if window_update(&window) {
+        if box, ok := box_select_update(&box_select, .Right); ok {
+            fmt.println(box)
+        }
+
+        if button_update(&ayy_lmao, {{50, 50}, {100, 50}}, {0.5, 0, 0, 1}).clicked {
+            fmt.println("Hello")
+        }
+
+        editable_text_line_update(&editable_text_line, &some_text, {{200, 200}, {100, 100}}, default_font)
+
+        // track_manager(get_id("Track Manager"))
+    }
+
     if key_pressed(.Comma) {
-        gui_stop()
-    }
-
-    text_id := get_id("Ayy Lmao")
-    text, text_init := get_state(text_id, strings.Builder)
-    if text_init {
-        strings.builder_init(text)
-        fmt.println("Text Initialized")
-    }
-    defer if state_destroyed() {
-        strings.builder_destroy(text)
-        free(text)
-        fmt.println("Text Destroyed")
-    }
-
-    if window("Window 1", {{100, 100}, {400, 300}}) {
-        // if box, ok := box_select("Box Select", .Right); ok {
-        //     fmt.println(box)
-        // }
-
-        // if button("Button 1", {{150, 150}, {100, 50}}, {0.3, 0.3, 0.3, 1}).clicked {
-        //     fmt.println("Yee 1")
-        // }
-
-        // if button("Button 2", {{0, 0}, {100, 50}}, {0.6, 0.3, 0.3, 1}).clicked {
-        //     fmt.println("Yee 2")
-        // }
-
-        // editable_text_line(text, {{50, 50}, {100, 100}}, default_font)
+        running = false
     }
 }
 
@@ -72,7 +70,16 @@ main :: proc() {
     gui_startup(update)
     defer gui_shutdown()
 
-    for gui_is_running() {
+    window_init(&window, {{100, 100}, {400, 300}})
+    defer window_destroy(&window)
+
+    strings.builder_init(&some_text)
+    defer strings.builder_destroy(&some_text)
+
+    editable_text_line_init(&editable_text_line)
+    defer editable_text_line_destroy(&editable_text_line)
+
+    for running {
         gui_update()
     }
 }

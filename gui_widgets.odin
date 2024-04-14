@@ -10,55 +10,47 @@ import cte "core:text/edit"
 //==========================================================================
 
 Button_Response :: struct {
-    is_down: bool,
     pressed: bool,
     released: bool,
     clicked: bool,
 }
 
-button :: proc(name: string, rectangle: Rectangle, color: Color, mouse_button := Mouse_Button.Left) -> (res: Button_Response) {
-    id := get_id(name)
-    is_down := get_state(id, bool)
-    defer if state_destroyed() {
-        free(is_down)
-    }
-
-    res.is_down = is_down^
-    res.pressed = false
-    res.released = false
-    res.clicked = false
-
+button_base_update :: proc(is_down: ^bool, rectangle: Rectangle, press, release: bool) -> (button: Button_Response) {
     if mouse_hit_test(rectangle) {
-        request_mouse_hover(id)
+        request_mouse_hover(is_down)
     }
 
-    if !res.is_down && mouse_pressed(mouse_button) && mouse_hover() == id {
+    if !is_down^ && press && mouse_hover() == is_down {
         capture_mouse_hover()
-        res.is_down = true
-        res.pressed = true
+        is_down^ = true
+        button.pressed = true
     }
 
-    if res.is_down && mouse_released(mouse_button) {
+    if is_down^ && release {
         release_mouse_hover()
-        res.is_down = false
-        res.released = true
-        if mouse_hit() == id {
-            res.is_down = false
-            res.clicked = true
+        is_down^ = false
+        button.released = true
+        if mouse_hit() == is_down {
+            is_down^ = false
+            button.clicked = true
         }
     }
+
+    return
+}
+
+button_update :: proc(is_down: ^bool, rectangle: Rectangle, color: Color, mouse_button := Mouse_Button.Left) -> (button: Button_Response) {
+    button = button_base_update(is_down, rectangle, mouse_pressed(mouse_button), mouse_released(mouse_button))
 
     path := temp_path()
     path_rectangle(&path, rectangle)
 
     fill_path(path, color)
-    if res.is_down {
+    if is_down^ {
         fill_path(path, {0, 0, 0, 0.2})
-    } else if mouse_hover() == id {
+    } else if mouse_hover() == is_down {
         fill_path(path, {1, 1, 1, 0.05})
     }
-
-    is_down^ = res.is_down
 
     return
 }
@@ -181,22 +173,21 @@ button :: proc(name: string, rectangle: Rectangle, color: Color, mouse_button :=
 // Box Select
 //==========================================================================
 
-box_select :: proc(name: string, mouse_button: Mouse_Button) -> (rectangle: Rectangle, selected: bool) {
-    start := get_state(name, Vector2)
-    defer if state_destroyed() {
-        free(start)
-    }
+Box_Select :: struct {
+    start: Vector2,
+}
 
+box_select_update :: proc(box_select: ^Box_Select, mouse_button := Mouse_Button.Left) -> (rectangle: Rectangle, selected: bool) {
     mp := mouse_position()
 
     if mouse_pressed(mouse_button) {
-        start^ = mp
+        box_select.start = mp
     }
 
     pixel := pixel_size()
 
-    position := Vector2{min(start.x, mp.x), min(start.y, mp.y)}
-    bottom_right := Vector2{max(start.x, mp.x), max(start.y, mp.y)}
+    position := Vector2{min(box_select.start.x, mp.x), min(box_select.start.y, mp.y)}
+    bottom_right := Vector2{max(box_select.start.x, mp.x), max(box_select.start.y, mp.y)}
 
     rectangle = Rectangle{position, bottom_right - position}
     rectangle.size.x = max(rectangle.size.x, pixel.x)
@@ -218,51 +209,42 @@ box_select :: proc(name: string, mouse_button: Mouse_Button) -> (rectangle: Rect
 // Editable Text Line
 //==========================================================================
 
-editable_text_line :: proc(builder: ^strings.Builder, rectangle: Rectangle, font: Font, color := Color{1, 1, 1, 1}) {
-    quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
-        bytes := make([dynamic]byte, len(str), allocator = context.temp_allocator)
-        copy_from_string(bytes[:], str)
+Editable_Text_Line :: struct {
+    edit_state: cte.State,
+    glyphs: [dynamic]Text_Glyph,
+}
 
-        keep_position := 0
-
-        for i in 0 ..< len(bytes) {
-            should_keep := bytes[i] != '\n' && bytes[i] != '\r'
-            if should_keep {
-                if keep_position != i {
-                    bytes[keep_position] = bytes[i]
-                }
-                keep_position += 1
-            }
-        }
-
-        resize(&bytes, keep_position)
-        return string(bytes[:])
+editable_text_line_init :: proc(text: ^Editable_Text_Line, allocator := context.allocator) {
+    text.glyphs = make([dynamic]Text_Glyph, allocator)
+    cte.init(&text.edit_state, allocator, allocator)
+    text.edit_state.selection = {0, 0}
+    text.edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
+        data = clipboard()
+        return _quick_remove_line_ends_UNSAFE(data), true
     }
+    text.edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
+        set_clipboard(data)
+        return true
+    }
+}
 
-    id := get_id(builder)
+editable_text_line_destroy :: proc(text: ^Editable_Text_Line) {
+    cte.destroy(&text.edit_state)
+    delete(text.glyphs)
+}
+
+editable_text_line_update :: proc(
+    text: ^Editable_Text_Line,
+    builder: ^strings.Builder,
+    rectangle: Rectangle,
+    font: Font,
+    color := Color{1, 1, 1, 1},
+) {
+    edit_state := &text.edit_state
+    edit_state.builder = builder
 
     str := strings.to_string(builder^)
-    edit_state, edit_state_init := get_state(id, cte.State)
-    if edit_state_init {
-        cte.init(edit_state, context.allocator, context.allocator)
-        cte.setup_once(edit_state, builder)
-        edit_state.selection = {0, 0}
-        edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
-            data = clipboard()
-            return quick_remove_line_ends_UNSAFE(data), true
-        }
-        edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
-            set_clipboard(data)
-            return true
-        }
-    }
-    defer if state_destroyed() {
-        cte.destroy(edit_state)
-        free(edit_state)
-    }
-
-    glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
-    measure_string(str, font, &glyphs, nil)
+    measure_string(str, font, &text.glyphs, nil)
 
     line_height := font_metrics(font).line_height
 
@@ -278,11 +260,11 @@ editable_text_line :: proc(builder: ^strings.Builder, rectangle: Rectangle, font
 
     // Handle keyboard editing behavior.
 
-    is_keyboard_focus := keyboard_focus() == id
+    is_keyboard_focus := keyboard_focus() == text
 
     text_input := text_input()
     if len(text_input) > 0 {
-        cte.input_text(edit_state, quick_remove_line_ends_UNSAFE(text_input))
+        cte.input_text(edit_state, _quick_remove_line_ends_UNSAFE(text_input))
     }
 
     ctrl := key_down(.Left_Control) || key_down(.Right_Control)
@@ -354,7 +336,7 @@ editable_text_line :: proc(builder: ^strings.Builder, rectangle: Rectangle, font
 
     // Figure out where things of interest are in the string.
 
-    is_mouse_hover := mouse_hover() == id
+    is_mouse_hover := mouse_hover() == text
     relative_mp := mouse_position() - rectangle.position.x + 3 // Add a little bias for better feel.
     mouse_byte_index: int
 
@@ -365,7 +347,7 @@ editable_text_line :: proc(builder: ^strings.Builder, rectangle: Rectangle, font
     selection_left_x: f32
     selection_right_x: f32
 
-    for glyph in glyphs {
+    for glyph in text.glyphs {
         if head == glyph.byte_index {
             caret_x = glyph.position
         }
@@ -380,8 +362,8 @@ editable_text_line :: proc(builder: ^strings.Builder, rectangle: Rectangle, font
         }
     }
 
-    if len(glyphs) > 0 {
-        last_glyph := glyphs[len(glyphs) - 1]
+    if len(text.glyphs) > 0 {
+        last_glyph := text.glyphs[len(text.glyphs) - 1]
         last_glyph_right := last_glyph.position + last_glyph.width
         if head >= len(str) {
             caret_x = last_glyph_right
@@ -400,7 +382,7 @@ editable_text_line :: proc(builder: ^strings.Builder, rectangle: Rectangle, font
     // Handle mouse editing behavior.
 
     if mouse_hit_test(rectangle) {
-        request_mouse_hover(id)
+        request_mouse_hover(text)
     }
 
     if is_mouse_hover {
@@ -408,7 +390,7 @@ editable_text_line :: proc(builder: ^strings.Builder, rectangle: Rectangle, font
 
         if mouse_pressed(.Left) {
             capture_mouse_hover()
-            set_keyboard_focus(id)
+            set_keyboard_focus(text)
 
             switch mouse_repeat_count(.Left) {
             case 0, 1: // Single click
@@ -458,4 +440,24 @@ editable_text_line :: proc(builder: ^strings.Builder, rectangle: Rectangle, font
     if is_keyboard_focus {
         fill_rectangle({rectangle.position + {caret_x, 0}, {2, line_height}}, {0.7, 0.9, 1, 1})
     }
+}
+
+_quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
+    bytes := make([dynamic]byte, len(str), allocator = context.temp_allocator)
+    copy_from_string(bytes[:], str)
+
+    keep_position := 0
+
+    for i in 0 ..< len(bytes) {
+        should_keep := bytes[i] != '\n' && bytes[i] != '\r'
+        if should_keep {
+            if keep_position != i {
+                bytes[keep_position] = bytes[i]
+            }
+            keep_position += 1
+        }
+    }
+
+    resize(&bytes, keep_position)
+    return string(bytes[:])
 }
