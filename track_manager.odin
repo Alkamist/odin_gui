@@ -1,173 +1,45 @@
 package main
 
-// track_manager :: proc(id: Id) {
+import "core:fmt"
+import "core:slice"
+import "core:strings"
 
-// }
+Track_Group :: struct {
+    using rectangle: Rectangle,
+    is_hovered: bool,
+    is_selected: bool,
+    is_editing_name: bool,
+    position_when_drag_started: Vector2,
+    name: strings.Builder,
+}
 
+track_group_init :: proc(group: ^Track_Group) {
+    strings.builder_init(&group.name)
+    strings.write_string(&group.name, "Ayy lmao")
+}
 
+track_group_destroy :: proc(group: ^Track_Group) {
+    strings.builder_destroy(&group.name)
+}
 
+Track_Manager :: struct {
+    font: Font,
+    groups: [dynamic]^Track_Group,
+    is_dragging_groups: bool,
+    mouse_position_when_drag_started: Vector2,
+    group_to_rename: ^Track_Group,
+}
 
+track_manager_update :: proc(manager: ^Track_Manager) {
+    _track_manager_editing(manager)
+}
 
-
-
-
-
-
-
-
-// import "core:slice"
-// import "core:strings"
-
-// Track_Group :: struct {
-//     using rectangle: Rectangle,
-//     is_selected: bool,
-//     position_when_drag_started: Vector2,
-
-//     name: strings.Builder,
-//     name_text_line: Editable_Text_Line,
-// }
-
-// track_group_init :: proc(group: ^Track_Group) {
-//     strings.builder_init(&group.name)
-//     editable_text_line_init(&group.name_text_line)
-// }
-
-// track_group_destroy :: proc(group: ^Track_Group) {
-//     editable_text_line_destroy(&group.name_text_line)
-//     strings.builder_destroy(&group.name)
-// }
-
-// Track_Manager_State :: enum {
-//     Editing,
-//     Renaming_Group,
-// }
-
-// Track_Manager :: struct {
-//     state: Track_Manager_State,
-//     groups: [dynamic]^Track_Group,
-//     group_edge_padding: f32,
-//     background_color: Color,
-//     // remove_groups_prompt: Remove_Groups_Prompt,
-//     // right_click_menu: Right_Click_Menu,
-//     box_select: Box_Select,
-//     is_dragging_groups: bool,
-//     mouse_position_when_drag_started: Vector2,
-//     group_to_rename: ^Track_Group,
-// }
-
-// track_manager_init :: proc(manager: ^Track_Manager) {
-//     manager.background_color = {0.2, 0.2, 0.2, 1}
-//     manager.group_edge_padding = 3
-// }
-
-// track_manager_destroy :: proc(manager: ^Track_Manager) {
-//     for group in manager.groups {
-//         track_group_destroy(group)
-//         free(group)
-//     }
-//     // destroy_remove_groups_prompt(&manager.remove_groups_prompt)
-//     delete(manager.groups)
-// }
-
-// track_manager_update :: proc(manager: ^Track_Manager) {
-//     switch manager.state {
-//     case .Editing:
-//         _track_manager_editing(manager)
-
-//     case .Renaming_Group:
-//         group := manager.group_to_rename
-
-//         // group.name.position = group.name.position + manager.group_edge_padding
-//         group.name.is_editable = true
-//         group.name.position = group.position + manager.group_edge_padding
-//         text_update(&group.name)
-
-//         group.size = pixel_snapped(group.name.size + manager.group_edge_padding * 2)
-
-//         if key_pressed(.Enter) || key_pressed(.Escape) {
-//             manager.group_to_rename = nil
-//             manager.state = .Editing
-//         }
-//     }
-// }
-
-// track_manager_draw :: proc(manager: ^Track_Manager) {
-//     for group in manager.groups {
-//         // Draw background.
-//         fill_rounded_rectangle(group, 3, manager.background_color)
-//         pixel_outline_rounded_rectangle(group, 3, {1, 1, 1, 0.1})
-
-//         // Outline if selected.
-//         if group.is_selected {
-//             pixel_outline_rounded_rectangle(group, 3, {1, 1, 1, 0.7})
-//         }
-
-//         // Draw group name text.
-//         text_draw(&group.name)
-
-//         // Highlight when hovered.
-//         if mouse_hover() == group.id {
-//             fill_rounded_rectangle(group, 3, {1, 1, 1, 0.08})
-//         }
-//     }
-
-//     if manager.state == .Editing {
-//         box_select_draw(&manager.box_select)
-//     }
-// }
-
-// track_manager_selection_logic :: proc(manager: ^Track_Manager, groups: []^Track_Group, keep_selection: bool) {
-//     addition := key_down(.Left_Shift)
-//     invert := key_down(.Left_Control)
-
-//     keep_selection := keep_selection || addition || invert
-
-//     for group in manager.groups {
-//         if group.is_selected && mouse_hover() == group.button.id {
-//             keep_selection = true
-//             break
-//         }
-//     }
-
-//     for group in manager.groups {
-//         if !keep_selection {
-//             group.is_selected = false
-//         }
-//     }
-
-//     for group in groups {
-//         if invert {
-//             group.is_selected = !group.is_selected
-//         } else {
-//             group.is_selected = true
-//         }
-//     }
-// }
-
-// track_manager_rename_group :: proc(manager: ^Track_Manager, group: ^Track_Group) {
-//     manager.group_to_rename = group
-//     manager.state = .Renaming_Group
-//     set_keyboard_focus(group.name.id)
-//     text_edit(&group.name, .Select_All)
-// }
-
-// track_manager_rename_topmost_selected_group :: proc(manager: ^Track_Manager) {
-//     for i := len(manager.groups) - 1; i >= 0; i -= 1 {
-//         group := manager.groups[i]
-//         if group.is_selected {
-//             track_manager_rename_group(manager, group)
-//             return
-//         }
-//     }
-// }
-
-// track_manager_create_new_group :: proc(manager: ^Track_Manager, position: Vector2) {
-//     group := new(Track_Group)
-//     track_group_init(group)
-//     group.position = position
-//     append(&track_manager.groups, group)
-//     track_manager_rename_group(manager, group)
-// }
+track_manager_create_new_group :: proc(manager: ^Track_Manager, position: Vector2) {
+    group := new(Track_Group)
+    track_group_init(group)
+    group.position = position
+    append(&track_manager.groups, group)
+}
 
 // track_manager_bring_groups_to_front :: proc(manager: ^Track_Manager, groups: []^Track_Group) {
 //     keep_if(&manager.groups, groups, proc(group: ^Track_Group, groups: []^Track_Group) -> bool {
@@ -177,7 +49,7 @@ package main
 // }
 
 // track_manager_bring_selected_groups_to_front :: proc(manager: ^Track_Manager) {
-//     selected_groups := make([dynamic]^Track_Group, arena_allocator())
+//     selected_groups := make([dynamic]^Track_Group, context.temp_allocator)
 //     for group in manager.groups {
 //         if group.is_selected {
 //             append(&selected_groups, group)
@@ -186,156 +58,180 @@ package main
 //     track_manager_bring_groups_to_front(manager, selected_groups[:])
 // }
 
-// track_manager_center_groups :: proc(manager: ^Track_Manager) {
-//     if len(manager.groups) == 0 {
-//         return
-//     }
+track_manager_selection_logic :: proc(manager: ^Track_Manager, groups: []^Track_Group, keep_selection: bool) {
+    addition := key_down(.Left_Shift)
+    invert := key_down(.Left_Control)
 
-//     top_left := Vector2{max(f32), max(f32)}
-//     bottom_right := Vector2{min(f32), min(f32)}
+    keep_selection := keep_selection || addition || invert
 
-//     for group in manager.groups {
-//         top_left.x = min(top_left.x, group.position.x)
-//         top_left.y = min(top_left.y, group.position.y)
+    for group in manager.groups {
+        if group.is_selected && group.is_hovered {
+            keep_selection = true
+            break
+        }
+    }
 
-//         group_bottom_right := group.position + group.size
+    for group in manager.groups {
+        if !keep_selection {
+            group.is_selected = false
+        }
+    }
 
-//         bottom_right.x = max(bottom_right.x, group_bottom_right.x)
-//         bottom_right.y = max(bottom_right.y, group_bottom_right.y)
-//     }
+    for group in groups {
+        if invert {
+            group.is_selected = !group.is_selected
+        } else {
+            group.is_selected = true
+        }
+    }
+}
 
-//     center := top_left + (bottom_right - top_left) * 0.5
-//     view_center := current_window().size * 0.5
+_track_manager_editing :: proc(manager: ^Track_Manager) {
+    // if key_pressed(.Enter) {
+    //     track_manager_create_new_group(manager, mouse_position())
+    // }
 
-//     offset := pixel_snapped(view_center - center)
+    // if key_pressed(.F2) {
+    //     track_manager_rename_topmost_selected_group(manager)
+    // }
 
-//     for group in manager.groups {
-//         group.position += offset
-//     }
-// }
+    edit_name := key_pressed(.F2)
 
-// _track_manager_editing :: proc(manager: ^Track_Manager) {
-//     if key_pressed(.Enter) {
-//         track_manager_create_new_group(manager, mouse_position())
-//     }
+    // Update widget states and handle left click logic.
 
-//     if key_pressed(.F2) {
-//         track_manager_rename_topmost_selected_group(manager)
-//     }
+    group_pressed := false
+    group_hover: ^Track_Group
+    for group, i in manager.groups {
+        scoped_iteration(i)
 
-//     if key_pressed(.Escape) {
-//         current_window().should_close = true
-//     }
+        group.position = pixel_snapped(group.position)
 
-//     // Update widget states and handle left click logic.
-//     group_pressed := false
-//     group_hover: ^Track_Group
-//     for group in manager.groups {
-//         group.position = pixel_snapped(group.position)
+        color: Color = {0.4, 0.4, 0.4, 1} if group.is_selected else {0.2, 0.2, 0.2, 1}
 
-//         // Update name text.
-//         group.name.position = group.position + manager.group_edge_padding
-//         text_update(&group.name)
-//         editable_text_line_update(&group.name_text_line, &group.name, )
+        name_str := strings.to_string(group.name)
 
-//         // Update size to fit name.
-//         group.size = pixel_snapped(group.name.size + manager.group_edge_padding * 2)
-//         button_update(group)
+        glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
+        measure_string(name_str, manager.font, &glyphs, nil)
 
-//         if group.pressed {
-//             track_manager_selection_logic(manager, {group}, false)
-//             group_pressed = true
-//         }
+        group.size.y = font_metrics(manager.font).line_height
+        group.size.x = 0
+        if len(glyphs) > 0 {
+            first := glyphs[0]
+            last := glyphs[len(glyphs) - 1]
+            group.size.x = last.position + last.width - first.position
+        }
 
-//         if mouse_hover() == group.id {
-//             group_hover = group
-//         }
-//     }
+        button_state := invisible_button(group.rectangle)
 
-//     // Clear selection when left clicking empty space.
-//     if mouse_pressed(.Left) && !group_pressed {
-//         for group in manager.groups {
-//             group.is_selected = false
-//         }
-//     }
+        if edit_name {
+            group.is_editing_name = !group.is_editing_name
+        }
 
-//     // Bring selected groups to front on group left click interaction.
-//     if group_pressed {
-//         track_manager_bring_selected_groups_to_front(manager)
-//     }
+        if group.is_editing_name {
+            editable_text_line(&group.name, group.rectangle, manager.font, {1, 1, 1, 1})
+        } else {
+            fill_string(name_str, group.position, manager.font, {1, 1, 1, 1})
+        }
 
-//     // Box select logic.
+        group.is_hovered = mouse_hover() == button_state.id
 
-//     if box, ok := box_select_update(&manager.box_select); ok {
-//         groups_touched_by_box_select := make([dynamic]^Track_Group, context.temp_allocator)
-//         for group in manager.groups {
-//             if rectangle_intersects(box, group, true) {
-//                 append(&groups_touched_by_box_select, group)
-//             }
-//         }
-//         track_manager_selection_logic(manager, groups_touched_by_box_select[:], false)
-//     }
+        if button_state.pressed {
+            track_manager_selection_logic(manager, {group}, false)
+            group_pressed = true
+        }
 
-//     // Dragging logic.
-//     if manager.is_dragging_groups && !mouse_down(.Left) && !mouse_down(.Middle) {
-//         manager.is_dragging_groups = false
-//     }
+        if group.is_hovered {
+            group_hover = group
+        }
+    }
 
-//     start_left_drag := mouse_pressed(.Left) && group_hover != nil && group_hover.is_selected
-//     start_middle_drag := mouse_pressed(.Middle)
-//     start_drag := !manager.is_dragging_groups && (start_left_drag || start_middle_drag)
+    // Clear selection when left clicking empty space.
 
-//     if start_drag {
-//         manager.is_dragging_groups = true
-//         manager.mouse_position_when_drag_started = mouse_position()
-//     }
+    if mouse_pressed(.Left) && !group_pressed {
+        for group in manager.groups {
+            group.is_selected = false
+        }
+    }
 
-//     do_left_drag := manager.is_dragging_groups && mouse_down(.Left)
-//     do_middle_drag := manager.is_dragging_groups && mouse_down(.Middle)
+    // Bring selected groups to front on group left click interaction.
 
-//     for group in manager.groups {
-//         if start_drag {
-//             group.position_when_drag_started = group.position
-//         }
+    // if group_pressed {
+    //     track_manager_bring_selected_groups_to_front(manager)
+    // }
 
-//         if do_middle_drag || (do_left_drag && group.is_selected) {
-//             drag_delta := mouse_position() - manager.mouse_position_when_drag_started
-//             group.position = group.position_when_drag_started + drag_delta
-//         }
-//     }
-// }
+    // Box select logic.
 
-// keep_if :: proc {
-//     keep_if_no_user_data,
-//     keep_if_user_data,
-// }
+    if box, ok := box_select(.Right); ok {
+        groups_touched_by_box_select := make([dynamic]^Track_Group, context.temp_allocator)
+        for group in manager.groups {
+            if rectangle_intersects(box, group, true) {
+                append(&groups_touched_by_box_select, group)
+            }
+        }
+        track_manager_selection_logic(manager, groups_touched_by_box_select[:], false)
+    }
 
-// keep_if_no_user_data :: proc(array: ^[dynamic]$T, should_keep: proc(x: T) -> bool) {
-//     keep_position := 0
+    // Dragging logic.
 
-//     for i in 0 ..< len(array) {
-//         if should_keep(array[i]) {
-//             if keep_position != i {
-//                 array[keep_position] = array[i]
-//             }
-//             keep_position += 1
-//         }
-//     }
+    if manager.is_dragging_groups && !mouse_down(.Left) && !mouse_down(.Middle) {
+        manager.is_dragging_groups = false
+    }
 
-//     resize(array, keep_position)
-// }
+    start_left_drag := mouse_pressed(.Left) && group_hover != nil && group_hover.is_selected
+    start_middle_drag := mouse_pressed(.Middle)
+    start_drag := !manager.is_dragging_groups && (start_left_drag || start_middle_drag)
 
-// keep_if_user_data :: proc(array: ^[dynamic]$T, user_data: $D, should_keep: proc(x: T, user_data: D) -> bool) {
-//     keep_position := 0
+    if start_drag {
+        manager.is_dragging_groups = true
+        manager.mouse_position_when_drag_started = mouse_position()
+    }
 
-//     for i in 0 ..< len(array) {
-//         if should_keep(array[i], user_data) {
-//             if keep_position != i {
-//                 array[keep_position] = array[i]
-//             }
-//             keep_position += 1
-//         }
-//     }
+    do_left_drag := manager.is_dragging_groups && mouse_down(.Left)
+    do_middle_drag := manager.is_dragging_groups && mouse_down(.Middle)
 
-//     resize(array, keep_position)
-// }
+    for group in manager.groups {
+        if start_drag {
+            group.position_when_drag_started = group.position
+        }
+
+        if do_middle_drag || (do_left_drag && group.is_selected) {
+            drag_delta := mouse_position() - manager.mouse_position_when_drag_started
+            group.position = group.position_when_drag_started + drag_delta
+        }
+    }
+}
+
+keep_if :: proc {
+    keep_if_no_user_data,
+    keep_if_user_data,
+}
+
+keep_if_no_user_data :: proc(array: ^[dynamic]$T, should_keep: proc(x: T) -> bool) {
+    keep_position := 0
+
+    for i in 0 ..< len(array) {
+        if should_keep(array[i]) {
+            if keep_position != i {
+                array[keep_position] = array[i]
+            }
+            keep_position += 1
+        }
+    }
+
+    resize(array, keep_position)
+}
+
+keep_if_user_data :: proc(array: ^[dynamic]$T, user_data: $D, should_keep: proc(x: T, user_data: D) -> bool) {
+    keep_position := 0
+
+    for i in 0 ..< len(array) {
+        if should_keep(array[i], user_data) {
+            if keep_position != i {
+                array[keep_position] = array[i]
+            }
+            keep_position += 1
+        }
+    }
+
+    resize(array, keep_position)
+}

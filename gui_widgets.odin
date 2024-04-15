@@ -9,27 +9,23 @@ import cte "core:text/edit"
 // Button
 //==========================================================================
 
-Button_Response :: struct {
+Button_State :: struct {
+    id: Id,
     is_down: bool,
     pressed: bool,
     released: bool,
     clicked: bool,
 }
 
-button :: proc(
+button_base :: proc(
     rectangle: Rectangle,
-    color: Color,
-    mouse_button := Mouse_Button.Left,
+    press, release: bool,
     loc := #caller_location,
-) -> (res: Button_Response) {
+) -> (res: Button_State) {
     scoped_id_space(loc)
 
     is_down := get_state(bool)
-    defer if state_destroyed() {
-        free(is_down)
-    }
-
-    hover_id := get_id()
+    res.id = get_id()
 
     res.is_down = is_down^
     res.pressed = false
@@ -37,24 +33,48 @@ button :: proc(
     res.clicked = false
 
     if mouse_hit_test(rectangle) {
-        request_mouse_hover(hover_id)
+        request_mouse_hover(res.id)
     }
 
-    if !res.is_down && mouse_pressed(mouse_button) && mouse_hover() == hover_id {
+    if !res.is_down && press && mouse_hover() == res.id {
         capture_mouse_hover()
         res.is_down = true
         res.pressed = true
     }
 
-    if res.is_down && mouse_released(mouse_button) {
+    if res.is_down && release {
         release_mouse_hover()
         res.is_down = false
         res.released = true
-        if mouse_hit() == hover_id {
+        if mouse_hit() == res.id {
             res.is_down = false
             res.clicked = true
         }
     }
+
+    is_down^ = res.is_down
+
+    return
+}
+
+invisible_button :: proc(
+    rectangle: Rectangle,
+    mouse_button := Mouse_Button.Left,
+    loc := #caller_location,
+) -> (res: Button_State) {
+    scoped_id_space(loc)
+    return button_base(rectangle, mouse_pressed(mouse_button), mouse_released(mouse_button))
+}
+
+button :: proc(
+    rectangle: Rectangle,
+    color: Color,
+    mouse_button := Mouse_Button.Left,
+    loc := #caller_location,
+) -> (res: Button_State) {
+    scoped_id_space(loc)
+
+    res = invisible_button(rectangle, mouse_button)
 
     path := temp_path()
     path_rectangle(&path, rectangle)
@@ -62,14 +82,63 @@ button :: proc(
     fill_path(path, color)
     if res.is_down {
         fill_path(path, {0, 0, 0, 0.2})
-    } else if mouse_hover() == hover_id {
+    } else if mouse_hover() == res.id {
         fill_path(path, {1, 1, 1, 0.05})
     }
 
-    is_down^ = res.is_down
-
     return
 }
+
+// button :: proc(
+//     rectangle: Rectangle,
+//     color: Color,
+//     mouse_button := Mouse_Button.Left,
+//     loc := #caller_location,
+// ) -> (res: Button_State) {
+//     scoped_id_space(loc)
+
+//     is_down := get_state(bool)
+//     res.id = get_id()
+
+//     res.is_down = is_down^
+//     res.pressed = false
+//     res.released = false
+//     res.clicked = false
+
+//     if mouse_hit_test(rectangle) {
+//         request_mouse_hover(res.id)
+//     }
+
+//     if !res.is_down && mouse_pressed(mouse_button) && mouse_hover() == res.id {
+//         capture_mouse_hover()
+//         res.is_down = true
+//         res.pressed = true
+//     }
+
+//     if res.is_down && mouse_released(mouse_button) {
+//         release_mouse_hover()
+//         res.is_down = false
+//         res.released = true
+//         if mouse_hit() == res.id {
+//             res.is_down = false
+//             res.clicked = true
+//         }
+//     }
+
+//     path := temp_path()
+//     path_rectangle(&path, rectangle)
+
+//     fill_path(path, color)
+//     if res.is_down {
+//         fill_path(path, {0, 0, 0, 0.2})
+//     } else if mouse_hover() == res.id {
+//         fill_path(path, {1, 1, 1, 0.05})
+//     }
+
+//     is_down^ = res.is_down
+
+//     return
+// }
 
 // // //==========================================================================
 // // // Slider
@@ -196,9 +265,6 @@ box_select :: proc(
     scoped_id_space(loc)
 
     start := get_state(Vector2)
-    defer if state_destroyed() {
-        free(start)
-    }
 
     mp := mouse_position()
 
@@ -232,30 +298,6 @@ box_select :: proc(
 //==========================================================================
 
 editable_text_line :: proc(
-    initial_text: string,
-    rectangle: Rectangle,
-    font: Font,
-    color := Color{1, 1, 1, 1},
-    loc := #caller_location,
-) -> string {
-    scoped_id_space(loc)
-
-    builder, init := get_state(strings.Builder)
-    if init {
-        strings.builder_init(builder)
-        strings.write_string(builder, initial_text)
-    }
-    defer if state_destroyed() {
-        strings.builder_destroy(builder)
-        free(builder)
-    }
-
-    editable_text_line_builder(builder, rectangle, font, color)
-
-    return strings.to_string(builder^)
-}
-
-editable_text_line_builder :: proc(
     builder: ^strings.Builder,
     rectangle: Rectangle,
     font: Font,
@@ -264,14 +306,17 @@ editable_text_line_builder :: proc(
 ) {
     scoped_id_space(loc)
 
+    CARET_WIDTH :: 2
+
     id := get_id()
 
     str := strings.to_string(builder^)
-    edit_state, edit_state_init := get_state(cte.State)
-    if edit_state_init {
+
+    edit_state, init := get_state(cte.State)
+    if init {
         cte.init(edit_state, context.allocator, context.allocator)
         cte.setup_once(edit_state, builder)
-        edit_state.selection = {0, 0}
+        edit_state.selection = {len(str), 0}
         edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
             data = clipboard()
             return _quick_remove_line_ends_UNSAFE(data), true
@@ -283,7 +328,6 @@ editable_text_line_builder :: proc(
     }
     defer if state_destroyed() {
         cte.destroy(edit_state)
-        free(edit_state)
     }
 
     glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
@@ -302,8 +346,6 @@ editable_text_line_builder :: proc(
     }
 
     // Handle keyboard editing behavior.
-
-    is_keyboard_focus := keyboard_focus() == id
 
     text_input := text_input()
     if len(text_input) > 0 {
@@ -409,7 +451,7 @@ editable_text_line_builder :: proc(
         last_glyph := glyphs[len(glyphs) - 1]
         last_glyph_right := last_glyph.position + last_glyph.width
         if head >= len(str) {
-            caret_x = last_glyph_right
+            caret_x = last_glyph_right - CARET_WIDTH
         }
         if selection_left >= len(str) {
             selection_left_x = last_glyph_right
@@ -433,7 +475,6 @@ editable_text_line_builder :: proc(
 
         if mouse_pressed(.Left) {
             capture_mouse_hover()
-            set_keyboard_focus(id)
 
             switch mouse_repeat_count(.Left) {
             case 0, 1: // Single click
@@ -462,28 +503,251 @@ editable_text_line_builder :: proc(
         if mouse_released(.Left) {
             release_mouse_hover()
         }
-    } else {
-        if mouse_pressed(.Left) {
-            if is_keyboard_focus {
-                release_keyboard_focus()
-            }
-        }
     }
 
     // Draw the selection, string, and then caret.
 
-    fill_rectangle(rectangle, {0.4, 0, 0, 1})
-    scoped_clip(rectangle)
-
-    selection_color: Color = {0, 0.4, 0.8, 0.8} if is_keyboard_focus else {0, 0.4, 0.8, 0.65}
-    fill_rectangle({rectangle.position + {selection_left_x, 0}, {selection_right_x - selection_left_x, line_height}}, selection_color)
-
-    fill_string(str, rectangle.position, font, color)
-
-    if is_keyboard_focus {
-        fill_rectangle({rectangle.position + {caret_x, 0}, {2, line_height}}, {0.7, 0.9, 1, 1})
+    {
+        scoped_clip(rectangle)
+        // selection_color: Color = {0, 0.4, 0.8, 0.8} if is_keyboard_focus else {0, 0.4, 0.8, 0.65}
+        fill_rectangle({rectangle.position + {selection_left_x, 0}, {selection_right_x - selection_left_x, line_height}}, {0, 0.4, 0.8, 0.8})
+        fill_string(str, rectangle.position, font, color)
     }
+
+    fill_rectangle({rectangle.position + {caret_x, 0}, {CARET_WIDTH, line_height}}, {0.7, 0.9, 1, 1})
 }
+
+// editable_text_line :: proc(
+//     builder: ^strings.Builder,
+//     rectangle: Rectangle,
+//     font: Font,
+//     color := Color{1, 1, 1, 1},
+//     loc := #caller_location,
+// ) {
+//     scoped_id_space(loc)
+
+//     id := get_id()
+
+//     str := strings.to_string(builder^)
+
+//     edit_state, edit_state_init := get_state(cte.State)
+
+//     if edit_state_init {
+//         cte.init(edit_state, context.allocator, context.allocator)
+//         cte.setup_once(edit_state, builder)
+//         edit_state.selection = {0, 0}
+//         edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
+//             data = clipboard()
+//             return _quick_remove_line_ends_UNSAFE(data), true
+//         }
+//         edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
+//             set_clipboard(data)
+//             return true
+//         }
+//     }
+
+//     defer if state_destroyed() {
+//         cte.destroy(edit_state)
+//     }
+
+//     glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
+//     measure_string(str, font, &glyphs, nil)
+
+//     line_height := font_metrics(font).line_height
+
+//     edit_state.line_start = 0
+//     edit_state.line_end = len(str)
+
+//     // Update the undo state timeout manually.
+
+//     edit_state.current_time = time.tick_now()
+//     if edit_state.undo_timeout <= 0 {
+//         edit_state.undo_timeout = cte.DEFAULT_UNDO_TIMEOUT
+//     }
+
+//     // Handle keyboard editing behavior.
+
+//     is_keyboard_focus := keyboard_focus() == id
+
+//     text_input := text_input()
+//     if len(text_input) > 0 {
+//         cte.input_text(edit_state, _quick_remove_line_ends_UNSAFE(text_input))
+//     }
+
+//     ctrl := key_down(.Left_Control) || key_down(.Right_Control)
+//     shift := key_down(.Left_Shift) || key_down(.Right_Shift)
+
+//     for key in key_presses(repeating = true) {
+//         #partial switch key {
+//         case .Escape: release_keyboard_focus()
+
+//         case .A: if ctrl do cte.perform_command(edit_state, .Select_All)
+//         case .C: if ctrl do cte.perform_command(edit_state, .Copy)
+//         case .V: if ctrl do cte.perform_command(edit_state, .Paste)
+//         case .X: if ctrl do cte.perform_command(edit_state, .Cut)
+//         case .Y: if ctrl do cte.perform_command(edit_state, .Redo)
+//         case .Z: if ctrl do cte.perform_command(edit_state, .Undo)
+
+//         case .Home:
+//             switch {
+//             case ctrl && shift: cte.perform_command(edit_state, .Select_Start)
+//             case shift: cte.perform_command(edit_state, .Select_Line_Start)
+//             case ctrl: cte.perform_command(edit_state, .Start)
+//             case: cte.perform_command(edit_state, .Line_Start)
+//             }
+
+//         case .End:
+//             switch {
+//             case ctrl && shift: cte.perform_command(edit_state, .Select_End)
+//             case shift: cte.perform_command(edit_state, .Select_Line_End)
+//             case ctrl: cte.perform_command(edit_state, .End)
+//             case: cte.perform_command(edit_state, .Line_End)
+//             }
+
+//         case .Insert:
+//             switch {
+//             case ctrl: cte.perform_command(edit_state, .Copy)
+//             case shift: cte.perform_command(edit_state, .Paste)
+//             }
+
+//         case .Backspace:
+//             switch {
+//             case ctrl: cte.perform_command(edit_state, .Delete_Word_Left)
+//             case: cte.perform_command(edit_state, .Backspace)
+//             }
+
+//         case .Delete:
+//             switch {
+//             case ctrl: cte.perform_command(edit_state, .Delete_Word_Right)
+//             case shift: cte.perform_command(edit_state, .Cut)
+//             case: cte.perform_command(edit_state, .Delete)
+//             }
+
+//         case .Left_Arrow:
+//             switch {
+//             case ctrl && shift: cte.perform_command(edit_state, .Select_Word_Left)
+//             case shift: cte.perform_command(edit_state, .Select_Left)
+//             case ctrl: cte.perform_command(edit_state, .Word_Left)
+//             case: cte.perform_command(edit_state, .Left)
+//             }
+
+//         case .Right_Arrow:
+//             switch {
+//             case ctrl && shift: cte.perform_command(edit_state, .Select_Word_Right)
+//             case shift: cte.perform_command(edit_state, .Select_Right)
+//             case ctrl: cte.perform_command(edit_state, .Word_Right)
+//             case: cte.perform_command(edit_state, .Right)
+//             }
+//         }
+//     }
+
+//     // Figure out where things of interest are in the string.
+
+//     is_mouse_hover := mouse_hover() == id
+//     relative_mp := mouse_position() - rectangle.position.x + 3 // Add a little bias for better feel.
+//     mouse_byte_index: int
+
+//     head := edit_state.selection[0]
+//     caret_x: f32
+
+//     selection_left, selection_right := cte.sorted_selection(edit_state)
+//     selection_left_x: f32
+//     selection_right_x: f32
+
+//     for glyph in glyphs {
+//         if head == glyph.byte_index {
+//             caret_x = glyph.position
+//         }
+//         if selection_left == glyph.byte_index {
+//             selection_left_x = glyph.position
+//         }
+//         if selection_right == glyph.byte_index {
+//             selection_right_x = glyph.position
+//         }
+//         if relative_mp.x >= glyph.position && relative_mp.x < glyph.position + glyph.width {
+//             mouse_byte_index = glyph.byte_index
+//         }
+//     }
+
+//     if len(glyphs) > 0 {
+//         last_glyph := glyphs[len(glyphs) - 1]
+//         last_glyph_right := last_glyph.position + last_glyph.width
+//         if head >= len(str) {
+//             caret_x = last_glyph_right
+//         }
+//         if selection_left >= len(str) {
+//             selection_left_x = last_glyph_right
+//         }
+//         if selection_right >= len(str) {
+//             selection_right_x = last_glyph_right
+//         }
+//         if relative_mp.x >= last_glyph_right {
+//             mouse_byte_index = len(str)
+//         }
+//     }
+
+//     // Handle mouse editing behavior.
+
+//     if mouse_hit_test(rectangle) {
+//         request_mouse_hover(id)
+//     }
+
+//     if is_mouse_hover {
+//         set_mouse_cursor_style(.I_Beam)
+
+//         if mouse_pressed(.Left) {
+//             capture_mouse_hover()
+//             set_keyboard_focus(id)
+
+//             switch mouse_repeat_count(.Left) {
+//             case 0, 1: // Single click
+//                 edit_state.selection[0] = mouse_byte_index
+//                 if !shift do edit_state.selection[1] = mouse_byte_index
+
+//             case 2: // Double click
+//                 cte.perform_command(edit_state, .Word_Right)
+//                 cte.perform_command(edit_state, .Word_Left)
+//                 cte.perform_command(edit_state, .Select_Word_Right)
+
+//             case 3: // Triple click
+//                 cte.perform_command(edit_state, .Line_Start)
+//                 cte.perform_command(edit_state, .Select_Line_End)
+
+//             case: // Quadruple click and beyond
+//                 cte.perform_command(edit_state, .Start)
+//                 cte.perform_command(edit_state, .Select_End)
+//             }
+//         }
+
+//         if mouse_repeat_count(.Left) == 1 && mouse_down(.Left) {
+//             edit_state.selection[0] = mouse_byte_index
+//         }
+
+//         if mouse_released(.Left) {
+//             release_mouse_hover()
+//         }
+//     } else {
+//         if mouse_pressed(.Left) {
+//             if is_keyboard_focus {
+//                 release_keyboard_focus()
+//             }
+//         }
+//     }
+
+//     // Draw the selection, string, and then caret.
+
+//     fill_rectangle(rectangle, {0.4, 0, 0, 1})
+//     scoped_clip(rectangle)
+
+//     selection_color: Color = {0, 0.4, 0.8, 0.8} if is_keyboard_focus else {0, 0.4, 0.8, 0.65}
+//     fill_rectangle({rectangle.position + {selection_left_x, 0}, {selection_right_x - selection_left_x, line_height}}, selection_color)
+
+//     fill_string(str, rectangle.position, font, color)
+
+//     if is_keyboard_focus {
+//         fill_rectangle({rectangle.position + {caret_x, 0}, {2, line_height}}, {0.7, 0.9, 1, 1})
+//     }
+// }
 
 _quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
     bytes := make([dynamic]byte, len(str), allocator = context.temp_allocator)

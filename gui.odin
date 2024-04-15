@@ -78,6 +78,9 @@ gui_startup :: proc(update: proc()) {
 gui_shutdown :: proc() {
     ctx := gui_context()
     backend_shutdown()
+    for _, state in ctx.retained_state {
+        free(state)
+    }
     delete(ctx.mouse_presses)
     delete(ctx.mouse_releases)
     delete(ctx.key_presses)
@@ -149,6 +152,33 @@ context_update :: proc(ctx: ^Context) {
 
 Id :: u64
 
+// get_id :: proc(loc := #caller_location) -> Id {
+//     INITIAL_SEED :: 2166136261
+
+//     state: xxhash.XXH3_state
+//     xxhash.XXH3_init_state(&state)
+
+//     ctx := gui_context()
+//     seed := ctx.id_stack[len(ctx.id_stack) - 1] if len(ctx.id_stack) > 0 else INITIAL_SEED
+//     seed_bytes := transmute([size_of(seed)]byte)seed
+//     xxhash.XXH3_64_update(&state, seed_bytes[:])
+
+//     xxhash.XXH3_64_update(&state, transmute([]byte)loc.file_path)
+
+//     column_bytes := transmute([size_of(loc.column)]byte)loc.column
+//     xxhash.XXH3_64_update(&state, column_bytes[:])
+
+//     line_bytes := transmute([size_of(loc.line)]byte)loc.line
+//     xxhash.XXH3_64_update(&state, line_bytes[:])
+
+//     for iteration in ctx.iteration_stack {
+//         iteration_bytes := transmute([size_of(iteration)]byte)iteration
+//         xxhash.XXH3_64_update(&state, iteration_bytes[:])
+//     }
+
+//     return xxhash.XXH3_64_digest(&state)
+// }
+
 get_id :: proc(loc := #caller_location) -> Id {
     INITIAL_SEED :: 2166136261
 
@@ -201,19 +231,6 @@ end_iteration :: proc() {
 scoped_iteration :: proc(#any_int iteration: int) {
     begin_iteration(iteration)
 }
-
-// get_state :: proc(id: Id, $T: typeid) -> (state: ^T, init: bool) #optional_ok {
-//     ctx := gui_context()
-//     if id not_in ctx.retained_state {
-//         state = new(T)
-//         ctx.retained_state[id] = state
-//         init = true
-//         return
-//     } else {
-//         state = cast(^T)ctx.retained_state[id]
-//     }
-//     return
-// }
 
 get_state :: proc($T: typeid, loc := #caller_location) -> (state: ^T, init: bool) #optional_ok {
     ctx := gui_context()
@@ -534,8 +551,6 @@ window_end :: proc() {
         _window_close(window)
         delete(window.child_windows)
         delete(window.loaded_fonts)
-        free(window)
-        fmt.println("Window Destroyed")
     }
 
     pop(&ctx.window_stack)
