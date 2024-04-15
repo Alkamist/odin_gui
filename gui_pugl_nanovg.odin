@@ -289,6 +289,7 @@ backend_render_draw_command :: proc(window: ^Window, command: Draw_Command) {
     case Fill_Path_Command:
         nvg.Save(nvg_ctx)
 
+        nvg.Translate(nvg_ctx, cmd.position.x, cmd.position.y)
         nvg.BeginPath(nvg_ctx)
 
         for sub_path in cmd.path.sub_paths {

@@ -1,21 +1,40 @@
 package main
 
+// track_manager :: proc(id: Id) {
+
+// }
+
+
+
+
+
+
+
+
+
+
+
+
 // import "core:slice"
+// import "core:strings"
 
 // Track_Group :: struct {
-//     using button: Button,
-//     name: Editable_Text_Line,
+//     using rectangle: Rectangle,
 //     is_selected: bool,
 //     position_when_drag_started: Vector2,
+
+//     name: strings.Builder,
+//     name_text_line: Editable_Text_Line,
 // }
 
 // track_group_init :: proc(group: ^Track_Group) {
-//     button_init(&group.button)
-//     text_init(&group.name, default_font)
+//     strings.builder_init(&group.name)
+//     editable_text_line_init(&group.name_text_line)
 // }
 
 // track_group_destroy :: proc(group: ^Track_Group) {
-//     text_destroy(&group.name)
+//     editable_text_line_destroy(&group.name_text_line)
+//     strings.builder_destroy(&group.name)
 // }
 
 // Track_Manager_State :: enum {
@@ -39,7 +58,6 @@ package main
 // track_manager_init :: proc(manager: ^Track_Manager) {
 //     manager.background_color = {0.2, 0.2, 0.2, 1}
 //     manager.group_edge_padding = 3
-//     manager.box_select.mouse_button = .Right
 // }
 
 // track_manager_destroy :: proc(manager: ^Track_Manager) {
@@ -216,9 +234,9 @@ package main
 //         group.position = pixel_snapped(group.position)
 
 //         // Update name text.
-//         group.name.is_editable = false
 //         group.name.position = group.position + manager.group_edge_padding
 //         text_update(&group.name)
+//         editable_text_line_update(&group.name_text_line, &group.name, )
 
 //         // Update size to fit name.
 //         group.size = pixel_snapped(group.name.size + manager.group_edge_padding * 2)
@@ -247,11 +265,11 @@ package main
 //     }
 
 //     // Box select logic.
-//     box_select_update(&manager.box_select)
-//     if manager.box_select.selected {
-//         groups_touched_by_box_select := make([dynamic]^Track_Group, arena_allocator())
+
+//     if box, ok := box_select_update(&manager.box_select); ok {
+//         groups_touched_by_box_select := make([dynamic]^Track_Group, context.temp_allocator)
 //         for group in manager.groups {
-//             if rectangle_intersects(box_select_rectangle(&manager.box_select), group, true) {
+//             if rectangle_intersects(box, group, true) {
 //                 append(&groups_touched_by_box_select, group)
 //             }
 //         }

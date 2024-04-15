@@ -1,6 +1,6 @@
 package main
 
-// import "core:fmt"
+import "core:fmt"
 import "core:time"
 import "core:strings"
 import cte "core:text/edit"
@@ -10,184 +10,206 @@ import cte "core:text/edit"
 //==========================================================================
 
 Button_Response :: struct {
+    is_down: bool,
     pressed: bool,
     released: bool,
     clicked: bool,
 }
 
-button_base_update :: proc(is_down: ^bool, rectangle: Rectangle, press, release: bool) -> (button: Button_Response) {
+button :: proc(
+    rectangle: Rectangle,
+    color: Color,
+    mouse_button := Mouse_Button.Left,
+    loc := #caller_location,
+) -> (res: Button_Response) {
+    scoped_id_space(loc)
+
+    is_down := get_state(bool)
+    defer if state_destroyed() {
+        free(is_down)
+    }
+
+    hover_id := get_id()
+
+    res.is_down = is_down^
+    res.pressed = false
+    res.released = false
+    res.clicked = false
+
     if mouse_hit_test(rectangle) {
-        request_mouse_hover(is_down)
+        request_mouse_hover(hover_id)
     }
 
-    if !is_down^ && press && mouse_hover() == is_down {
+    if !res.is_down && mouse_pressed(mouse_button) && mouse_hover() == hover_id {
         capture_mouse_hover()
-        is_down^ = true
-        button.pressed = true
+        res.is_down = true
+        res.pressed = true
     }
 
-    if is_down^ && release {
+    if res.is_down && mouse_released(mouse_button) {
         release_mouse_hover()
-        is_down^ = false
-        button.released = true
-        if mouse_hit() == is_down {
-            is_down^ = false
-            button.clicked = true
+        res.is_down = false
+        res.released = true
+        if mouse_hit() == hover_id {
+            res.is_down = false
+            res.clicked = true
         }
     }
-
-    return
-}
-
-button_update :: proc(is_down: ^bool, rectangle: Rectangle, color: Color, mouse_button := Mouse_Button.Left) -> (button: Button_Response) {
-    button = button_base_update(is_down, rectangle, mouse_pressed(mouse_button), mouse_released(mouse_button))
 
     path := temp_path()
     path_rectangle(&path, rectangle)
 
     fill_path(path, color)
-    if is_down^ {
+    if res.is_down {
         fill_path(path, {0, 0, 0, 0.2})
-    } else if mouse_hover() == is_down {
+    } else if mouse_hover() == hover_id {
         fill_path(path, {1, 1, 1, 0.05})
     }
+
+    is_down^ = res.is_down
 
     return
 }
 
-// //==========================================================================
-// // Slider
-// //==========================================================================
+// // //==========================================================================
+// // // Slider
+// // //==========================================================================
 
-// Slider :: struct {
-//     id: Id,
-//     using rectangle: Rectangle,
-//     held: bool,
-//     value: f32,
-//     min_value: f32,
-//     max_value: f32,
-//     handle_length: f32,
-//     value_when_grabbed: f32,
-//     global_mouse_position_when_grabbed: Vector2,
-//     mouse_button: Mouse_Button,
-//     precision_key: Keyboard_Key,
-// }
+// // Slider :: struct {
+// //     id: Id,
+// //     using rectangle: Rectangle,
+// //     held: bool,
+// //     value: f32,
+// //     min_value: f32,
+// //     max_value: f32,
+// //     handle_length: f32,
+// //     value_when_grabbed: f32,
+// //     global_mouse_position_when_grabbed: Vector2,
+// //     mouse_button: Mouse_Button,
+// //     precision_key: Keyboard_Key,
+// // }
 
-// slider_init :: proc(slider: ^Slider) {
-//     slider.id = get_id()
-//     slider.size = Vector2{300, 24}
-//     slider.max_value = 1
-//     slider.handle_length = 16
-//     slider.mouse_button = .Left
-//     slider.precision_key = .Left_Shift
-// }
+// // slider_init :: proc(slider: ^Slider) {
+// //     slider.id = get_id()
+// //     slider.size = Vector2{300, 24}
+// //     slider.max_value = 1
+// //     slider.handle_length = 16
+// //     slider.mouse_button = .Left
+// //     slider.precision_key = .Left_Shift
+// // }
 
-// slider_handle_rectangle :: proc(slider: ^Slider) -> Rectangle {
-//     return {
-//         slider.position + {
-//             (slider.size.x - slider.handle_length) * (slider.value - slider.min_value) / (slider.max_value - slider.min_value),
-//             0,
-//         },
-//         {
-//             slider.handle_length,
-//             slider.size.y,
-//         },
-//     }
-// }
+// // slider_handle_rectangle :: proc(slider: ^Slider) -> Rectangle {
+// //     return {
+// //         slider.position + {
+// //             (slider.size.x - slider.handle_length) * (slider.value - slider.min_value) / (slider.max_value - slider.min_value),
+// //             0,
+// //         },
+// //         {
+// //             slider.handle_length,
+// //             slider.size.y,
+// //         },
+// //     }
+// // }
 
-// slider_set_value :: proc(slider: ^Slider, value: f32) {
-//     slider.value = value
-//     _slider_clamp_value(slider)
-// }
+// // slider_set_value :: proc(slider: ^Slider, value: f32) {
+// //     slider.value = value
+// //     _slider_clamp_value(slider)
+// // }
 
-// slider_set_min_value :: proc(slider: ^Slider, min_value: f32) {
-//     slider.min_value = min_value
-//     _slider_clamp_value(slider)
-// }
+// // slider_set_min_value :: proc(slider: ^Slider, min_value: f32) {
+// //     slider.min_value = min_value
+// //     _slider_clamp_value(slider)
+// // }
 
-// slider_set_max_value :: proc(slider: ^Slider, max_value: f32) {
-//     slider.max_value = max_value
-//     _slider_clamp_value(slider)
-// }
+// // slider_set_max_value :: proc(slider: ^Slider, max_value: f32) {
+// //     slider.max_value = max_value
+// //     _slider_clamp_value(slider)
+// // }
 
-// slider_update :: proc(slider: ^Slider) {
-//     if mouse_hit_test(slider) {
-//         request_mouse_hover(slider.id)
-//     }
+// // slider_update :: proc(slider: ^Slider) {
+// //     if mouse_hit_test(slider) {
+// //         request_mouse_hover(slider.id)
+// //     }
 
-//     if slider.held {
-//         if key_pressed(slider.precision_key) ||
-//            key_released(slider.precision_key) {
-//             _slider_reset_grab_info(slider)
-//         }
-//     }
+// //     if slider.held {
+// //         if key_pressed(slider.precision_key) ||
+// //            key_released(slider.precision_key) {
+// //             _slider_reset_grab_info(slider)
+// //         }
+// //     }
 
-//     if !slider.held && mouse_hover() == slider.id && mouse_pressed(slider.mouse_button) {
-//         slider.held = true
-//         _slider_reset_grab_info(slider)
-//         capture_mouse_hover()
-//     }
+// //     if !slider.held && mouse_hover() == slider.id && mouse_pressed(slider.mouse_button) {
+// //         slider.held = true
+// //         _slider_reset_grab_info(slider)
+// //         capture_mouse_hover()
+// //     }
 
-//     if slider.held {
-//         sensitivity: f32 = key_down(slider.precision_key) ? 0.15 : 1.0
-//         global_mouse_position := global_mouse_position()
-//         grab_delta := global_mouse_position.x - slider.global_mouse_position_when_grabbed.x
-//         slider.value = slider.value_when_grabbed + sensitivity * grab_delta * (slider.max_value - slider.min_value) / (slider.size.x - slider.handle_length)
+// //     if slider.held {
+// //         sensitivity: f32 = key_down(slider.precision_key) ? 0.15 : 1.0
+// //         global_mouse_position := global_mouse_position()
+// //         grab_delta := global_mouse_position.x - slider.global_mouse_position_when_grabbed.x
+// //         slider.value = slider.value_when_grabbed + sensitivity * grab_delta * (slider.max_value - slider.min_value) / (slider.size.x - slider.handle_length)
 
-//         if mouse_released(slider.mouse_button) {
-//             slider.held = false
-//             release_mouse_hover()
-//         }
-//     }
+// //         if mouse_released(slider.mouse_button) {
+// //             slider.held = false
+// //             release_mouse_hover()
+// //         }
+// //     }
 
-//     _slider_clamp_value(slider)
-// }
+// //     _slider_clamp_value(slider)
+// // }
 
-// slider_draw :: proc(slider: ^Slider) {
-//     slider_path := temp_path()
-//     path_rectangle(&slider_path, slider)
+// // slider_draw :: proc(slider: ^Slider) {
+// //     slider_path := temp_path()
+// //     path_rectangle(&slider_path, slider)
 
-//     fill_path(slider_path, {0.05, 0.05, 0.05, 1})
+// //     fill_path(slider_path, {0.05, 0.05, 0.05, 1})
 
-//     handle_path := temp_path()
-//     path_rectangle(&handle_path, slider_handle_rectangle(slider))
+// //     handle_path := temp_path()
+// //     path_rectangle(&handle_path, slider_handle_rectangle(slider))
 
-//     fill_path(handle_path, {0.4, 0.4, 0.4, 1})
-//     if slider.held {
-//         fill_path(handle_path, {0, 0, 0, 0.2})
-//     } else if mouse_hover() == slider.id {
-//         fill_path(handle_path, {1, 1, 1, 0.05})
-//     }
-// }
+// //     fill_path(handle_path, {0.4, 0.4, 0.4, 1})
+// //     if slider.held {
+// //         fill_path(handle_path, {0, 0, 0, 0.2})
+// //     } else if mouse_hover() == slider.id {
+// //         fill_path(handle_path, {1, 1, 1, 0.05})
+// //     }
+// // }
 
-// _slider_reset_grab_info :: proc(slider: ^Slider) {
-//     slider.value_when_grabbed = slider.value
-//     slider.global_mouse_position_when_grabbed = global_mouse_position()
-// }
+// // _slider_reset_grab_info :: proc(slider: ^Slider) {
+// //     slider.value_when_grabbed = slider.value
+// //     slider.global_mouse_position_when_grabbed = global_mouse_position()
+// // }
 
-// _slider_clamp_value :: proc(slider: ^Slider) {
-//     slider.value = clamp(slider.value, slider.min_value, slider.max_value)
-// }
+// // _slider_clamp_value :: proc(slider: ^Slider) {
+// //     slider.value = clamp(slider.value, slider.min_value, slider.max_value)
+// // }
 
 //==========================================================================
 // Box Select
 //==========================================================================
 
-Box_Select :: struct {
-    start: Vector2,
-}
+box_select :: proc(
+    mouse_button := Mouse_Button.Left,
+    loc := #caller_location,
+) -> (rectangle: Rectangle, selected: bool) {
+    scoped_id_space(loc)
 
-box_select_update :: proc(box_select: ^Box_Select, mouse_button := Mouse_Button.Left) -> (rectangle: Rectangle, selected: bool) {
+    start := get_state(Vector2)
+    defer if state_destroyed() {
+        free(start)
+    }
+
     mp := mouse_position()
 
     if mouse_pressed(mouse_button) {
-        box_select.start = mp
+        start^ = mp
     }
 
     pixel := pixel_size()
 
-    position := Vector2{min(box_select.start.x, mp.x), min(box_select.start.y, mp.y)}
-    bottom_right := Vector2{max(box_select.start.x, mp.x), max(box_select.start.y, mp.y)}
+    position := Vector2{min(start.x, mp.x), min(start.y, mp.y)}
+    bottom_right := Vector2{max(start.x, mp.x), max(start.y, mp.y)}
 
     rectangle = Rectangle{position, bottom_right - position}
     rectangle.size.x = max(rectangle.size.x, pixel.x)
@@ -209,42 +231,63 @@ box_select_update :: proc(box_select: ^Box_Select, mouse_button := Mouse_Button.
 // Editable Text Line
 //==========================================================================
 
-Editable_Text_Line :: struct {
-    edit_state: cte.State,
-    glyphs: [dynamic]Text_Glyph,
-}
+editable_text_line :: proc(
+    initial_text: string,
+    rectangle: Rectangle,
+    font: Font,
+    color := Color{1, 1, 1, 1},
+    loc := #caller_location,
+) -> string {
+    scoped_id_space(loc)
 
-editable_text_line_init :: proc(text: ^Editable_Text_Line, allocator := context.allocator) {
-    text.glyphs = make([dynamic]Text_Glyph, allocator)
-    cte.init(&text.edit_state, allocator, allocator)
-    text.edit_state.selection = {0, 0}
-    text.edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
-        data = clipboard()
-        return _quick_remove_line_ends_UNSAFE(data), true
+    builder, init := get_state(strings.Builder)
+    if init {
+        strings.builder_init(builder)
+        strings.write_string(builder, initial_text)
     }
-    text.edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
-        set_clipboard(data)
-        return true
+    defer if state_destroyed() {
+        strings.builder_destroy(builder)
+        free(builder)
     }
+
+    editable_text_line_builder(builder, rectangle, font, color)
+
+    return strings.to_string(builder^)
 }
 
-editable_text_line_destroy :: proc(text: ^Editable_Text_Line) {
-    cte.destroy(&text.edit_state)
-    delete(text.glyphs)
-}
-
-editable_text_line_update :: proc(
-    text: ^Editable_Text_Line,
+editable_text_line_builder :: proc(
     builder: ^strings.Builder,
     rectangle: Rectangle,
     font: Font,
     color := Color{1, 1, 1, 1},
+    loc := #caller_location,
 ) {
-    edit_state := &text.edit_state
-    edit_state.builder = builder
+    scoped_id_space(loc)
+
+    id := get_id()
 
     str := strings.to_string(builder^)
-    measure_string(str, font, &text.glyphs, nil)
+    edit_state, edit_state_init := get_state(cte.State)
+    if edit_state_init {
+        cte.init(edit_state, context.allocator, context.allocator)
+        cte.setup_once(edit_state, builder)
+        edit_state.selection = {0, 0}
+        edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
+            data = clipboard()
+            return _quick_remove_line_ends_UNSAFE(data), true
+        }
+        edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
+            set_clipboard(data)
+            return true
+        }
+    }
+    defer if state_destroyed() {
+        cte.destroy(edit_state)
+        free(edit_state)
+    }
+
+    glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
+    measure_string(str, font, &glyphs, nil)
 
     line_height := font_metrics(font).line_height
 
@@ -260,7 +303,7 @@ editable_text_line_update :: proc(
 
     // Handle keyboard editing behavior.
 
-    is_keyboard_focus := keyboard_focus() == text
+    is_keyboard_focus := keyboard_focus() == id
 
     text_input := text_input()
     if len(text_input) > 0 {
@@ -336,7 +379,7 @@ editable_text_line_update :: proc(
 
     // Figure out where things of interest are in the string.
 
-    is_mouse_hover := mouse_hover() == text
+    is_mouse_hover := mouse_hover() == id
     relative_mp := mouse_position() - rectangle.position.x + 3 // Add a little bias for better feel.
     mouse_byte_index: int
 
@@ -347,7 +390,7 @@ editable_text_line_update :: proc(
     selection_left_x: f32
     selection_right_x: f32
 
-    for glyph in text.glyphs {
+    for glyph in glyphs {
         if head == glyph.byte_index {
             caret_x = glyph.position
         }
@@ -362,8 +405,8 @@ editable_text_line_update :: proc(
         }
     }
 
-    if len(text.glyphs) > 0 {
-        last_glyph := text.glyphs[len(text.glyphs) - 1]
+    if len(glyphs) > 0 {
+        last_glyph := glyphs[len(glyphs) - 1]
         last_glyph_right := last_glyph.position + last_glyph.width
         if head >= len(str) {
             caret_x = last_glyph_right
@@ -382,7 +425,7 @@ editable_text_line_update :: proc(
     // Handle mouse editing behavior.
 
     if mouse_hit_test(rectangle) {
-        request_mouse_hover(text)
+        request_mouse_hover(id)
     }
 
     if is_mouse_hover {
@@ -390,7 +433,7 @@ editable_text_line_update :: proc(
 
         if mouse_pressed(.Left) {
             capture_mouse_hover()
-            set_keyboard_focus(text)
+            set_keyboard_focus(id)
 
             switch mouse_repeat_count(.Left) {
             case 0, 1: // Single click

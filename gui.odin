@@ -7,8 +7,8 @@ import "core:math"
 import "core:time"
 import "core:slice"
 import "core:strings"
+import "core:hash/xxhash"
 
-Widget_Id :: rawptr
 Vector2 :: [2]f32
 
 //==========================================================================
@@ -19,6 +19,8 @@ Vector2 :: [2]f32
 
 Context :: struct {
     update: proc(),
+
+    is_running: bool,
 
     tick: time.Tick,
 
@@ -39,16 +41,21 @@ Context :: struct {
     key_releases: [dynamic]Keyboard_Key,
     text_input: strings.Builder,
 
-    keyboard_focus: Widget_Id,
-    mouse_hit: Widget_Id,
-    mouse_hover: Widget_Id,
-    previous_mouse_hover: Widget_Id,
-    mouse_hover_capture: Widget_Id,
-    final_mouse_hover_request: Widget_Id,
+    keyboard_focus: Id,
+    mouse_hit: Id,
+    mouse_hover: Id,
+    previous_mouse_hover: Id,
+    mouse_hover_capture: Id,
+    final_mouse_hover_request: Id,
 
     is_first_frame: bool,
 
     window_stack: [dynamic]^Window,
+
+    id_stack: [dynamic]Id,
+    iteration_stack: [dynamic]int,
+
+    retained_state: map[Id]rawptr,
 
     previous_tick: time.Tick,
     previous_screen_mouse_position: Vector2,
@@ -64,6 +71,7 @@ gui_startup :: proc(update: proc()) {
     ctx.mouse_repeat_duration = 300 * time.Millisecond
     ctx.mouse_repeat_movement_tolerance = 3
     ctx.is_first_frame = true
+    ctx.is_running = true
     backend_startup()
 }
 
@@ -76,6 +84,7 @@ gui_shutdown :: proc() {
     delete(ctx.key_repeats)
     delete(ctx.key_releases)
     strings.builder_destroy(&ctx.text_input)
+    delete(ctx.retained_state)
     free_all(context.temp_allocator)
 }
 
@@ -83,6 +92,14 @@ gui_update :: proc() {
     context_update(gui_context())
     backend_poll_events()
     free_all(context.temp_allocator)
+}
+
+gui_is_running :: proc() -> bool {
+    return gui_context().is_running
+}
+
+gui_stop :: proc() {
+    gui_context().is_running = false
 }
 
 context_update :: proc(ctx: ^Context) {
@@ -94,6 +111,8 @@ context_update :: proc(ctx: ^Context) {
     }
 
     ctx.window_stack = make([dynamic]^Window, context.temp_allocator)
+    ctx.id_stack = make([dynamic]Id, context.temp_allocator)
+    ctx.iteration_stack = make([dynamic]int, context.temp_allocator)
 
     if ctx.update != nil {
         ctx.update()
@@ -102,13 +121,13 @@ context_update :: proc(ctx: ^Context) {
     ctx.previous_mouse_hover = ctx.mouse_hover
     ctx.mouse_hit = ctx.final_mouse_hover_request
 
-    if ctx.mouse_hover_capture != nil {
+    if ctx.mouse_hover_capture != 0 {
         ctx.mouse_hover = ctx.mouse_hover_capture
     } else {
         ctx.mouse_hover = ctx.final_mouse_hover_request
     }
 
-    ctx.final_mouse_hover_request = nil
+    ctx.final_mouse_hover_request = 0
 
     ctx.mouse_wheel = {0, 0}
     ctx.previous_tick = ctx.tick
@@ -122,6 +141,96 @@ context_update :: proc(ctx: ^Context) {
     clear(&ctx.key_repeats)
     clear(&ctx.key_releases)
     strings.builder_reset(&ctx.text_input)
+}
+
+//==========================================================================
+// State
+//==========================================================================
+
+Id :: u64
+
+get_id :: proc(loc := #caller_location) -> Id {
+    INITIAL_SEED :: 2166136261
+
+    state: xxhash.XXH3_state
+    xxhash.XXH3_init_state(&state)
+
+    ctx := gui_context()
+    seed := ctx.id_stack[len(ctx.id_stack) - 1] if len(ctx.id_stack) > 0 else INITIAL_SEED
+    seed_bytes := transmute([size_of(seed)]byte)seed
+    xxhash.XXH3_64_update(&state, seed_bytes[:])
+
+    xxhash.XXH3_64_update(&state, transmute([]byte)loc.file_path)
+
+    column_bytes := transmute([size_of(loc.column)]byte)loc.column
+    xxhash.XXH3_64_update(&state, column_bytes[:])
+
+    line_bytes := transmute([size_of(loc.line)]byte)loc.line
+    xxhash.XXH3_64_update(&state, line_bytes[:])
+
+    for iteration in ctx.iteration_stack {
+        iteration_bytes := transmute([size_of(iteration)]byte)iteration
+        xxhash.XXH3_64_update(&state, iteration_bytes[:])
+    }
+
+    return xxhash.XXH3_64_digest(&state)
+}
+
+begin_id_space :: proc(loc := #caller_location) {
+    append(&gui_context().id_stack, get_id(loc))
+}
+
+end_id_space :: proc() {
+	pop(&gui_context().id_stack)
+}
+
+@(deferred_none=end_id_space)
+scoped_id_space :: proc(loc := #caller_location) {
+    begin_id_space(loc)
+}
+
+begin_iteration :: proc(#any_int iteration: int) {
+    append(&gui_context().iteration_stack, iteration)
+}
+
+end_iteration :: proc() {
+	pop(&gui_context().iteration_stack)
+}
+
+@(deferred_none=end_iteration)
+scoped_iteration :: proc(#any_int iteration: int) {
+    begin_iteration(iteration)
+}
+
+// get_state :: proc(id: Id, $T: typeid) -> (state: ^T, init: bool) #optional_ok {
+//     ctx := gui_context()
+//     if id not_in ctx.retained_state {
+//         state = new(T)
+//         ctx.retained_state[id] = state
+//         init = true
+//         return
+//     } else {
+//         state = cast(^T)ctx.retained_state[id]
+//     }
+//     return
+// }
+
+get_state :: proc($T: typeid, loc := #caller_location) -> (state: ^T, init: bool) #optional_ok {
+    ctx := gui_context()
+    id := get_id(loc)
+    if id not_in ctx.retained_state {
+        state = new(T)
+        ctx.retained_state[id] = state
+        init = true
+        return
+    } else {
+        state = cast(^T)ctx.retained_state[id]
+    }
+    return
+}
+
+state_destroyed :: proc() -> bool {
+    return !gui_is_running()
 }
 
 //==========================================================================
@@ -367,23 +476,20 @@ current_window :: proc() -> ^Window {
     return ctx.window_stack[len(ctx.window_stack) - 1]
 }
 
-window_init :: proc(window: ^Window, rectangle: Rectangle) {
-    window.content_scale = {1, 1}
-    window.rectangle = rectangle
-    backend_window_init(window, rectangle)
-}
+window_begin :: proc(initial_rectangle: Rectangle, loc := #caller_location) -> bool {
+    begin_id_space(loc)
 
-window_destroy :: proc(window: ^Window) {
-    backend_window_destroy(window)
-    _window_close(window)
-    delete(window.child_windows)
-    delete(window.loaded_fonts)
-}
-
-window_begin :: proc(window: ^Window) -> bool {
     parent := current_window()
 
     ctx := gui_context()
+
+    window, init := get_state(Window)
+    if init {
+        window.content_scale = {1, 1}
+        window.rectangle = initial_rectangle
+        backend_window_init(window, initial_rectangle)
+    }
+
     append(&ctx.window_stack, window)
 
     window.global_clip_rectangle_stack = make([dynamic]Rectangle, context.temp_allocator)
@@ -423,17 +529,28 @@ window_end :: proc() {
         _window_close(window)
     }
 
+    if state_destroyed() {
+        backend_window_destroy(window)
+        _window_close(window)
+        delete(window.child_windows)
+        delete(window.loaded_fonts)
+        free(window)
+        fmt.println("Window Destroyed")
+    }
+
     pop(&ctx.window_stack)
 
     parent := current_window()
     if parent != nil {
         backend_activate_gl_context(parent)
     }
+
+    end_id_space()
 }
 
 @(deferred_none=window_end)
-window_update :: proc(window: ^Window) -> bool {
-    return window_begin(window)
+window :: proc(initial_rectangle: Rectangle, loc := #caller_location) -> bool {
+    return window_begin(initial_rectangle, loc)
 }
 
 _window_open :: proc(window: ^Window) {
@@ -493,6 +610,7 @@ Draw_Command :: union {
 
 Fill_Path_Command :: struct {
     path: Path,
+    position: Vector2,
     color: Color,
 }
 
@@ -536,9 +654,7 @@ fill_string :: proc(str: string, position: Vector2, font: Font, color: Color) {
 
 fill_path :: proc(path: Path, color: Color) {
     window := current_window()
-    path := path
-    path_translate(&path, global_offset())
-    backend_render_draw_command(window, Fill_Path_Command{path, color})
+    backend_render_draw_command(window, Fill_Path_Command{path, global_offset(), color})
 }
 
 set_clip_rectangle :: proc(rectangle: Rectangle) {
@@ -605,35 +721,35 @@ _load_font_if_not_loaded :: proc(window: ^Window, font: Font) {
 // Tools
 //==========================================================================
 
-mouse_hover :: proc() -> Widget_Id {
+mouse_hover :: proc() -> Id {
     ctx := gui_context()
     return ctx.mouse_hover
 }
 
-mouse_hover_entered :: proc() -> Widget_Id {
+mouse_hover_entered :: proc() -> Id {
     ctx := gui_context()
     if ctx.mouse_hover != ctx.previous_mouse_hover {
         return ctx.mouse_hover
     } else {
-        return nil
+        return 0
     }
 }
 
-mouse_hover_exited :: proc() -> Widget_Id {
+mouse_hover_exited :: proc() -> Id {
     ctx := gui_context()
     if ctx.mouse_hover != ctx.previous_mouse_hover {
         return ctx.previous_mouse_hover
     } else {
-        return nil
+        return 0
     }
 }
 
-mouse_hit :: proc() -> Widget_Id {
+mouse_hit :: proc() -> Id {
     ctx := gui_context()
     return ctx.mouse_hit
 }
 
-request_mouse_hover :: proc(id: Widget_Id) {
+request_mouse_hover :: proc(id: Id) {
     gui_context().final_mouse_hover_request = id
 }
 
@@ -644,22 +760,22 @@ capture_mouse_hover :: proc() {
 
 release_mouse_hover :: proc() {
     ctx := gui_context()
-    ctx.mouse_hover_capture = nil
+    ctx.mouse_hover_capture = 0
 }
 
-keyboard_focus :: proc() -> Widget_Id {
+keyboard_focus :: proc() -> Id {
     ctx := gui_context()
     return ctx.keyboard_focus
 }
 
-set_keyboard_focus :: proc(id: Widget_Id) {
+set_keyboard_focus :: proc(id: Id) {
     ctx := gui_context()
     ctx.keyboard_focus = id
 }
 
 release_keyboard_focus :: proc() {
     ctx := gui_context()
-    ctx.keyboard_focus = nil
+    ctx.keyboard_focus = 0
 }
 
 hit_test :: proc(rectangle: Rectangle, target: Vector2) -> bool {

@@ -5,41 +5,57 @@ import "core:mem"
 import "core:time"
 import "core:strings"
 
+import "core:slice"
+import "core:hash/xxhash"
+
 default_font := Font{
     name = "consola_13",
     size = 13,
     data = #load("consola.ttf"),
 }
 
-running := true
+stuff :: proc(offset: Vector2, loc := #caller_location) {
+    scoped_id_space(loc)
+    scoped_offset(offset)
 
-window: Window
+    // if button({{0, 0}, {16, 16}}, {0.6, 0.3, 0.3, 1}).clicked {
+    //     fmt.println("Ayy Lmao 1")
+    // }
 
-ayy_lmao := false
+    // if button({{50, 0}, {16, 16}}, {0.6, 0.3, 0.3, 1}).clicked {
+    //     fmt.println("Ayy Lmao 2")
+    // }
 
-box_select: Box_Select
+    // if button({{100, 0}, {16, 16}}, {0.6, 0.3, 0.3, 1}).clicked {
+    //     fmt.println("Ayy Lmao 3")
+    // }
 
-editable_text_line: Editable_Text_Line
-
-some_text: strings.Builder
+    for i in 0 ..< 3 {
+        scoped_iteration(i)
+        for j in 0 ..< 3 {
+            scoped_iteration(j)
+            index := i * 3 + j
+            if button({{f32(index) * 50, 0}, {16, 16}}, {0.6, 0.3, 0.3, 1}).clicked {
+                fmt.printfln("Ayy Lmao %v", index)
+            }
+        }
+    }
+}
 
 update :: proc() {
-    if window_update(&window) {
-        if box, ok := box_select_update(&box_select, .Right); ok {
+    if key_pressed(.Comma) {
+        gui_stop()
+    }
+
+    if window({{100, 100}, {400, 300}}) {
+        if box, ok := box_select(.Right); ok {
             fmt.println(box)
         }
 
-        if button_update(&ayy_lmao, {{50, 50}, {100, 50}}, {0.5, 0, 0, 1}).clicked {
-            fmt.println("Hello")
-        }
+        editable_text_line("Ayy Lmao", {{50, 50}, {100, 100}}, default_font)
 
-        editable_text_line_update(&editable_text_line, &some_text, {{200, 200}, {100, 100}}, default_font)
-
-        // track_manager(get_id("Track Manager"))
-    }
-
-    if key_pressed(.Comma) {
-        running = false
+        stuff({50, 50})
+        stuff({50, 100})
     }
 }
 
@@ -70,16 +86,7 @@ main :: proc() {
     gui_startup(update)
     defer gui_shutdown()
 
-    window_init(&window, {{100, 100}, {400, 300}})
-    defer window_destroy(&window)
-
-    strings.builder_init(&some_text)
-    defer strings.builder_destroy(&some_text)
-
-    editable_text_line_init(&editable_text_line)
-    defer editable_text_line_destroy(&editable_text_line)
-
-    for running {
+    for gui_is_running() {
         gui_update()
     }
 }
