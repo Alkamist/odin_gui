@@ -54,8 +54,8 @@ update :: proc() {
 
         editable_text_line("Ayy Lmao", {{50, 50}, {100, 100}}, default_font)
 
-        stuff({50, 50})
-        stuff({50, 100})
+        stuff({50, 150})
+        stuff({50, 200})
     }
 }
 

@@ -808,10 +808,6 @@ begin_offset :: proc(offset: Vector2) {
 
 end_offset :: proc() {
     window := current_window()
-    if len(window.local_offset_stack) <= 0 ||
-       len(window.global_offset_stack) <= 0 {
-        return
-    }
     pop(&window.local_offset_stack)
     pop(&window.global_offset_stack)
 }
@@ -853,13 +849,10 @@ begin_clip :: proc(rectangle: Rectangle, intersect := true) {
 end_clip :: proc() {
     window := current_window()
 
-    if len(window.global_clip_rectangle_stack) <= 0 {
-        return
-    }
-
     pop(&window.global_clip_rectangle_stack)
 
     if len(window.global_clip_rectangle_stack) <= 0 {
+        backend_render_draw_command(window, Set_Clip_Rectangle_Command{{{0, 0}, window.size}})
         return
     }
 
