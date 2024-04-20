@@ -241,7 +241,7 @@ backend_load_font :: proc(window: ^Window, font: Font) {
     }
 }
 
-backend_measure_string :: proc(window: ^Window, str: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) {
+backend_measure_glyphs :: proc(window: ^Window, str: string, font: Font, glyphs: ^[dynamic]Text_Glyph) {
     nvg_ctx := window.nvg_ctx
 
     clear(glyphs)
@@ -262,9 +262,6 @@ backend_measure_string :: proc(window: ^Window, str: string, font: Font, glyphs:
     resize(glyphs, position_count)
 
     for i in 0 ..< position_count {
-        if byte_index_to_rune_index != nil {
-            byte_index_to_rune_index[nvg_positions[i].str] = i
-        }
         glyphs[i] = Text_Glyph{
             byte_index = nvg_positions[i].str,
             position = nvg_positions[i].x,

@@ -330,9 +330,7 @@ editable_text_line_update :: proc(
     str := strings.to_string(text.builder^)
 
     glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
-    measure_string(str, font, &glyphs, nil)
-
-    line_height := font_metrics(font).line_height
+    measure_glyphs(str, font, &glyphs)
 
     edit_state := &text.edit_state
 
@@ -507,14 +505,16 @@ editable_text_line_update :: proc(
 
     // Draw the selection, string, and then caret.
 
+    height := font_height(font)
+
     {
         scoped_clip(rectangle)
         // selection_color: Color = {0, 0.4, 0.8, 0.8} if is_keyboard_focus else {0, 0.4, 0.8, 0.65}
-        fill_rectangle({rectangle.position + {selection_left_x, 0}, {selection_right_x - selection_left_x, line_height}}, {0, 0.4, 0.8, 0.8})
+        fill_rectangle({rectangle.position + {selection_left_x, 0}, {selection_right_x - selection_left_x, height}}, {0, 0.4, 0.8, 0.8})
         fill_string(str, rectangle.position, font, color)
     }
 
-    fill_rectangle({rectangle.position + {caret_x, 0}, {CARET_WIDTH, line_height}}, {0.7, 0.9, 1, 1})
+    fill_rectangle({rectangle.position + {caret_x, 0}, {CARET_WIDTH, height}}, {0.7, 0.9, 1, 1})
 }
 
 _quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {

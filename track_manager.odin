@@ -4,7 +4,7 @@ import "core:fmt"
 import "core:slice"
 import "core:strings"
 
-TRACK_GROUP_PADDING :: 5
+TRACK_GROUP_PADDING :: 8
 
 Track_Group :: struct {
     using rectangle: Rectangle,
@@ -27,23 +27,8 @@ track_group_destroy :: proc(group: ^Track_Group) {
 }
 
 track_group_name_rectangle :: proc(group: ^Track_Group, font: Font) -> (res: Rectangle) {
-    name_str := strings.to_string(group.name)
-
-    glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
-    measure_string(name_str, font, &glyphs, nil)
-
-    res.position = group.position + TRACK_GROUP_PADDING * 0.5
-
-    res.size.y = font_metrics(font).line_height
-    res.size.x = 0
-    if len(glyphs) > 0 {
-        first := glyphs[0]
-        last := glyphs[len(glyphs) - 1]
-        res.size.x = last.position + last.width - first.position
-    }
-
-    res.position = pixel_snapped(res.position)
-
+    res.position = pixel_snapped(group.position + TRACK_GROUP_PADDING * 0.5)
+    res.size = measure_string(strings.to_string(group.name), font)
     return
 }
 
@@ -60,6 +45,7 @@ track_group_draw_frame :: proc(group: ^Track_Group) {
 Track_Manager_State :: enum {
     Editing,
     Renaming,
+    Confirm_Delete,
 }
 
 Track_Manager :: struct {
@@ -154,22 +140,26 @@ track_manager_unselect_all_groups :: proc(manager: ^Track_Manager) {
 }
 
 track_manager_update :: proc(manager: ^Track_Manager) {
-    rectangle := Rectangle{{20, 20}, {300, 200}}
-
     previous_state := manager.state
 
+    rectangle := Rectangle{{20, 20}, {300, 200}}
+    fill_rectangle(rectangle, {0.5, 0, 0, 1})
+
+    scoped_clip(rectangle)
+    scoped_offset(rectangle.position)
+
+    relative_rectangle := Rectangle{{0, 0}, rectangle.size}
+
     switch manager.state {
-    case .Editing: _track_manager_editing(manager, rectangle)
-    case .Renaming: _track_manager_renaming(manager, rectangle)
+    case .Editing: _track_manager_editing(manager, relative_rectangle)
+    case .Renaming: _track_manager_renaming(manager, relative_rectangle)
+    case .Confirm_Delete: _track_manager_confirm_delete(manager, relative_rectangle)
     }
 
     manager.state_changed = manager.state != previous_state
 }
 
 _track_manager_renaming :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
-    fill_rectangle(rectangle, {0.5, 0, 0, 1})
-    scoped_clip(rectangle)
-
     if key_pressed(.Enter) || key_pressed(.Escape) {
         manager.state = .Editing
     }
@@ -208,9 +198,6 @@ _track_manager_renaming :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
 }
 
 _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
-    fill_rectangle(rectangle, {0.5, 0, 0, 1})
-    scoped_clip(rectangle)
-
     pixel := pixel_size()
     mouse_pos := mouse_position()
     start_dragging_groups := false
@@ -225,6 +212,10 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
         track_manager_unselect_all_groups(manager)
         track_manager_create_new_group(manager, mouse_pos)
         manager.state = .Renaming
+    }
+
+    if key_pressed(.Delete) {
+        manager.state = .Confirm_Delete
     }
 
     // Group logic
@@ -297,4 +288,59 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
         }
         track_manager_selection_logic(manager, groups_touched_by_box_select[:], false)
     }
+}
+
+_track_manager_confirm_delete :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
+    pixel := pixel_size()
+
+    if key_pressed(.Escape) {
+        fmt.println("Aborted")
+        manager.state = .Editing
+    }
+
+    if key_pressed(.Enter) {
+        fmt.println("Deleted")
+        manager.state = .Editing
+    }
+
+    for group in manager.groups {
+        group.position = pixel_snapped(group.position)
+
+        name_rectangle := track_group_name_rectangle(group, manager.font)
+        group.size = name_rectangle.size + TRACK_GROUP_PADDING
+
+        track_group_draw_frame(group)
+        fill_string(strings.to_string(group.name), name_rectangle.position, manager.font, {1, 1, 1, 1})
+    }
+
+    prompt_rectangle := Rectangle{
+        pixel_snapped((rectangle.size - {290, 128}) * 0.5),
+        {290, 128},
+    }
+
+    fill_rounded_rectangle(prompt_rectangle, 3, {0.5, 0.5, 0.5, 0.7})
+    outline_rounded_rectangle(prompt_rectangle, 3, pixel.x, {1, 1, 1, 0.3})
+
+    scoped_clip(prompt_rectangle)
+
+    inner_rectangle := rectangle_padded(prompt_rectangle, 5)
+
+    text_rectangle := Rectangle{inner_rectangle.position, {inner_rectangle.size.x, 24}}
+    fill_string_aligned("Delete selected groups?", text_rectangle, manager.font, {1, 1, 1, 1}, {0.5, 0.5})
+
+    BUTTON_SPACING :: 10
+    BUTTON_SIZE :: Vector2{96, 32}
+
+    button_anchor := inner_rectangle.position + inner_rectangle.size * 0.5
+    button_anchor.y += 12
+
+    yes_button_position: Vector2
+    yes_button_position = button_anchor
+    yes_button_position.x -= BUTTON_SIZE.x + BUTTON_SPACING * 0.5
+    fill_rounded_rectangle({yes_button_position, BUTTON_SIZE}, 3, {0, 0, 0.8, 1})
+
+    no_button_position: Vector2
+    no_button_position = button_anchor
+    no_button_position.x += BUTTON_SPACING * 0.5
+    fill_rounded_rectangle({no_button_position, BUTTON_SIZE}, 3, {0, 0, 0.8, 1})
 }

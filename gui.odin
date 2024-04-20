@@ -549,6 +549,12 @@ fill_string :: proc(str: string, position: Vector2, font: Font, color: Color) {
     backend_render_draw_command(window, Fill_String_Command{str, global_offset() + position, font, color})
 }
 
+fill_string_aligned :: proc(str: string, rectangle: Rectangle, font: Font, color: Color, alignment: Vector2) {
+    size := measure_string(str, font)
+    position := pixel_snapped(rectangle.position + (rectangle.size - size) * alignment)
+    fill_string(str, position, font, color)
+}
+
 fill_path :: proc(path: Path, color: Color) {
     window := current_window()
     backend_render_draw_command(window, Fill_Path_Command{path, global_offset(), color})
@@ -561,16 +567,34 @@ set_clip_rectangle :: proc(rectangle: Rectangle) {
     backend_render_draw_command(window, Set_Clip_Rectangle_Command{rectangle})
 }
 
-measure_string :: proc(str: string, font: Font, glyphs: ^[dynamic]Text_Glyph, byte_index_to_rune_index: ^map[int]int = nil) {
+measure_string :: proc(str: string, font: Font) -> (size: Vector2) {
+    glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
+    measure_glyphs(str, font, &glyphs)
+    size.y = font_height(font)
+    size.x = 0
+    if len(glyphs) > 0 {
+        first := glyphs[0]
+        last := glyphs[len(glyphs) - 1]
+        size.x = last.position + last.width - first.position
+    }
+    return
+}
+
+measure_glyphs :: proc(str: string, font: Font, glyphs: ^[dynamic]Text_Glyph) {
     window := current_window()
     _load_font_if_not_loaded(window, font)
-    backend_measure_string(window, str, font, glyphs, byte_index_to_rune_index)
+    backend_measure_glyphs(window, str, font, glyphs)
 }
 
 font_metrics :: proc(font: Font) -> Font_Metrics {
     window := current_window()
     _load_font_if_not_loaded(window, font)
     return backend_font_metrics(window, font)
+}
+
+font_height :: proc(font: Font) -> f32 {
+    metrics := font_metrics(font)
+    return metrics.ascender - metrics.descender
 }
 
 fill_rectangle :: proc(rectangle: Rectangle, color: Color) {
