@@ -20,8 +20,6 @@ Vector2 :: [2]f32
 Context :: struct {
     update: proc(),
 
-    is_running: bool,
-
     tick: time.Tick,
 
     screen_mouse_position: Vector2,
@@ -52,9 +50,6 @@ Context :: struct {
 
     window_stack: [dynamic]^Window,
 
-    id_stack: [dynamic]Id,
-    iteration_stack: [dynamic]int,
-
     retained_state: map[Id]rawptr,
 
     previous_tick: time.Tick,
@@ -71,23 +66,18 @@ gui_startup :: proc(update: proc()) {
     ctx.mouse_repeat_duration = 300 * time.Millisecond
     ctx.mouse_repeat_movement_tolerance = 3
     ctx.is_first_frame = true
-    ctx.is_running = true
     backend_startup()
 }
 
 gui_shutdown :: proc() {
     ctx := gui_context()
     backend_shutdown()
-    for _, state in ctx.retained_state {
-        free(state)
-    }
     delete(ctx.mouse_presses)
     delete(ctx.mouse_releases)
     delete(ctx.key_presses)
     delete(ctx.key_repeats)
     delete(ctx.key_releases)
     strings.builder_destroy(&ctx.text_input)
-    delete(ctx.retained_state)
     free_all(context.temp_allocator)
 }
 
@@ -95,14 +85,6 @@ gui_update :: proc() {
     context_update(gui_context())
     backend_poll_events()
     free_all(context.temp_allocator)
-}
-
-gui_is_running :: proc() -> bool {
-    return gui_context().is_running
-}
-
-gui_stop :: proc() {
-    gui_context().is_running = false
 }
 
 context_update :: proc(ctx: ^Context) {
@@ -114,8 +96,6 @@ context_update :: proc(ctx: ^Context) {
     }
 
     ctx.window_stack = make([dynamic]^Window, context.temp_allocator)
-    ctx.id_stack = make([dynamic]Id, context.temp_allocator)
-    ctx.iteration_stack = make([dynamic]int, context.temp_allocator)
 
     if ctx.update != nil {
         ctx.update()
@@ -152,102 +132,9 @@ context_update :: proc(ctx: ^Context) {
 
 Id :: u64
 
-// get_id :: proc(loc := #caller_location) -> Id {
-//     INITIAL_SEED :: 2166136261
-
-//     state: xxhash.XXH3_state
-//     xxhash.XXH3_init_state(&state)
-
-//     ctx := gui_context()
-//     seed := ctx.id_stack[len(ctx.id_stack) - 1] if len(ctx.id_stack) > 0 else INITIAL_SEED
-//     seed_bytes := transmute([size_of(seed)]byte)seed
-//     xxhash.XXH3_64_update(&state, seed_bytes[:])
-
-//     xxhash.XXH3_64_update(&state, transmute([]byte)loc.file_path)
-
-//     column_bytes := transmute([size_of(loc.column)]byte)loc.column
-//     xxhash.XXH3_64_update(&state, column_bytes[:])
-
-//     line_bytes := transmute([size_of(loc.line)]byte)loc.line
-//     xxhash.XXH3_64_update(&state, line_bytes[:])
-
-//     for iteration in ctx.iteration_stack {
-//         iteration_bytes := transmute([size_of(iteration)]byte)iteration
-//         xxhash.XXH3_64_update(&state, iteration_bytes[:])
-//     }
-
-//     return xxhash.XXH3_64_digest(&state)
-// }
-
-get_id :: proc(loc := #caller_location) -> Id {
-    INITIAL_SEED :: 2166136261
-
-    state: xxhash.XXH3_state
-    xxhash.XXH3_init_state(&state)
-
-    ctx := gui_context()
-    seed := ctx.id_stack[len(ctx.id_stack) - 1] if len(ctx.id_stack) > 0 else INITIAL_SEED
-    seed_bytes := transmute([size_of(seed)]byte)seed
-    xxhash.XXH3_64_update(&state, seed_bytes[:])
-
-    xxhash.XXH3_64_update(&state, transmute([]byte)loc.file_path)
-
-    column_bytes := transmute([size_of(loc.column)]byte)loc.column
-    xxhash.XXH3_64_update(&state, column_bytes[:])
-
-    line_bytes := transmute([size_of(loc.line)]byte)loc.line
-    xxhash.XXH3_64_update(&state, line_bytes[:])
-
-    for iteration in ctx.iteration_stack {
-        iteration_bytes := transmute([size_of(iteration)]byte)iteration
-        xxhash.XXH3_64_update(&state, iteration_bytes[:])
-    }
-
-    return xxhash.XXH3_64_digest(&state)
-}
-
-begin_id_space :: proc(loc := #caller_location) {
-    append(&gui_context().id_stack, get_id(loc))
-}
-
-end_id_space :: proc() {
-	pop(&gui_context().id_stack)
-}
-
-@(deferred_none=end_id_space)
-scoped_id_space :: proc(loc := #caller_location) {
-    begin_id_space(loc)
-}
-
-begin_iteration :: proc(#any_int iteration: int) {
-    append(&gui_context().iteration_stack, iteration)
-}
-
-end_iteration :: proc() {
-	pop(&gui_context().iteration_stack)
-}
-
-@(deferred_none=end_iteration)
-scoped_iteration :: proc(#any_int iteration: int) {
-    begin_iteration(iteration)
-}
-
-get_state :: proc($T: typeid, loc := #caller_location) -> (state: ^T, init: bool) #optional_ok {
-    ctx := gui_context()
-    id := get_id(loc)
-    if id not_in ctx.retained_state {
-        state = new(T)
-        ctx.retained_state[id] = state
-        init = true
-        return
-    } else {
-        state = cast(^T)ctx.retained_state[id]
-    }
-    return
-}
-
-state_destroyed :: proc() -> bool {
-    return !gui_is_running()
+get_id :: proc "contextless" () -> Id {
+    @(static) id: Id
+    return 1 + intrinsics.atomic_add(&id, 1)
 }
 
 //==========================================================================
@@ -493,19 +380,23 @@ current_window :: proc() -> ^Window {
     return ctx.window_stack[len(ctx.window_stack) - 1]
 }
 
-window_begin :: proc(initial_rectangle: Rectangle, loc := #caller_location) -> bool {
-    begin_id_space(loc)
+window_init :: proc(window: ^Window, rectangle: Rectangle) {
+    window.content_scale = {1, 1}
+    window.rectangle = rectangle
+    backend_window_init(window, rectangle)
+}
 
+window_destroy :: proc(window: ^Window) {
+    backend_window_destroy(window)
+    _window_close(window)
+    delete(window.child_windows)
+    delete(window.loaded_fonts)
+}
+
+window_begin :: proc(window: ^Window) -> bool {
     parent := current_window()
 
     ctx := gui_context()
-
-    window, init := get_state(Window)
-    if init {
-        window.content_scale = {1, 1}
-        window.rectangle = initial_rectangle
-        backend_window_init(window, initial_rectangle)
-    }
 
     append(&ctx.window_stack, window)
 
@@ -546,26 +437,17 @@ window_end :: proc() {
         _window_close(window)
     }
 
-    if state_destroyed() {
-        backend_window_destroy(window)
-        _window_close(window)
-        delete(window.child_windows)
-        delete(window.loaded_fonts)
-    }
-
     pop(&ctx.window_stack)
 
     parent := current_window()
     if parent != nil {
         backend_activate_gl_context(parent)
     }
-
-    end_id_space()
 }
 
 @(deferred_none=window_end)
-window :: proc(initial_rectangle: Rectangle, loc := #caller_location) -> bool {
-    return window_begin(initial_rectangle, loc)
+window_update :: proc(window: ^Window) -> bool {
+    return window_begin(window)
 }
 
 _window_open :: proc(window: ^Window) {
@@ -800,6 +682,14 @@ hit_test :: proc(rectangle: Rectangle, target: Vector2) -> bool {
 
 mouse_hit_test :: proc(rectangle: Rectangle) -> bool {
     return hit_test(rectangle, mouse_position())
+}
+
+clip_test :: proc(target: Vector2) -> bool {
+    return rectangle_encloses(local_clip_rectangle(), target, include_borders = false)
+}
+
+mouse_clip_test :: proc() -> bool {
+    return clip_test(mouse_position())
 }
 
 local_offset :: proc() -> Vector2 {
