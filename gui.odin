@@ -1,11 +1,13 @@
 package main
 
+import "base:runtime"
 import "base:intrinsics"
 // import "core:fmt"
 import "core:math"
 import "core:time"
 import "core:slice"
 import "core:strings"
+import cte "core:text/edit"
 
 Vector2 :: [2]f32
 Id :: u64
@@ -784,4 +786,1116 @@ end_clip :: proc() {
 @(deferred_none=end_clip)
 scoped_clip :: proc(rectangle: Rectangle, intersect := true) {
     begin_clip(rectangle, intersect = intersect)
+}
+
+//==========================================================================
+// Rectangle
+//==========================================================================
+
+Rectangle :: struct {
+    using position: Vector2,
+    size: Vector2,
+}
+
+rectangle_expanded :: proc(rectangle: Rectangle, amount: Vector2) -> Rectangle {
+    return {
+        position = {
+            min(rectangle.position.x + rectangle.size.x * 0.5, rectangle.position.x - amount.x),
+            min(rectangle.position.y + rectangle.size.y * 0.5, rectangle.position.y - amount.y),
+        },
+        size = {
+            max(0, rectangle.size.x + amount.x * 2),
+            max(0, rectangle.size.y + amount.y * 2),
+        },
+    }
+}
+
+rectangle_expand :: proc(rectangle: ^Rectangle, amount: Vector2) {
+    rectangle^ = rectangle_expanded(rectangle^, amount)
+}
+
+rectangle_padded :: proc(rectangle: Rectangle, amount: Vector2) -> Rectangle {
+    return rectangle_expanded(rectangle, -amount)
+}
+
+rectangle_pad :: proc(rectangle: ^Rectangle, amount: Vector2) {
+    rectangle^ = rectangle_padded(rectangle^, amount)
+}
+
+rectangle_snapped :: proc(rectangle: Rectangle, increment: Vector2) -> Rectangle {
+    return {
+        {
+            math.round(rectangle.position.x / increment.x) * increment.x,
+            math.round(rectangle.position.y / increment.y) * increment.y,
+        },
+        {
+            math.round(rectangle.size.x / increment.x) * increment.x,
+            math.round(rectangle.size.y / increment.y) * increment.y,
+        },
+    }
+}
+
+rectangle_snap :: proc(rectangle: ^Rectangle, increment: Vector2) {
+    rectangle^ = rectangle_snapped(rectangle^, increment)
+}
+
+rectangle_intersection :: proc(a, b: Rectangle) -> Rectangle {
+    assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
+
+    x1 := max(a.position.x, b.position.x)
+    y1 := max(a.position.y, b.position.y)
+    x2 := min(a.position.x + a.size.x, b.position.x + b.size.x)
+    y2 := min(a.position.y + a.size.y, b.position.y + b.size.y)
+
+    if x2 < x1 {
+        x2 = x1
+    }
+    if y2 < y1 {
+        y2 = y1
+    }
+
+    return {{x1, y1}, {x2 - x1, y2 - y1}}
+}
+
+rectangle_intersects :: proc(a, b: Rectangle, include_borders := false) -> bool {
+    assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
+
+    if include_borders {
+        if a.position.x > b.position.x + b.size.x {
+            return false
+        }
+        if a.position.x + a.size.x < b.position.x {
+            return false
+        }
+        if a.position.y > b.position.y + b.size.y {
+            return false
+        }
+        if a.position.y + a.size.y < b.position.y {
+            return false
+        }
+    } else {
+        if a.position.x >= b.position.x + b.size.x {
+            return false
+        }
+        if a.position.x + a.size.x <= b.position.x {
+            return false
+        }
+        if a.position.y >= b.position.y + b.size.y {
+            return false
+        }
+        if a.position.y + a.size.y <= b.position.y {
+            return false
+        }
+    }
+
+    return true
+}
+
+rectangle_encloses :: proc{
+    rectangle_encloses_rect,
+    rectangle_encloses_vector2,
+}
+
+rectangle_encloses_rect :: proc(a, b: Rectangle, include_borders := false) -> bool {
+    assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
+    if include_borders {
+        return b.position.x >= a.position.x &&
+               b.position.y >= a.position.y &&
+               b.position.x + b.size.x <= a.position.x + a.size.x &&
+               b.position.y + b.size.y <= a.position.y + a.size.y
+    } else {
+        return b.position.x > a.position.x &&
+               b.position.y > a.position.y &&
+               b.position.x + b.size.x < a.position.x + a.size.x &&
+               b.position.y + b.size.y < a.position.y + a.size.y
+    }
+}
+
+rectangle_encloses_vector2 :: proc(a: Rectangle, b: Vector2, include_borders := false) -> bool {
+    assert(a.size.x >= 0 && a.size.y >= 0)
+    if include_borders {
+        return b.x >= a.position.x && b.x <= a.position.x + a.size.x &&
+               b.y >= a.position.y && b.y <= a.position.y + a.size.y
+    } else {
+        return b.x > a.position.x && b.x < a.position.x + a.size.x &&
+               b.y > a.position.y && b.y < a.position.y + a.size.y
+    }
+}
+
+//==========================================================================
+// Path
+//==========================================================================
+
+KAPPA :: 0.5522847493
+
+Sub_Path :: struct {
+    is_hole: bool,
+    is_closed: bool,
+    points: [dynamic]Vector2,
+}
+
+Path :: struct {
+    sub_paths: [dynamic]Sub_Path,
+    allocator: runtime.Allocator,
+}
+
+temp_path :: proc() -> (res: Path) {
+    path_init(&res, context.temp_allocator)
+    return
+}
+
+path_init :: proc(path: ^Path, allocator := context.allocator) -> runtime.Allocator_Error {
+    path.sub_paths = make([dynamic]Sub_Path, allocator = allocator) or_return
+    path.allocator = allocator
+    return nil
+}
+
+path_destroy :: proc(path: ^Path) {
+    for sub_path in path.sub_paths {
+        delete(sub_path.points)
+    }
+    delete(path.sub_paths)
+}
+
+// Closes the current sub-path.
+path_close :: proc(path: ^Path, is_hole := false) {
+    path.sub_paths[len(path.sub_paths) - 1].is_closed = true
+    path.sub_paths[len(path.sub_paths) - 1].is_hole = is_hole
+}
+
+// Translates all points in the path by the given amount.
+path_translate :: proc(path: ^Path, amount: Vector2) {
+    for &sub_path in path.sub_paths {
+        for &point in sub_path.points {
+            point += amount
+        }
+    }
+}
+
+// Starts a new sub-path with the specified point as the first point.
+path_move_to :: proc(path: ^Path, point: Vector2) {
+    sub_path: Sub_Path
+    sub_path.points = make([dynamic]Vector2, allocator = path.allocator)
+    append(&sub_path.points, point)
+    append(&path.sub_paths, sub_path)
+}
+
+// Adds a line segment from the last point in the path to the specified point.
+path_line_to :: proc(path: ^Path, point: Vector2) {
+    if len(path.sub_paths) <= 0 do return
+    sub_path := &path.sub_paths[len(path.sub_paths) - 1]
+    append(&sub_path.points, _sub_path_previous_point(sub_path), point, point)
+}
+
+// Adds a cubic bezier segment from the last point in the path via two control points to the specified point.
+path_bezier_to :: proc(path: ^Path, control_start, control_end, point: Vector2) {
+    if len(path.sub_paths) <= 0 do return
+    sub_path := &path.sub_paths[len(path.sub_paths) - 1]
+    append(&sub_path.points, control_start, control_end, point)
+}
+
+// Adds a quadratic bezier segment from the last point in the path via a control point to the specified point.
+path_quad_to :: proc(path: ^Path, control, point: Vector2) {
+    previous := _path_previous_point(path)
+    path_bezier_to(path,
+        previous + 2 / 3 * (control - previous),
+        point + 2 / 3 * (control - point),
+        point,
+    )
+}
+
+// Adds a circlular arc shaped sub-path. Angles are in radians.
+path_arc :: proc(
+    path: ^Path,
+    center: Vector2,
+    radius: f32,
+    start_angle, end_angle: f32,
+    counterclockwise := false,
+) {
+    _path_arc(path, center.x, center.y, radius, start_angle, end_angle, counterclockwise)
+}
+
+// Adds an arc segment at the corner defined by the last path point, and two control points.
+path_arc_to :: proc(path: ^Path, control1: Vector2, control2: Vector2, radius: f32) {
+    _path_arc_to(path, control1.x, control1.y, control2.x, control2.y, radius)
+}
+
+// Adds a new rectangle shaped sub-path.
+path_rectangle :: proc(path: ^Path, rectangle: Rectangle, is_hole := false) {
+    if rectangle.size.x <= 0 || rectangle.size.y <= 0 do return
+    _path_rectangle(path, rectangle.x, rectangle.y, rectangle.size.x, rectangle.size.y, is_hole)
+}
+
+// Adds a new rounded rectangle shaped sub-path.
+path_rounded_rectangle :: proc(
+    path: ^Path,
+    rectangle: Rectangle,
+    radius: f32,
+    is_hole := false,
+) {
+    path_rounded_rectangle_varying(path, rectangle, radius, radius, radius, radius, is_hole)
+}
+
+// Adds a new rounded rectangle shaped sub-path with varying radii for each corner.
+path_rounded_rectangle_varying :: proc(
+    path: ^Path,
+    rectangle: Rectangle,
+    radius_top_left: f32,
+    radius_top_right: f32,
+    radius_bottom_right: f32,
+    radius_bottom_left: f32,
+    is_hole := false,
+) {
+    if rectangle.size.x <= 0 || rectangle.size.y <= 0 do return
+    _path_rounded_rect_varying(path,
+        rectangle.x, rectangle.y,
+        rectangle.size.x, rectangle.size.y,
+        radius_top_left,
+        radius_top_right,
+        radius_bottom_right,
+        radius_bottom_left,
+        is_hole,
+    )
+}
+
+// Adds an ellipse shaped sub-path.
+path_ellipse :: proc(path: ^Path, center, radius: Vector2, is_hole := false) {
+    _path_ellipse(path, center.x, center.y, radius.x, radius.y, is_hole)
+}
+
+// Adds a circle shaped sub-path.
+path_circle :: proc(path: ^Path, center: Vector2, radius: f32, is_hole := false) {
+    _path_circle(path, center.x, center.y, radius, is_hole)
+}
+
+// path_hit_test :: proc(path: ^Path, point: Vector2, tolerance: f32 = 0.25) -> bool {
+//     for &sub_path in path.sub_paths {
+//         if sub_path_hit_test(&sub_path, point, tolerance) {
+//             return true
+//         }
+//     }
+//     return false
+// }
+
+// sub_path_hit_test :: proc(sub_path: ^Sub_Path, point: Vector2, tolerance: f32) -> bool {
+//     if len(sub_path.points) <= 0 do return false
+
+//     crossings := 0
+
+//     downward_ray_end := point + {0, 1e6}
+
+//     for i := 1; i < len(sub_path.points); i += 3 {
+//         p1 := sub_path.points[i - 1]
+//         c1 := sub_path.points[i]
+//         c2 := sub_path.points[i + 1]
+//         p2 := sub_path.points[i + 2]
+
+//         if _, ok := bezier_and_line_segment_collision(p1, c1, c2, p2, point, downward_ray_end, 0, tolerance); ok {
+//             crossings += 1
+//         }
+//     }
+
+//     start_point := sub_path.points[0]
+//     final_point := sub_path.points[len(sub_path.points) - 1]
+
+//     if _, ok := line_segment_collision(point, downward_ray_end, start_point, final_point); ok {
+//         crossings += 1
+//     }
+
+//     return crossings > 0 && crossings % 2 != 0
+// }
+
+// line_segment_collision :: proc(a0, a1, b0, b1: Vector2) -> (collision: Vector2, ok: bool) {
+//     div := (b1.y - b0.y) * (a1.x - a0.x) - (b1.x - b0.x) * (a1.y - a0.y)
+
+//     if abs(div) >= math.F32_EPSILON {
+//         ok = true
+
+//         xi := ((b0.x - b1.x) * (a0.x * a1.y - a0.y * a1.x) - (a0.x - a1.x) * (b0.x * b1.y - b0.y * b1.x)) / div
+//         yi := ((b0.y - b1.y) * (a0.x * a1.y - a0.y * a1.x) - (a0.y - a1.y) * (b0.x * b1.y - b0.y * b1.x)) / div
+
+//         if (abs(a0.x - a1.x) > math.F32_EPSILON && (xi < min(a0.x, a1.x) || xi > max(a0.x, a1.x))) ||
+//            (abs(b0.x - b1.x) > math.F32_EPSILON && (xi < min(b0.x, b1.x) || xi > max(b0.x, b1.x))) ||
+//            (abs(a0.y - a1.y) > math.F32_EPSILON && (yi < min(a0.y, a1.y) || yi > max(a0.y, a1.y))) ||
+//            (abs(b0.y - b1.y) > math.F32_EPSILON && (yi < min(b0.y, b1.y) || yi > max(b0.y, b1.y))) {
+//             ok = false
+//         }
+
+//         if ok && collision != 0 {
+//             collision.x = xi
+//             collision.y = yi
+//         }
+//     }
+
+//     return
+// }
+
+// bezier_and_line_segment_collision :: proc(
+//     start: Vector2,
+//     control_start: Vector2,
+//     control_finish: Vector2,
+//     finish: Vector2,
+//     segment_start: Vector2,
+//     segment_finish: Vector2,
+//     level: int,
+//     tolerance: f32,
+// ) -> (collision: Vector2, ok: bool) {
+//     if level > 10 {
+//         return
+//     }
+
+//     x12 := (start.x + control_start.x) * 0.5
+//     y12 := (start.y + control_start.y) * 0.5
+//     x23 := (control_start.x + control_finish.x) * 0.5
+//     y23 := (control_start.y + control_finish.y) * 0.5
+//     x34 := (control_finish.x + finish.x) * 0.5
+//     y34 := (control_finish.y + finish.y) * 0.5
+//     x123 := (x12 + x23) * 0.5
+//     y123 := (y12 + y23) * 0.5
+
+//     dx := finish.x - start.x
+//     dy := finish.y - start.y
+//     d2 := abs(((control_start.x - finish.x) * dy - (control_start.y - finish.y) * dx))
+//     d3 := abs(((control_finish.x - finish.x) * dy - (control_finish.y - finish.y) * dx))
+
+//     if (d2 + d3) * (d2 + d3) < tolerance * (dx * dx + dy * dy) {
+//         return line_segment_collision(segment_start, segment_finish, {start.x, start.y}, {finish.x, finish.y})
+//     }
+
+//     x234 := (x23 + x34) * 0.5
+//     y234 := (y23 + y34) * 0.5
+//     x1234 := (x123 + x234) * 0.5
+//     y1234 := (y123 + y234) * 0.5
+
+//     if collision, ok := bezier_and_line_segment_collision(start, {x12, y12}, {x123, y123}, {x1234, y1234}, segment_start, segment_finish, level + 1, tolerance); ok {
+//         return collision, ok
+//     }
+//     if collision, ok := bezier_and_line_segment_collision({x1234, y1234}, {x234, y234}, {x34, y34}, finish, segment_start, segment_finish, level + 1, tolerance); ok {
+//         return collision, ok
+//     }
+
+//     return {}, false
+// }
+
+_sub_path_previous_point :: #force_inline proc(sub_path: ^Sub_Path) -> Vector2 {
+    return sub_path.points[len(sub_path.points) - 1]
+}
+
+_path_previous_point :: #force_inline proc(path: ^Path) -> Vector2 {
+    if len(path.sub_paths) <= 0 do return {0, 0}
+    return _sub_path_previous_point(&path.sub_paths[len(path.sub_paths) - 1])
+}
+
+_path_close :: path_close
+
+_path_move_to :: proc(path: ^Path, x, y: f32) {
+    path_move_to(path, {x, y})
+}
+
+_path_line_to :: proc(path: ^Path, x, y: f32) {
+    path_line_to(path, {x, y})
+}
+
+_path_bezier_to :: proc(path: ^Path, c1x, c1y, c2x, c2y, x, y: f32) {
+    path_bezier_to(path, {c1x, c1y}, {c2x, c2y}, {x, y})
+}
+
+_path_quad_to :: proc(path: ^Path, cx, cy, x, y: f32) {
+    path_quad_to(path, {cx, cy}, {x, y})
+}
+
+_path_arc :: proc(path: ^Path, cx, cy, r, a0, a1: f32, counterclockwise: bool) {
+    use_move_to := len(path.sub_paths) <= 0 || path.sub_paths[len(path.sub_paths) - 1].is_closed
+
+    // Clamp angles
+    da := a1 - a0
+    if !counterclockwise {
+        if abs(da) >= math.PI*2 {
+            da = math.PI*2
+        } else {
+            for da < 0.0 {
+                da += math.PI*2
+            }
+        }
+    } else {
+        if abs(da) >= math.PI*2 {
+            da = -math.PI*2
+        } else {
+            for da > 0.0 {
+                da -= math.PI*2
+            }
+        }
+    }
+
+    // Split arc into max 90 degree segments.
+    ndivs := max(1, min((int)(abs(da) / (math.PI*0.5) + 0.5), 5))
+    hda := (da / f32(ndivs)) / 2.0
+    kappa := abs(4.0 / 3.0 * (1.0 - math.cos(hda)) / math.sin(hda))
+
+    if counterclockwise {
+        kappa = -kappa
+    }
+
+    px, py, ptanx, ptany: f32
+    for i in 0..=ndivs {
+        a := a0 + da * f32(i) / f32(ndivs)
+        dx := math.cos(a)
+        dy := math.sin(a)
+        x := cx + dx*r
+        y := cy + dy*r
+        tanx := -dy*r*kappa
+        tany := dx*r*kappa
+
+        if i == 0 {
+            if use_move_to {
+                _path_move_to(path, x, y)
+            } else {
+                _path_line_to(path, x, y)
+            }
+        } else {
+            _path_bezier_to(path,
+                px + ptanx, py + ptany,
+                x - tanx, y - tany,
+                x, y,
+            )
+        }
+
+        px = x
+        py = y
+        ptanx = tanx
+        ptany = tany
+    }
+}
+
+_path_arc_to :: proc(
+    path: ^Path,
+    x1, y1: f32,
+    x2, y2: f32,
+    radius: f32,
+) {
+    if len(path.sub_paths) <= 0 do return
+
+    previous := _path_previous_point(path)
+
+    x0 := previous.x
+    y0 := previous.y
+
+    __ptEquals :: proc(x0, y0, x1, y1: f32) -> bool {
+        return x0 == x1 && y0 == y1
+    }
+
+    __distPtSeg :: proc(x, y, px, py, qx, qy: f32) -> f32 {
+        pqx := qx - px
+        pqy := qy - py
+        dx := x - px
+        dy := y - py
+        d := pqx * pqx + pqy * pqy
+        t := pqx * dx + pqy * dy
+
+        if d > 0 {
+            t /= d
+        }
+        t = clamp(t, 0, 1)
+
+        dx = px + t * pqx - x
+        dy = py + t * pqy - y
+        return dx * dx + dy * dy
+    }
+
+    // Handle degenerate cases.
+    if __ptEquals(x0,y0, x1,y1) ||
+       __ptEquals(x1,y1, x2,y2) ||
+       __distPtSeg(x1,y1, x0,y0, x2,y2) <= 0 ||
+        radius <= 0 {
+        _path_line_to(path, x1, y1)
+        return
+    }
+
+    __normalize :: proc(x, y: ^f32) -> f32 {
+        d := math.sqrt(x^ * x^ + y^ * y^)
+        if d > 1e-6 {
+            id := 1.0 / d
+            x^ *= id
+            y^ *= id
+        }
+        return d
+    }
+
+    // Calculate tangential circle to lines (x0,y0)-(x1,y1) and (x1,y1)-(x2,y2).
+    dx0 := x0-x1
+    dy0 := y0-y1
+    dx1 := x2-x1
+    dy1 := y2-y1
+    __normalize(&dx0,&dy0)
+    __normalize(&dx1,&dy1)
+    a := math.acos(dx0*dx1 + dy0*dy1)
+    d := radius / math.tan(a / 2.0)
+
+    if d > 10000 {
+        _path_line_to(path, x1, y1)
+        return
+    }
+
+    a0, a1, cx, cy: f32
+    counterclockwise: bool
+
+    __cross :: proc(dx0, dy0, dx1, dy1: f32) -> f32 {
+        return dx1*dy0 - dx0*dy1
+    }
+
+    if __cross(dx0,dy0, dx1,dy1) > 0.0 {
+        cx = x1 + dx0*d + dy0*radius
+        cy = y1 + dy0*d + -dx0*radius
+        a0 = math.atan2(dx0, -dy0)
+        a1 = math.atan2(-dx1, dy1)
+        counterclockwise = false
+    } else {
+        cx = x1 + dx0*d + -dy0*radius
+        cy = y1 + dy0*d + dx0*radius
+        a0 = math.atan2(-dx0, dy0)
+        a1 = math.atan2(dx1, -dy1)
+        counterclockwise = true
+    }
+
+    _path_arc(path, cx, cy, radius, a0, a1, counterclockwise)
+}
+
+_path_rectangle :: proc(path: ^Path, x, y, w, h: f32, is_hole: bool) {
+    _path_move_to(path, x, y)
+    _path_line_to(path, x, y + h)
+    _path_line_to(path, x + w, y + h)
+    _path_line_to(path, x + w, y)
+    _path_close(path, is_hole)
+}
+
+_path_rounded_rect_varying :: proc(
+    path: ^Path,
+    x, y: f32,
+    w, h: f32,
+    radius_top_left: f32,
+    radius_top_right: f32,
+    radius_bottom_right: f32,
+    radius_bottom_left: f32,
+    is_hole: bool,
+) {
+    if radius_top_left < 0.1 && radius_top_right < 0.1 && radius_bottom_right < 0.1 && radius_bottom_left < 0.1 {
+        _path_rectangle(path, x, y, w, h, is_hole)
+    } else {
+        halfw := abs(w) * 0.5
+        halfh := abs(h) * 0.5
+        rxBL := min(radius_bottom_left, halfw) * math.sign(w)
+        ryBL := min(radius_bottom_left, halfh) * math.sign(h)
+        rxBR := min(radius_bottom_right, halfw) * math.sign(w)
+        ryBR := min(radius_bottom_right, halfh) * math.sign(h)
+        rxTR := min(radius_top_right, halfw) * math.sign(w)
+        ryTR := min(radius_top_right, halfh) * math.sign(h)
+        rxTL := min(radius_top_left, halfw) * math.sign(w)
+        ryTL := min(radius_top_left, halfh) * math.sign(h)
+        _path_move_to(path, x, y + ryTL)
+        _path_line_to(path, x, y + h - ryBL)
+        _path_bezier_to(path, x, y + h - ryBL*(1 - KAPPA), x + rxBL*(1 - KAPPA), y + h, x + rxBL, y + h)
+        _path_line_to(path, x + w - rxBR, y + h)
+        _path_bezier_to(path, x + w - rxBR*(1 - KAPPA), y + h, x + w, y + h - ryBR*(1 - KAPPA), x + w, y + h - ryBR)
+        _path_line_to(path, x + w, y + ryTR)
+        _path_bezier_to(path, x + w, y + ryTR*(1 - KAPPA), x + w - rxTR*(1 - KAPPA), y, x + w - rxTR, y)
+        _path_line_to(path, x + rxTL, y)
+        _path_bezier_to(path, x + rxTL*(1 - KAPPA), y, x, y + ryTL*(1 - KAPPA), x, y + ryTL)
+        _path_close(path, is_hole)
+    }
+}
+
+_path_ellipse :: proc(path: ^Path, cx, cy, rx, ry: f32, is_hole: bool) {
+    _path_move_to(path, cx-rx, cy)
+    _path_bezier_to(path, cx-rx, cy+ry*KAPPA, cx-rx*KAPPA, cy+ry, cx, cy+ry)
+    _path_bezier_to(path, cx+rx*KAPPA, cy+ry, cx+rx, cy+ry*KAPPA, cx+rx, cy)
+    _path_bezier_to(path, cx+rx, cy-ry*KAPPA, cx+rx*KAPPA, cy-ry, cx, cy-ry)
+    _path_bezier_to(path, cx-rx*KAPPA, cy-ry, cx-rx, cy-ry*KAPPA, cx-rx, cy)
+    _path_close(path, is_hole)
+}
+
+_path_circle :: #force_inline proc(path: ^Path, cx, cy: f32, radius: f32, is_hole: bool) {
+    _path_ellipse(path, cx, cy, radius, radius, is_hole)
+}
+
+//==========================================================================
+// Button
+//==========================================================================
+
+Button :: struct {
+    id: Id,
+    is_down: bool,
+    pressed: bool,
+    released: bool,
+    clicked: bool,
+}
+
+button_base_init :: proc(button: ^Button) {
+    button.id = get_id()
+}
+
+button_base_update :: proc(
+    button: ^Button,
+    rectangle: Rectangle,
+    press, release: bool,
+) {
+    button.pressed = false
+    button.released = false
+    button.clicked = false
+
+    if mouse_hit_test(rectangle) {
+        request_mouse_hover(button.id)
+    }
+
+    if !button.is_down && press && mouse_hover() == button.id {
+        capture_mouse_hover()
+        button.is_down = true
+        button.pressed = true
+    }
+
+    if button.is_down && release {
+        release_mouse_hover()
+        button.is_down = false
+        button.released = true
+        if mouse_hit() == button.id {
+            button.is_down = false
+            button.clicked = true
+        }
+    }
+
+    return
+}
+
+invisible_button_update :: proc(
+    button: ^Button,
+    rectangle: Rectangle,
+    mouse_button := Mouse_Button.Left
+) {
+    button_base_update(
+        button,
+        rectangle,
+        mouse_pressed(mouse_button),
+        mouse_released(mouse_button),
+    )
+    return
+}
+
+button_update :: proc(
+    button: ^Button,
+    rectangle: Rectangle,
+    color: Color,
+    mouse_button := Mouse_Button.Left
+) {
+    invisible_button_update(button, rectangle, mouse_button)
+
+    path := temp_path()
+    path_rectangle(&path, rectangle)
+
+    fill_path(path, color)
+    if button.is_down {
+        fill_path(path, {0, 0, 0, 0.2})
+    } else if mouse_hover() == button.id {
+        fill_path(path, {1, 1, 1, 0.05})
+    }
+
+    return
+}
+
+//==========================================================================
+// Slider
+//==========================================================================
+
+Slider :: struct {
+    id: Id,
+    held: bool,
+    value_when_grabbed: f32,
+    global_mouse_position_when_grabbed: Vector2,
+}
+
+slider_init :: proc(slider: ^Slider) {
+    slider.id = get_id()
+}
+
+slider_update :: proc(
+    slider: ^Slider,
+    value: ^f32,
+    rectangle: Rectangle,
+    min_value := f32(0),
+    max_value := f32(1),
+    mouse_button := Mouse_Button.Left,
+    precision_key := Keyboard_Key.Left_Shift,
+) {
+    HANDLE_LENGTH :: 16
+
+    if mouse_hit_test(rectangle) {
+        request_mouse_hover(slider.id)
+    }
+
+    reset_grab_info := false
+
+    if slider.held {
+        if key_pressed(precision_key) ||
+           key_released(precision_key) {
+            reset_grab_info = true
+        }
+    }
+
+    if !slider.held && mouse_hover() == slider.id && mouse_pressed(mouse_button) {
+        slider.held = true
+        reset_grab_info = true
+        capture_mouse_hover()
+    }
+
+    if reset_grab_info {
+        slider.value_when_grabbed = value^
+        slider.global_mouse_position_when_grabbed = global_mouse_position()
+    }
+
+    if slider.held {
+        sensitivity: f32 = key_down(precision_key) ? 0.15 : 1.0
+        global_mouse_position := global_mouse_position()
+        grab_delta := global_mouse_position.x - slider.global_mouse_position_when_grabbed.x
+        value^ = slider.value_when_grabbed + sensitivity * grab_delta * (max_value - min_value) / (rectangle.size.x - HANDLE_LENGTH)
+
+        if mouse_released(mouse_button) {
+            slider.held = false
+            release_mouse_hover()
+        }
+    }
+
+    value^ = clamp(value^, min_value, max_value)
+
+    slider_path := temp_path()
+    path_rectangle(&slider_path, rectangle)
+
+    fill_path(slider_path, {0.05, 0.05, 0.05, 1})
+
+    handle_rectangle := Rectangle{
+        rectangle.position + {
+            (rectangle.size.x - HANDLE_LENGTH) * (value^ - min_value) / (max_value - min_value),
+            0,
+        }, {
+            HANDLE_LENGTH,
+            rectangle.size.y,
+        },
+    }
+    handle_path := temp_path()
+    path_rectangle(&handle_path, handle_rectangle)
+
+    fill_path(handle_path, {0.4, 0.4, 0.4, 1})
+    if slider.held {
+        fill_path(handle_path, {0, 0, 0, 0.2})
+    } else if mouse_hover() == slider.id {
+        fill_path(handle_path, {1, 1, 1, 0.05})
+    }
+}
+
+//==========================================================================
+// Box Select
+//==========================================================================
+
+Box_Select :: struct {
+    using rectangle: Rectangle,
+    selected: bool,
+    is_dragging: bool,
+    start: Vector2,
+}
+
+box_select_update :: proc(box_select: ^Box_Select, mouse_button := Mouse_Button.Left) {
+    box_select.selected = false
+
+    mp := mouse_position()
+
+    if mouse_pressed(mouse_button) && mouse_clip_test() {
+        box_select.start = mp
+        box_select.is_dragging = true
+    }
+
+    if box_select.is_dragging {
+        pixel := pixel_size()
+
+        position := Vector2{min(box_select.start.x, mp.x), min(box_select.start.y, mp.y)}
+        bottom_right := Vector2{max(box_select.start.x, mp.x), max(box_select.start.y, mp.y)}
+
+        box_select.rectangle = Rectangle{position, bottom_right - position}
+        box_select.rectangle.size.x = max(box_select.rectangle.size.x, pixel.x)
+        box_select.rectangle.size.y = max(box_select.rectangle.size.y, pixel.y)
+
+        fill_rectangle(rectangle_expanded(box_select.rectangle, -pixel), {0, 0, 0, 0.3})
+        outline_rectangle(box_select.rectangle, pixel.x, {1, 1, 1, 0.3})
+    }
+
+    if box_select.is_dragging && mouse_released(mouse_button) {
+        box_select.selected = true
+        box_select.is_dragging = false
+    }
+}
+
+//==========================================================================
+// Editable Text Line
+//==========================================================================
+
+Text_Edit_Command :: cte.Command
+
+Editable_Text_Line :: struct {
+    id: Id,
+    edit_state: cte.State,
+    builder: ^strings.Builder,
+}
+
+editable_text_line_init :: proc(
+    text: ^Editable_Text_Line,
+    builder: ^strings.Builder,
+    allocator := context.allocator,
+) {
+    text.id = get_id()
+    text.builder = builder
+    cte.init(&text.edit_state, allocator, allocator)
+    cte.setup_once(&text.edit_state, text.builder)
+    text.edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
+        data = clipboard()
+        return _quick_remove_line_ends_UNSAFE(data), true
+    }
+    text.edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
+        set_clipboard(data)
+        return true
+    }
+}
+
+editable_text_line_destroy :: proc(text: ^Editable_Text_Line) {
+    cte.destroy(&text.edit_state)
+}
+
+editable_text_line_edit :: proc(text: ^Editable_Text_Line, command: Text_Edit_Command) {
+    cte.perform_command(&text.edit_state, command)
+}
+
+editable_text_line_update :: proc(
+    text: ^Editable_Text_Line,
+    rectangle: Rectangle,
+    font: Font,
+    color := Color{1, 1, 1, 1},
+    alignment := Vector2{},
+) {
+    CARET_WIDTH :: 2
+
+    str := strings.to_string(text.builder^)
+
+    edit_state := &text.edit_state
+
+    edit_state.line_start = 0
+    edit_state.line_end = len(str)
+
+    // Update the undo state timeout manually.
+
+    edit_state.current_time = time.tick_now()
+    if edit_state.undo_timeout <= 0 {
+        edit_state.undo_timeout = cte.DEFAULT_UNDO_TIMEOUT
+    }
+
+    // Handle keyboard editing behavior.
+
+    text_input := text_input()
+    if len(text_input) > 0 {
+        cte.input_text(edit_state, _quick_remove_line_ends_UNSAFE(text_input))
+    }
+
+    ctrl := key_down(.Left_Control) || key_down(.Right_Control)
+    shift := key_down(.Left_Shift) || key_down(.Right_Shift)
+
+    for key in key_presses(repeating = true) {
+        #partial switch key {
+        case .Escape: release_keyboard_focus()
+
+        case .A: if ctrl do cte.perform_command(edit_state, .Select_All)
+        case .C: if ctrl do cte.perform_command(edit_state, .Copy)
+        case .V: if ctrl do cte.perform_command(edit_state, .Paste)
+        case .X: if ctrl do cte.perform_command(edit_state, .Cut)
+        case .Y: if ctrl do cte.perform_command(edit_state, .Redo)
+        case .Z: if ctrl do cte.perform_command(edit_state, .Undo)
+
+        case .Home:
+            switch {
+            case ctrl && shift: cte.perform_command(edit_state, .Select_Start)
+            case shift: cte.perform_command(edit_state, .Select_Line_Start)
+            case ctrl: cte.perform_command(edit_state, .Start)
+            case: cte.perform_command(edit_state, .Line_Start)
+            }
+
+        case .End:
+            switch {
+            case ctrl && shift: cte.perform_command(edit_state, .Select_End)
+            case shift: cte.perform_command(edit_state, .Select_Line_End)
+            case ctrl: cte.perform_command(edit_state, .End)
+            case: cte.perform_command(edit_state, .Line_End)
+            }
+
+        case .Insert:
+            switch {
+            case ctrl: cte.perform_command(edit_state, .Copy)
+            case shift: cte.perform_command(edit_state, .Paste)
+            }
+
+        case .Backspace:
+            switch {
+            case ctrl: cte.perform_command(edit_state, .Delete_Word_Left)
+            case: cte.perform_command(edit_state, .Backspace)
+            }
+
+        case .Delete:
+            switch {
+            case ctrl: cte.perform_command(edit_state, .Delete_Word_Right)
+            case shift: cte.perform_command(edit_state, .Cut)
+            case: cte.perform_command(edit_state, .Delete)
+            }
+
+        case .Left_Arrow:
+            switch {
+            case ctrl && shift: cte.perform_command(edit_state, .Select_Word_Left)
+            case shift: cte.perform_command(edit_state, .Select_Left)
+            case ctrl: cte.perform_command(edit_state, .Word_Left)
+            case: cte.perform_command(edit_state, .Left)
+            }
+
+        case .Right_Arrow:
+            switch {
+            case ctrl && shift: cte.perform_command(edit_state, .Select_Word_Right)
+            case shift: cte.perform_command(edit_state, .Select_Right)
+            case ctrl: cte.perform_command(edit_state, .Word_Right)
+            case: cte.perform_command(edit_state, .Right)
+            }
+        }
+    }
+
+    // Figure out where things of interest are in the string.
+
+    glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
+    measure_glyphs(str, font, &glyphs)
+
+    text_size: Vector2
+    text_size.y = font_height(font)
+    text_size.x = 0
+    if len(glyphs) > 0 {
+        first := glyphs[0]
+        last := glyphs[len(glyphs) - 1]
+        text_size.x = last.position + last.width - first.position
+    }
+    text_position := pixel_snapped(rectangle.position + (rectangle.size - text_size) * alignment)
+
+    relative_mp := mouse_position() - text_position.x + 3 // Add a little bias for better feel.
+    mouse_byte_index: int
+
+    head := edit_state.selection[0]
+    caret_x: f32
+
+    selection_left, selection_right := cte.sorted_selection(edit_state)
+    selection_left_x: f32
+    selection_right_x: f32
+
+    for glyph in glyphs {
+        if head == glyph.byte_index {
+            caret_x = glyph.position
+        }
+        if selection_left == glyph.byte_index {
+            selection_left_x = glyph.position
+        }
+        if selection_right == glyph.byte_index {
+            selection_right_x = glyph.position
+        }
+        if relative_mp.x >= glyph.position && relative_mp.x < glyph.position + glyph.width {
+            mouse_byte_index = glyph.byte_index
+        }
+    }
+
+    if len(glyphs) > 0 {
+        last_glyph := glyphs[len(glyphs) - 1]
+        last_glyph_right := last_glyph.position + last_glyph.width
+        if head >= len(str) {
+            caret_x = last_glyph_right - CARET_WIDTH
+        }
+        if selection_left >= len(str) {
+            selection_left_x = last_glyph_right
+        }
+        if selection_right >= len(str) {
+            selection_right_x = last_glyph_right
+        }
+        if relative_mp.x >= last_glyph_right {
+            mouse_byte_index = len(str)
+        }
+    }
+
+    // Handle mouse editing behavior.
+
+    if mouse_hit_test(rectangle) {
+        request_mouse_hover(text.id)
+    }
+
+    if mouse_hover() == text.id {
+        set_mouse_cursor_style(.I_Beam)
+
+        if mouse_pressed(.Left) {
+            capture_mouse_hover()
+
+            switch mouse_repeat_count(.Left) {
+            case 0, 1: // Single click
+                edit_state.selection[0] = mouse_byte_index
+                if !shift do edit_state.selection[1] = mouse_byte_index
+
+            case 2: // Double click
+                cte.perform_command(edit_state, .Word_Right)
+                cte.perform_command(edit_state, .Word_Left)
+                cte.perform_command(edit_state, .Select_Word_Right)
+
+            case 3: // Triple click
+                cte.perform_command(edit_state, .Line_Start)
+                cte.perform_command(edit_state, .Select_Line_End)
+
+            case: // Quadruple click and beyond
+                cte.perform_command(edit_state, .Start)
+                cte.perform_command(edit_state, .Select_End)
+            }
+        }
+
+        if mouse_repeat_count(.Left) == 1 && mouse_down(.Left) {
+            edit_state.selection[0] = mouse_byte_index
+        }
+
+        if mouse_released(.Left) {
+            release_mouse_hover()
+        }
+    }
+
+    // Draw everything.
+
+    {
+        scoped_clip(rectangle)
+
+        // Draw selection.
+        fill_rectangle({text_position + {selection_left_x, 0}, {selection_right_x - selection_left_x, text_size.y}}, {0, 0.4, 0.8, 0.8})
+
+        // Draw string.
+        fill_string(str, text_position, font, color)
+    }
+
+    // Draw caret.
+    fill_rectangle({text_position + {caret_x, 0}, {CARET_WIDTH, text_size.y}}, {0.7, 0.9, 1, 1})
+}
+
+_quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {
+    bytes := make([dynamic]byte, len(str), allocator = context.temp_allocator)
+    copy_from_string(bytes[:], str)
+
+    keep_position := 0
+
+    for i in 0 ..< len(bytes) {
+        should_keep := bytes[i] != '\n' && bytes[i] != '\r'
+        if should_keep {
+            if keep_position != i {
+                bytes[keep_position] = bytes[i]
+            }
+            keep_position += 1
+        }
+    }
+
+    resize(&bytes, keep_position)
+    return string(bytes[:])
 }

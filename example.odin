@@ -23,6 +23,10 @@ update :: proc() {
     if window_update(&window) {
         track_manager_update(&track_manager)
     }
+
+    if !window.is_open {
+        running = false
+    }
 }
 
 main :: proc() {

@@ -1,6 +1,6 @@
 package main
 
-import "core:fmt"
+// import "core:fmt"
 import "core:slice"
 import "core:strings"
 
@@ -329,13 +329,13 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
         manager.is_dragging_groups = false
     }
 
-    if !manager.group_movement_is_locked && manager.is_dragging_groups {
+    if manager.is_dragging_groups {
         drag_delta := mouse_pos - manager.mouse_position_when_drag_started
         for group in manager.groups {
             if start_dragging_groups {
                 group.position_when_drag_started = group.position
             }
-            if group.is_selected || mouse_down(.Middle) {
+            if (group.is_selected && !manager.group_movement_is_locked) || mouse_down(.Middle) {
                 group.position = group.position_when_drag_started + drag_delta
             }
         }
