@@ -262,13 +262,11 @@ editable_text_line_update :: proc(
     rectangle: Rectangle,
     font: Font,
     color := Color{1, 1, 1, 1},
+    alignment := Vector2{},
 ) {
     CARET_WIDTH :: 2
 
     str := strings.to_string(text.builder^)
-
-    glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
-    measure_glyphs(str, font, &glyphs)
 
     edit_state := &text.edit_state
 
@@ -358,7 +356,20 @@ editable_text_line_update :: proc(
 
     // Figure out where things of interest are in the string.
 
-    relative_mp := mouse_position() - rectangle.position.x + 3 // Add a little bias for better feel.
+    glyphs := make([dynamic]Text_Glyph, context.temp_allocator)
+    measure_glyphs(str, font, &glyphs)
+
+    text_size: Vector2
+    text_size.y = font_height(font)
+    text_size.x = 0
+    if len(glyphs) > 0 {
+        first := glyphs[0]
+        last := glyphs[len(glyphs) - 1]
+        text_size.x = last.position + last.width - first.position
+    }
+    text_position := pixel_snapped(rectangle.position + (rectangle.size - text_size) * alignment)
+
+    relative_mp := mouse_position() - text_position.x + 3 // Add a little bias for better feel.
     mouse_byte_index: int
 
     head := edit_state.selection[0]
@@ -443,16 +454,13 @@ editable_text_line_update :: proc(
 
     // Draw the selection, string, and then caret.
 
-    height := font_height(font)
-
     {
         scoped_clip(rectangle)
-        // selection_color: Color = {0, 0.4, 0.8, 0.8} if is_keyboard_focus else {0, 0.4, 0.8, 0.65}
-        fill_rectangle({rectangle.position + {selection_left_x, 0}, {selection_right_x - selection_left_x, height}}, {0, 0.4, 0.8, 0.8})
-        fill_string(str, rectangle.position, font, color)
+        fill_rectangle({text_position + {selection_left_x, 0}, {selection_right_x - selection_left_x, text_size.y}}, {0, 0.4, 0.8, 0.8})
+        fill_string(str, text_position, font, color)
     }
 
-    fill_rectangle({rectangle.position + {caret_x, 0}, {CARET_WIDTH, height}}, {0.7, 0.9, 1, 1})
+    fill_rectangle({text_position + {caret_x, 0}, {CARET_WIDTH, text_size.y}}, {0.7, 0.9, 1, 1})
 }
 
 _quick_remove_line_ends_UNSAFE :: proc(str: string) -> string {

@@ -540,7 +540,7 @@ fill_string :: proc(str: string, position: Vector2, font: Font, color: Color) {
     backend_render_draw_command(window, Fill_String_Command{str, global_offset() + position, font, color})
 }
 
-fill_string_aligned :: proc(str: string, rectangle: Rectangle, font: Font, color: Color, alignment: Vector2) {
+fill_string_aligned :: proc(str: string, rectangle: Rectangle, font: Font, color: Color, alignment := Vector2{}) {
     size := measure_string(str, font)
     position := pixel_snapped(rectangle.position + (rectangle.size - size) * alignment)
     fill_string(str, position, font, color)

@@ -4,7 +4,7 @@ import "core:fmt"
 import "core:slice"
 import "core:strings"
 
-TRACK_GROUP_PADDING :: 8
+TRACK_GROUP_PADDING :: 4
 TRACK_GROUP_MIN_WIDTH :: 48
 
 Track_Group :: struct {
@@ -27,15 +27,10 @@ track_group_destroy :: proc(group: ^Track_Group) {
     editable_text_line_destroy(&group.editable_name)
 }
 
-track_group_name_rectangle :: proc(group: ^Track_Group, font: Font) -> (res: Rectangle) {
-    res.position = pixel_snapped(group.position + TRACK_GROUP_PADDING * 0.5)
-    res.size = measure_string(strings.to_string(group.name), font)
-    return
-}
-
-track_group_update_rectangle :: proc(group: ^Track_Group, name_rectangle: Rectangle) {
+track_group_update_rectangle :: proc(group: ^Track_Group, font: Font) {
     group.position = pixel_snapped(group.position)
-    group.size = name_rectangle.size + TRACK_GROUP_PADDING
+    name_size := measure_string(strings.to_string(group.name), font)
+    group.size = name_size + TRACK_GROUP_PADDING * 2
     group.size.x = max(group.size.x, TRACK_GROUP_MIN_WIDTH)
 }
 
@@ -247,9 +242,7 @@ _track_manager_renaming :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
             editable_text_line_edit(&group.editable_name, .Select_All)
         }
 
-        name_rectangle := track_group_name_rectangle(group, manager.font)
-        track_group_update_rectangle(group, name_rectangle)
-
+        track_group_update_rectangle(group, manager.font)
         track_group_draw_frame(group)
 
         invisible_button_update(&group.button, group.rectangle)
@@ -260,9 +253,9 @@ _track_manager_renaming :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
         }
 
         if group.is_selected {
-            editable_text_line_update(&group.editable_name, name_rectangle, manager.font, {1, 1, 1, 1})
+            editable_text_line_update(&group.editable_name, group.rectangle, manager.font, {1, 1, 1, 1}, {0.5, 0.5})
         } else {
-            fill_string(strings.to_string(group.name), name_rectangle.position, manager.font, {1, 1, 1, 1})
+            fill_string_aligned(strings.to_string(group.name), group.rectangle, manager.font, {1, 1, 1, 1}, {0.5, 0.5})
         }
     }
 }
@@ -304,13 +297,11 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
     }
 
     for group in manager.groups {
-        name_rectangle := track_group_name_rectangle(group, manager.font)
-        track_group_update_rectangle(group, name_rectangle)
-
+        track_group_update_rectangle(group, manager.font)
         track_group_draw_frame(group)
 
         invisible_button_update(&group.button, group.rectangle)
-        fill_string(strings.to_string(group.name), name_rectangle.position, manager.font, {1, 1, 1, 1})
+        fill_string_aligned(strings.to_string(group.name), group.rectangle, manager.font, {1, 1, 1, 1}, {0.5, 0.5})
 
         if group.button.pressed {
             group_pressed = true
@@ -379,10 +370,9 @@ _track_manager_confirm_delete :: proc(manager: ^Track_Manager, rectangle: Rectan
     }
 
     for group in manager.groups {
-        name_rectangle := track_group_name_rectangle(group, manager.font)
-        track_group_update_rectangle(group, name_rectangle)
+        track_group_update_rectangle(group, manager.font)
         track_group_draw_frame(group)
-        fill_string(strings.to_string(group.name), name_rectangle.position, manager.font, {1, 1, 1, 1})
+        fill_string_aligned(strings.to_string(group.name), group.rectangle, manager.font, {1, 1, 1, 1}, {0.5, 0.5})
     }
 
     prompt_rectangle := Rectangle{
