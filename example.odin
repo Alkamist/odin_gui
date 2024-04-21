@@ -11,17 +11,17 @@ default_font := Font{
 
 running := true
 
-track_manager: Track_Manager
-
 window: Window
 
+track_manager: Track_Manager
+
 update :: proc() {
-    if window_update(&window) {
-        track_manager_update(&track_manager)
+    if key_pressed(.Escape) && track_manager.state == .Editing {
+        running = false
     }
 
-    if key_pressed(.Comma) {
-        running = false
+    if window_update(&window) {
+        track_manager_update(&track_manager)
     }
 }
 
@@ -54,6 +54,7 @@ main :: proc() {
 
     window_init(&window, {{100, 100}, {400, 300}})
     defer window_destroy(&window)
+    window.background_color = {0.2, 0.2, 0.2, 1}
 
     track_manager_init(&track_manager, default_font)
     defer track_manager_destroy(&track_manager)

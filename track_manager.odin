@@ -5,6 +5,7 @@ import "core:slice"
 import "core:strings"
 
 TRACK_GROUP_PADDING :: 8
+TRACK_GROUP_MIN_WIDTH :: 48
 
 Track_Group :: struct {
     using rectangle: Rectangle,
@@ -32,6 +33,12 @@ track_group_name_rectangle :: proc(group: ^Track_Group, font: Font) -> (res: Rec
     return
 }
 
+track_group_update_rectangle :: proc(group: ^Track_Group, name_rectangle: Rectangle) {
+    group.position = pixel_snapped(group.position)
+    group.size = name_rectangle.size + TRACK_GROUP_PADDING
+    group.size.x = max(group.size.x, TRACK_GROUP_MIN_WIDTH)
+}
+
 track_group_draw_frame :: proc(group: ^Track_Group) {
     pixel := pixel_size()
     fill_rounded_rectangle(group.rectangle, 3, {0.2, 0.2, 0.2, 1})
@@ -54,6 +61,7 @@ Track_Manager :: struct {
     font: Font,
     groups: [dynamic]^Track_Group,
     is_dragging_groups: bool,
+    group_movement_is_locked: bool,
     mouse_position_when_drag_started: Vector2,
     box_select: Box_Select,
     background_button: Button,
@@ -142,6 +150,15 @@ track_manager_unselect_all_groups :: proc(manager: ^Track_Manager) {
     }
 }
 
+track_manager_selected_group_count :: proc(manager: ^Track_Manager) -> (res: int) {
+    for group in manager.groups {
+        if group.is_selected {
+            res += 1
+        }
+    }
+    return
+}
+
 track_manager_remove_selected_groups :: proc(manager: ^Track_Manager) {
     selected_groups := make([dynamic]^Track_Group, context.temp_allocator)
     for group in manager.groups {
@@ -167,11 +184,38 @@ track_manager_remove_selected_groups :: proc(manager: ^Track_Manager) {
     }
 }
 
+track_manager_center_groups :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
+    if len(manager.groups) == 0 {
+        return
+    }
+
+    top_left := Vector2{max(f32), max(f32)}
+    bottom_right := Vector2{min(f32), min(f32)}
+
+    for group in manager.groups {
+        top_left.x = min(top_left.x, group.position.x)
+        top_left.y = min(top_left.y, group.position.y)
+
+        group_bottom_right := group.position + group.size
+
+        bottom_right.x = max(bottom_right.x, group_bottom_right.x)
+        bottom_right.y = max(bottom_right.y, group_bottom_right.y)
+    }
+
+    center := top_left + (bottom_right - top_left) * 0.5
+    view_center := rectangle.size * 0.5
+
+    offset := pixel_snapped(view_center - center)
+
+    for group in manager.groups {
+        group.position += offset
+    }
+}
+
 track_manager_update :: proc(manager: ^Track_Manager) {
     previous_state := manager.state
 
-    rectangle := Rectangle{{20, 20}, {300, 200}}
-    fill_rectangle(rectangle, {0.5, 0, 0, 1})
+    rectangle := Rectangle{{0, 0}, current_window().size}
 
     scoped_clip(rectangle)
     scoped_offset(rectangle.position)
@@ -203,10 +247,8 @@ _track_manager_renaming :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
             editable_text_line_edit(&group.editable_name, .Select_All)
         }
 
-        group.position = pixel_snapped(group.position)
-
         name_rectangle := track_group_name_rectangle(group, manager.font)
-        group.size = name_rectangle.size + TRACK_GROUP_PADDING
+        track_group_update_rectangle(group, name_rectangle)
 
         track_group_draw_frame(group)
 
@@ -226,10 +268,8 @@ _track_manager_renaming :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
 }
 
 _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
-    pixel := pixel_size()
     mouse_pos := mouse_position()
     start_dragging_groups := false
-    stop_dragging_groups := false
     group_pressed := false
 
     if key_pressed(.F2) {
@@ -242,8 +282,16 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
         manager.state = .Renaming
     }
 
-    if key_pressed(.Delete) {
+    if key_pressed(.Delete) && track_manager_selected_group_count(manager) > 0 {
         manager.state = .Confirm_Delete
+    }
+
+    if key_pressed(.C) {
+        track_manager_center_groups(manager, rectangle)
+    }
+
+    if key_pressed(.L) {
+        manager.group_movement_is_locked = !manager.group_movement_is_locked
     }
 
     // Group logic
@@ -256,10 +304,8 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
     }
 
     for group in manager.groups {
-        group.position = pixel_snapped(group.position)
-
         name_rectangle := track_group_name_rectangle(group, manager.font)
-        group.size = name_rectangle.size + TRACK_GROUP_PADDING
+        track_group_update_rectangle(group, name_rectangle)
 
         track_group_draw_frame(group)
 
@@ -271,10 +317,6 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
             track_manager_selection_logic(manager, {group}, false)
             start_dragging_groups = group.is_selected
         }
-
-        if group.button.released {
-            stop_dragging_groups = true
-        }
     }
 
     if group_pressed {
@@ -283,22 +325,26 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
 
     // Dragging logic
 
+    if mouse_pressed(.Middle) && mouse_clip_test() {
+        start_dragging_groups = true
+    }
+
     if start_dragging_groups {
         manager.is_dragging_groups = true
         manager.mouse_position_when_drag_started = mouse_pos
     }
 
-    if stop_dragging_groups {
+    if manager.is_dragging_groups && !mouse_down(.Left) && !mouse_down(.Middle) {
         manager.is_dragging_groups = false
     }
 
-    if manager.is_dragging_groups {
+    if !manager.group_movement_is_locked && manager.is_dragging_groups {
         drag_delta := mouse_pos - manager.mouse_position_when_drag_started
         for group in manager.groups {
             if start_dragging_groups {
                 group.position_when_drag_started = group.position
             }
-            if group.is_selected {
+            if group.is_selected || mouse_down(.Middle) {
                 group.position = group.position_when_drag_started + drag_delta
             }
         }
@@ -324,7 +370,6 @@ _track_manager_confirm_delete :: proc(manager: ^Track_Manager, rectangle: Rectan
     do_abort := false
     do_delete := false
 
-
     if key_pressed(.Escape) {
         do_abort = true
     }
@@ -334,11 +379,8 @@ _track_manager_confirm_delete :: proc(manager: ^Track_Manager, rectangle: Rectan
     }
 
     for group in manager.groups {
-        group.position = pixel_snapped(group.position)
-
         name_rectangle := track_group_name_rectangle(group, manager.font)
-        group.size = name_rectangle.size + TRACK_GROUP_PADDING
-
+        track_group_update_rectangle(group, name_rectangle)
         track_group_draw_frame(group)
         fill_string(strings.to_string(group.name), name_rectangle.position, manager.font, {1, 1, 1, 1})
     }
@@ -348,16 +390,14 @@ _track_manager_confirm_delete :: proc(manager: ^Track_Manager, rectangle: Rectan
         {290, 128},
     }
 
-    fill_rounded_rectangle(prompt_rectangle, 3, {0.5, 0.5, 0.5, 0.7})
+    fill_rounded_rectangle(prompt_rectangle, 3, {0.4, 0.4, 0.4, 0.8})
     outline_rounded_rectangle(prompt_rectangle, 3, pixel.x, {1, 1, 1, 0.3})
 
     scoped_clip(prompt_rectangle)
 
-    inner_rectangle := rectangle_padded(prompt_rectangle, 5)
-
     fill_string_aligned(
         "Delete selected groups?",
-        {inner_rectangle.position, {inner_rectangle.size.x, 24}},
+        {prompt_rectangle.position + {0, 16}, {prompt_rectangle.size.x, 24}},
         manager.font,
         {1, 1, 1, 1},
         {0.5, 0.5},
@@ -366,7 +406,7 @@ _track_manager_confirm_delete :: proc(manager: ^Track_Manager, rectangle: Rectan
     BUTTON_SPACING :: 10
     BUTTON_SIZE :: Vector2{96, 32}
 
-    button_anchor := inner_rectangle.position + inner_rectangle.size * 0.5
+    button_anchor := prompt_rectangle.position + prompt_rectangle.size * 0.5
     button_anchor.y += 12
 
     prompt_button :: proc(button: ^Button, rectangle: Rectangle, label: string, font: Font, outline := false) {
