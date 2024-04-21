@@ -57,12 +57,15 @@ Track_Manager :: struct {
     mouse_position_when_drag_started: Vector2,
     box_select: Box_Select,
     background_button: Button,
+    delete_prompt_yes_button: Button,
+    delete_prompt_no_button: Button,
 }
 
 track_manager_init :: proc(manager: ^Track_Manager, font: Font) {
     manager.font = font
-    box_select_init(&manager.box_select, .Right)
     button_base_init(&manager.background_button)
+    button_base_init(&manager.delete_prompt_yes_button)
+    button_base_init(&manager.delete_prompt_no_button)
 }
 
 track_manager_destroy :: proc(manager: ^Track_Manager) {
@@ -136,6 +139,31 @@ track_manager_bring_selected_groups_to_front :: proc(manager: ^Track_Manager) {
 track_manager_unselect_all_groups :: proc(manager: ^Track_Manager) {
     for group in manager.groups {
         group.is_selected = false
+    }
+}
+
+track_manager_remove_selected_groups :: proc(manager: ^Track_Manager) {
+    selected_groups := make([dynamic]^Track_Group, context.temp_allocator)
+    for group in manager.groups {
+        if group.is_selected {
+            append(&selected_groups, group)
+        }
+    }
+
+    keep_position := 0
+    for i in 0 ..< len(manager.groups) {
+        if !manager.groups[i].is_selected {
+            if keep_position != i {
+                manager.groups[keep_position] = manager.groups[i]
+            }
+            keep_position += 1
+        }
+    }
+    resize(&manager.groups, keep_position)
+
+    for group in selected_groups {
+        track_group_destroy(group)
+        free(group)
     }
 }
 
@@ -278,7 +306,7 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
 
     // Box select logic
 
-    box_select_update(&manager.box_select)
+    box_select_update(&manager.box_select, .Right)
     if manager.box_select.selected {
         groups_touched_by_box_select := make([dynamic]^Track_Group, context.temp_allocator)
         for group in manager.groups {
@@ -293,14 +321,16 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
 _track_manager_confirm_delete :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
     pixel := pixel_size()
 
+    do_abort := false
+    do_delete := false
+
+
     if key_pressed(.Escape) {
-        fmt.println("Aborted")
-        manager.state = .Editing
+        do_abort = true
     }
 
     if key_pressed(.Enter) {
-        fmt.println("Deleted")
-        manager.state = .Editing
+        do_delete = true
     }
 
     for group in manager.groups {
@@ -325,8 +355,13 @@ _track_manager_confirm_delete :: proc(manager: ^Track_Manager, rectangle: Rectan
 
     inner_rectangle := rectangle_padded(prompt_rectangle, 5)
 
-    text_rectangle := Rectangle{inner_rectangle.position, {inner_rectangle.size.x, 24}}
-    fill_string_aligned("Delete selected groups?", text_rectangle, manager.font, {1, 1, 1, 1}, {0.5, 0.5})
+    fill_string_aligned(
+        "Delete selected groups?",
+        {inner_rectangle.position, {inner_rectangle.size.x, 24}},
+        manager.font,
+        {1, 1, 1, 1},
+        {0.5, 0.5},
+    )
 
     BUTTON_SPACING :: 10
     BUTTON_SIZE :: Vector2{96, 32}
@@ -334,13 +369,56 @@ _track_manager_confirm_delete :: proc(manager: ^Track_Manager, rectangle: Rectan
     button_anchor := inner_rectangle.position + inner_rectangle.size * 0.5
     button_anchor.y += 12
 
+    prompt_button :: proc(button: ^Button, rectangle: Rectangle, label: string, font: Font, outline := false) {
+        invisible_button_update(button, rectangle)
+
+        fill_rounded_rectangle(rectangle, 3, {0.1, 0.1, 0.1, 1})
+
+        if outline {
+            outline_rounded_rectangle(rectangle, 3, pixel_size().x, {0.4, 0.9, 1, 0.7})
+        }
+
+        if button.is_down {
+            fill_rounded_rectangle(rectangle, 3, {0, 0, 0, 0.04})
+        } else if mouse_hover() == button.id {
+            fill_rounded_rectangle(rectangle, 3, {1, 1, 1, 0.04})
+        }
+
+        fill_string_aligned(label, rectangle, font, {1, 1, 1, 1}, {0.5, 0.5})
+    }
+
     yes_button_position: Vector2
     yes_button_position = button_anchor
     yes_button_position.x -= BUTTON_SIZE.x + BUTTON_SPACING * 0.5
-    fill_rounded_rectangle({yes_button_position, BUTTON_SIZE}, 3, {0, 0, 0.8, 1})
+    prompt_button(
+        &manager.delete_prompt_yes_button,
+        {yes_button_position, BUTTON_SIZE},
+        "Yes",
+        manager.font,
+        true,
+    )
+    if manager.delete_prompt_yes_button.clicked {
+        do_delete = true
+    }
 
     no_button_position: Vector2
     no_button_position = button_anchor
     no_button_position.x += BUTTON_SPACING * 0.5
-    fill_rounded_rectangle({no_button_position, BUTTON_SIZE}, 3, {0, 0, 0.8, 1})
+    prompt_button(
+        &manager.delete_prompt_no_button,
+        {no_button_position, BUTTON_SIZE},
+        "No",
+        manager.font,
+        false,
+    )
+    if manager.delete_prompt_no_button.clicked {
+        do_abort = true
+    }
+
+    if do_delete {
+        track_manager_remove_selected_groups(manager)
+        manager.state = .Editing
+    } else if do_abort {
+        manager.state = .Editing
+    }
 }

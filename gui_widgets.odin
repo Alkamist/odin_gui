@@ -1,6 +1,6 @@
 package main
 
-import "core:fmt"
+// import "core:fmt"
 import "core:time"
 import "core:strings"
 import cte "core:text/edit"
@@ -88,119 +88,94 @@ button_update :: proc(
     return
 }
 
-// // //==========================================================================
-// // // Slider
-// // //==========================================================================
+//==========================================================================
+// Slider
+//==========================================================================
 
-// // Slider :: struct {
-// //     id: Id,
-// //     using rectangle: Rectangle,
-// //     held: bool,
-// //     value: f32,
-// //     min_value: f32,
-// //     max_value: f32,
-// //     handle_length: f32,
-// //     value_when_grabbed: f32,
-// //     global_mouse_position_when_grabbed: Vector2,
-// //     mouse_button: Mouse_Button,
-// //     precision_key: Keyboard_Key,
-// // }
+Slider :: struct {
+    id: Id,
+    held: bool,
+    value_when_grabbed: f32,
+    global_mouse_position_when_grabbed: Vector2,
+}
 
-// // slider_init :: proc(slider: ^Slider) {
-// //     slider.id = get_id()
-// //     slider.size = Vector2{300, 24}
-// //     slider.max_value = 1
-// //     slider.handle_length = 16
-// //     slider.mouse_button = .Left
-// //     slider.precision_key = .Left_Shift
-// // }
+slider_init :: proc(slider: ^Slider) {
+    slider.id = get_id()
+}
 
-// // slider_handle_rectangle :: proc(slider: ^Slider) -> Rectangle {
-// //     return {
-// //         slider.position + {
-// //             (slider.size.x - slider.handle_length) * (slider.value - slider.min_value) / (slider.max_value - slider.min_value),
-// //             0,
-// //         },
-// //         {
-// //             slider.handle_length,
-// //             slider.size.y,
-// //         },
-// //     }
-// // }
+slider_update :: proc(
+    slider: ^Slider,
+    value: ^f32,
+    rectangle: Rectangle,
+    min_value := f32(0),
+    max_value := f32(1),
+    mouse_button := Mouse_Button.Left,
+    precision_key := Keyboard_Key.Left_Shift,
+) {
+    HANDLE_LENGTH :: 16
 
-// // slider_set_value :: proc(slider: ^Slider, value: f32) {
-// //     slider.value = value
-// //     _slider_clamp_value(slider)
-// // }
+    if mouse_hit_test(rectangle) {
+        request_mouse_hover(slider.id)
+    }
 
-// // slider_set_min_value :: proc(slider: ^Slider, min_value: f32) {
-// //     slider.min_value = min_value
-// //     _slider_clamp_value(slider)
-// // }
+    reset_grab_info := false
 
-// // slider_set_max_value :: proc(slider: ^Slider, max_value: f32) {
-// //     slider.max_value = max_value
-// //     _slider_clamp_value(slider)
-// // }
+    if slider.held {
+        if key_pressed(precision_key) ||
+           key_released(precision_key) {
+            reset_grab_info = true
+        }
+    }
 
-// // slider_update :: proc(slider: ^Slider) {
-// //     if mouse_hit_test(slider) {
-// //         request_mouse_hover(slider.id)
-// //     }
+    if !slider.held && mouse_hover() == slider.id && mouse_pressed(mouse_button) {
+        slider.held = true
+        reset_grab_info = true
+        capture_mouse_hover()
+    }
 
-// //     if slider.held {
-// //         if key_pressed(slider.precision_key) ||
-// //            key_released(slider.precision_key) {
-// //             _slider_reset_grab_info(slider)
-// //         }
-// //     }
+    if reset_grab_info {
+        slider.value_when_grabbed = value^
+        slider.global_mouse_position_when_grabbed = global_mouse_position()
+    }
 
-// //     if !slider.held && mouse_hover() == slider.id && mouse_pressed(slider.mouse_button) {
-// //         slider.held = true
-// //         _slider_reset_grab_info(slider)
-// //         capture_mouse_hover()
-// //     }
+    if slider.held {
+        sensitivity: f32 = key_down(precision_key) ? 0.15 : 1.0
+        global_mouse_position := global_mouse_position()
+        grab_delta := global_mouse_position.x - slider.global_mouse_position_when_grabbed.x
+        value^ = slider.value_when_grabbed + sensitivity * grab_delta * (max_value - min_value) / (rectangle.size.x - HANDLE_LENGTH)
 
-// //     if slider.held {
-// //         sensitivity: f32 = key_down(slider.precision_key) ? 0.15 : 1.0
-// //         global_mouse_position := global_mouse_position()
-// //         grab_delta := global_mouse_position.x - slider.global_mouse_position_when_grabbed.x
-// //         slider.value = slider.value_when_grabbed + sensitivity * grab_delta * (slider.max_value - slider.min_value) / (slider.size.x - slider.handle_length)
+        if mouse_released(mouse_button) {
+            slider.held = false
+            release_mouse_hover()
+        }
+    }
 
-// //         if mouse_released(slider.mouse_button) {
-// //             slider.held = false
-// //             release_mouse_hover()
-// //         }
-// //     }
+    value^ = clamp(value^, min_value, max_value)
 
-// //     _slider_clamp_value(slider)
-// // }
+    slider_path := temp_path()
+    path_rectangle(&slider_path, rectangle)
 
-// // slider_draw :: proc(slider: ^Slider) {
-// //     slider_path := temp_path()
-// //     path_rectangle(&slider_path, slider)
+    fill_path(slider_path, {0.05, 0.05, 0.05, 1})
 
-// //     fill_path(slider_path, {0.05, 0.05, 0.05, 1})
+    handle_rectangle := Rectangle{
+        rectangle.position + {
+            (rectangle.size.x - HANDLE_LENGTH) * (value^ - min_value) / (max_value - min_value),
+            0,
+        }, {
+            HANDLE_LENGTH,
+            rectangle.size.y,
+        },
+    }
+    handle_path := temp_path()
+    path_rectangle(&handle_path, handle_rectangle)
 
-// //     handle_path := temp_path()
-// //     path_rectangle(&handle_path, slider_handle_rectangle(slider))
-
-// //     fill_path(handle_path, {0.4, 0.4, 0.4, 1})
-// //     if slider.held {
-// //         fill_path(handle_path, {0, 0, 0, 0.2})
-// //     } else if mouse_hover() == slider.id {
-// //         fill_path(handle_path, {1, 1, 1, 0.05})
-// //     }
-// // }
-
-// // _slider_reset_grab_info :: proc(slider: ^Slider) {
-// //     slider.value_when_grabbed = slider.value
-// //     slider.global_mouse_position_when_grabbed = global_mouse_position()
-// // }
-
-// // _slider_clamp_value :: proc(slider: ^Slider) {
-// //     slider.value = clamp(slider.value, slider.min_value, slider.max_value)
-// // }
+    fill_path(handle_path, {0.4, 0.4, 0.4, 1})
+    if slider.held {
+        fill_path(handle_path, {0, 0, 0, 0.2})
+    } else if mouse_hover() == slider.id {
+        fill_path(handle_path, {1, 1, 1, 0.05})
+    }
+}
 
 //==========================================================================
 // Box Select
@@ -208,22 +183,17 @@ button_update :: proc(
 
 Box_Select :: struct {
     using rectangle: Rectangle,
-    mouse_button: Mouse_Button,
     selected: bool,
     is_dragging: bool,
     start: Vector2,
 }
 
-box_select_init :: proc(box_select: ^Box_Select, mouse_button: Mouse_Button) {
-    box_select.mouse_button = mouse_button
-}
-
-box_select_update :: proc(box_select: ^Box_Select) {
+box_select_update :: proc(box_select: ^Box_Select, mouse_button := Mouse_Button.Left) {
     box_select.selected = false
 
     mp := mouse_position()
 
-    if mouse_pressed(box_select.mouse_button) && mouse_clip_test() {
+    if mouse_pressed(mouse_button) && mouse_clip_test() {
         box_select.start = mp
         box_select.is_dragging = true
     }
@@ -242,43 +212,11 @@ box_select_update :: proc(box_select: ^Box_Select) {
         outline_rectangle(box_select.rectangle, pixel.x, {1, 1, 1, 0.3})
     }
 
-    if box_select.is_dragging && mouse_released(box_select.mouse_button) {
+    if box_select.is_dragging && mouse_released(mouse_button) {
         box_select.selected = true
         box_select.is_dragging = false
     }
 }
-
-// Box_Select :: struct {
-//     start: Vector2,
-// }
-
-// box_select_update :: proc(box_select: ^Box_Select, mouse_button := Mouse_Button.Left) -> (rectangle: Rectangle, selected: bool) {
-//     mp := mouse_position()
-
-//     if mouse_pressed(mouse_button) {
-//         box_select.start = mp
-//     }
-
-//     pixel := pixel_size()
-
-//     position := Vector2{min(box_select.start.x, mp.x), min(box_select.start.y, mp.y)}
-//     bottom_right := Vector2{max(box_select.start.x, mp.x), max(box_select.start.y, mp.y)}
-
-//     rectangle = Rectangle{position, bottom_right - position}
-//     rectangle.size.x = max(rectangle.size.x, pixel.x)
-//     rectangle.size.y = max(rectangle.size.y, pixel.y)
-
-//     if mouse_down(mouse_button) {
-//         fill_rectangle(rectangle_expanded(rectangle, -pixel), {0, 0, 0, 0.3})
-//         outline_rectangle(rectangle, pixel.x, {1, 1, 1, 0.3})
-//     }
-
-//     if mouse_released(mouse_button) {
-//         selected = true
-//     }
-
-//     return
-// }
 
 //==========================================================================
 // Editable Text Line

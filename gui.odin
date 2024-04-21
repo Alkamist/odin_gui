@@ -1,15 +1,19 @@
 package main
 
-import "base:runtime"
 import "base:intrinsics"
-import "core:fmt"
+// import "core:fmt"
 import "core:math"
 import "core:time"
 import "core:slice"
 import "core:strings"
-import "core:hash/xxhash"
 
 Vector2 :: [2]f32
+Id :: u64
+
+get_id :: proc "contextless" () -> Id {
+    @(static) id: Id
+    return 1 + intrinsics.atomic_add(&id, 1)
+}
 
 //==========================================================================
 // Context
@@ -20,15 +24,11 @@ Vector2 :: [2]f32
 Context :: struct {
     update: proc(),
 
-    tick: time.Tick,
-
     screen_mouse_position: Vector2,
     mouse_down: [Mouse_Button]bool,
     mouse_presses: [dynamic]Mouse_Button,
     mouse_releases: [dynamic]Mouse_Button,
     mouse_wheel: Vector2,
-    mouse_repeat_duration: time.Duration,
-    mouse_repeat_movement_tolerance: f32,
     mouse_repeat_start_position: Vector2,
     mouse_repeat_ticks: [Mouse_Button]time.Tick,
     mouse_repeat_counts: [Mouse_Button]int,
@@ -50,9 +50,6 @@ Context :: struct {
 
     window_stack: [dynamic]^Window,
 
-    retained_state: map[Id]rawptr,
-
-    previous_tick: time.Tick,
     previous_screen_mouse_position: Vector2,
 }
 
@@ -63,8 +60,6 @@ gui_context :: proc() -> ^Context {
 gui_startup :: proc(update: proc()) {
     ctx := gui_context()
     ctx.update = update
-    ctx.mouse_repeat_duration = 300 * time.Millisecond
-    ctx.mouse_repeat_movement_tolerance = 3
     ctx.is_first_frame = true
     backend_startup()
 }
@@ -88,10 +83,7 @@ gui_update :: proc() {
 }
 
 context_update :: proc(ctx: ^Context) {
-    ctx.tick = time.tick_now()
-
     if ctx.is_first_frame {
-        ctx.previous_tick = ctx.tick
         ctx.previous_screen_mouse_position = ctx.screen_mouse_position
     }
 
@@ -113,7 +105,6 @@ context_update :: proc(ctx: ^Context) {
     ctx.final_mouse_hover_request = 0
 
     ctx.mouse_wheel = {0, 0}
-    ctx.previous_tick = ctx.tick
     ctx.previous_screen_mouse_position = ctx.screen_mouse_position
 
     ctx.is_first_frame = false
@@ -124,17 +115,6 @@ context_update :: proc(ctx: ^Context) {
     clear(&ctx.key_repeats)
     clear(&ctx.key_releases)
     strings.builder_reset(&ctx.text_input)
-}
-
-//==========================================================================
-// State
-//==========================================================================
-
-Id :: u64
-
-get_id :: proc "contextless" () -> Id {
-    @(static) id: Id
-    return 1 + intrinsics.atomic_add(&id, 1)
 }
 
 //==========================================================================
@@ -257,6 +237,17 @@ mouse_position :: proc() -> (res: Vector2) {
     }
     res -= window.position
     res -= global_offset()
+    return
+}
+
+global_mouse_position :: proc() -> (res: Vector2) {
+    ctx := gui_context()
+    res = ctx.screen_mouse_position
+    window := current_window()
+    if window == nil {
+        return
+    }
+    res -= window.position
     return
 }
 
@@ -701,7 +692,7 @@ release_keyboard_focus :: proc() {
 
 hit_test :: proc(rectangle: Rectangle, target: Vector2) -> bool {
     return rectangle_encloses(rectangle, target, include_borders = false) &&
-           rectangle_encloses(local_clip_rectangle(), target, include_borders = false)
+           rectangle_encloses(clip_rectangle(), target, include_borders = false)
 }
 
 mouse_hit_test :: proc(rectangle: Rectangle) -> bool {
@@ -709,14 +700,14 @@ mouse_hit_test :: proc(rectangle: Rectangle) -> bool {
 }
 
 clip_test :: proc(target: Vector2) -> bool {
-    return rectangle_encloses(local_clip_rectangle(), target, include_borders = false)
+    return rectangle_encloses(clip_rectangle(), target, include_borders = false)
 }
 
 mouse_clip_test :: proc() -> bool {
     return clip_test(mouse_position())
 }
 
-local_offset :: proc() -> Vector2 {
+offset :: proc() -> Vector2 {
     window := current_window()
     if len(window.local_offset_stack) <= 0 do return {0, 0}
     return window.local_offset_stack[len(window.local_offset_stack) - 1]
@@ -746,7 +737,7 @@ scoped_offset :: proc(offset: Vector2) {
     begin_offset(offset)
 }
 
-local_clip_rectangle :: proc() -> Rectangle {
+clip_rectangle :: proc() -> Rectangle {
     window := current_window()
     if len(window.global_clip_rectangle_stack) <= 0 do return {-global_offset(), window.size}
     global_rect := window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1]
@@ -794,41 +785,3 @@ end_clip :: proc() {
 scoped_clip :: proc(rectangle: Rectangle, intersect := true) {
     begin_clip(rectangle, intersect = intersect)
 }
-
-// z_index :: proc() -> int {
-//     window := current_window()
-//     if len(window.layer_stack) <= 0 do return 0
-//     return _current_layer(window).local_z_index
-// }
-
-// global_z_index :: proc() -> int {
-//     window := current_window()
-//     if len(window.layer_stack) <= 0 do return 0
-//     return _current_layer(window).global_z_index
-// }
-
-// // Local z index
-// begin_z_index :: proc(z_index: int) {
-//     window := current_window()
-//     layer: Layer
-//     layer.draw_commands = make([dynamic]Draw_Command, arena_allocator())
-//     layer.local_z_index = z_index
-//     layer.global_z_index = global_z_index() + z_index
-//     append(&window.layer_stack, layer)
-// }
-
-// end_z_index :: proc() {
-//     window := current_window()
-//     if len(window.layer_stack) <= 0 do return
-//     layer := pop(&window.layer_stack)
-//     append(&window.layers, layer)
-// }
-
-// @(deferred_none=end_z_index)
-// scoped_z_index :: proc(z_index: int) {
-//     begin_z_index(z_index)
-// }
-
-// _current_layer :: proc(window: ^Window) -> ^Layer {
-//     return &window.layer_stack[len(window.layer_stack) - 1]
-// }
