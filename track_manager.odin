@@ -9,6 +9,7 @@ TRACK_GROUP_MIN_WIDTH :: 48
 
 Track_Group :: struct {
     using rectangle: Rectangle,
+    is_visible: bool,
     is_selected: bool,
     position_when_drag_started: Vector2,
     name: strings.Builder,
@@ -41,11 +42,21 @@ track_group_draw_frame :: proc(group: ^Track_Group) {
     shadow_rectangle.position.y += 2
     box_shadow(shadow_rectangle, 3, 5, {0, 0, 0, 0.3}, {0, 0, 0, 0})
 
-    fill_rounded_rectangle(group.rectangle, 3, {0.25, 0.25, 0.25, 1})
-    if group.is_selected {
-        outline_rounded_rectangle(group.rectangle, 3, pixel.x, {0.6, 0.6, 0.6, 1})
+    if group.is_visible {
+        fill_rounded_rectangle(group.rectangle, 3, color_rgb(45, 107, 14))
     } else {
-        outline_rounded_rectangle(group.rectangle, 3, pixel.x, {0.35, 0.35, 0.35, 1})
+        fill_rounded_rectangle(group.rectangle, 3, {0.25, 0.25, 0.25, 1})
+    }
+
+    // if group.is_selected {
+    //     outline_rounded_rectangle(group.rectangle, 3, pixel.x, {0.6, 0.6, 0.6, 1})
+    // } else {
+    //     outline_rounded_rectangle(group.rectangle, 3, pixel.x, {0.35, 0.35, 0.35, 1})
+    // }
+
+    outline_rounded_rectangle(group.rectangle, 3, pixel.x, {1, 1, 1, 0.15})
+    if group.is_selected {
+        fill_rounded_rectangle(group.rectangle, 3, {1, 1, 1, 0.08})
     }
 }
 
@@ -92,16 +103,18 @@ track_manager_create_new_group :: proc(manager: ^Track_Manager, position: Vector
     append(&manager.groups, group)
 }
 
-track_manager_selection_logic :: proc(manager: ^Track_Manager, groups: []^Track_Group, keep_selection: bool) {
+track_manager_selection_logic :: proc(manager: ^Track_Manager, groups: []^Track_Group, is_box_select: bool) {
     addition := key_down(.Left_Shift)
     invert := key_down(.Left_Control)
 
-    keep_selection := keep_selection || addition || invert
+    keep_selection := addition || invert
 
-    for group in manager.groups {
-        if group.is_selected && mouse_hover() == group.button.id {
-            keep_selection = true
-            break
+    if !is_box_select {
+        for group in manager.groups {
+            if group.is_selected && mouse_hover() == group.button.id {
+                keep_selection = true
+                break
+            }
         }
     }
 
@@ -292,6 +305,14 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
         manager.group_movement_is_locked = !manager.group_movement_is_locked
     }
 
+    if key_pressed(.D) {
+        for group in manager.groups {
+            if group.is_selected {
+                group.is_visible = !group.is_visible
+            }
+        }
+    }
+
     // Group logic
 
     invisible_button_update(&manager.background_button, rectangle)
@@ -356,7 +377,7 @@ _track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
                 append(&groups_touched_by_box_select, group)
             }
         }
-        track_manager_selection_logic(manager, groups_touched_by_box_select[:], false)
+        track_manager_selection_logic(manager, groups_touched_by_box_select[:], true)
     }
 }
 
