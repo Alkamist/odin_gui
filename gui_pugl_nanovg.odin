@@ -329,6 +329,26 @@ backend_render_draw_command :: proc(window: ^Window, command: Draw_Command) {
     case Set_Clip_Rectangle_Command:
         rect := pixel_snapped(cmd.global_clip_rectangle)
         nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
+
+    case Box_Shadow_Command:
+        nvg.Save(nvg_ctx)
+        rect := cmd.rectangle
+        paint := nvg.BoxGradient(
+            rect.x, rect.y,
+            rect.size.x, rect.size.y,
+            cmd.corner_radius,
+            cmd.feather,
+            cmd.inner_color,
+            cmd.outer_color,
+        )
+        nvg.BeginPath(nvg_ctx)
+        nvg.Rect(nvg_ctx,
+            rect.x - cmd.feather, rect.y - cmd.feather,
+            rect.size.x + cmd.feather * 2, rect.size.y + cmd.feather * 2,
+        )
+        nvg.FillPaint(nvg_ctx, paint)
+        nvg.Fill(nvg_ctx)
+        nvg.Restore(nvg_ctx)
     }
 }
 

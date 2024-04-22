@@ -496,6 +496,7 @@ Draw_Command :: union {
     Fill_Path_Command,
     Fill_String_Command,
     Set_Clip_Rectangle_Command,
+    Box_Shadow_Command,
 }
 
 Fill_Path_Command :: struct {
@@ -513,6 +514,15 @@ Fill_String_Command :: struct {
 
 Set_Clip_Rectangle_Command :: struct {
     global_clip_rectangle: Rectangle,
+}
+
+// Temporary until I feel like tackling path blurring.
+Box_Shadow_Command :: struct {
+    rectangle: Rectangle,
+    corner_radius: f32,
+    feather: f32,
+    inner_color: Color,
+    outer_color: Color,
 }
 
 pixel_size :: proc() -> Vector2 {
@@ -558,6 +568,17 @@ set_clip_rectangle :: proc(rectangle: Rectangle) {
     rectangle := rectangle
     rectangle.position += global_offset()
     backend_render_draw_command(window, Set_Clip_Rectangle_Command{rectangle})
+}
+
+box_shadow :: proc(
+    rectangle: Rectangle,
+    corner_radius, feather: f32,
+    inner_color, outer_color: Color,
+) {
+    window := current_window()
+    rectangle := rectangle
+    rectangle.position += global_offset()
+    backend_render_draw_command(window, Box_Shadow_Command{rectangle, corner_radius, feather, inner_color, outer_color})
 }
 
 measure_string :: proc(str: string, font: Font) -> (size: Vector2) {

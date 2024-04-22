@@ -36,11 +36,16 @@ track_group_update_rectangle :: proc(group: ^Track_Group, font: Font) {
 
 track_group_draw_frame :: proc(group: ^Track_Group) {
     pixel := pixel_size()
-    fill_rounded_rectangle(group.rectangle, 3, {0.2, 0.2, 0.2, 1})
+
+    shadow_rectangle := group.rectangle
+    shadow_rectangle.position.y += 2
+    box_shadow(shadow_rectangle, 3, 5, {0, 0, 0, 0.3}, {0, 0, 0, 0})
+
+    fill_rounded_rectangle(group.rectangle, 3, {0.25, 0.25, 0.25, 1})
     if group.is_selected {
         outline_rounded_rectangle(group.rectangle, 3, pixel.x, {0.6, 0.6, 0.6, 1})
     } else {
-        outline_rounded_rectangle(group.rectangle, 3, pixel.x, {0.3, 0.3, 0.3, 1})
+        outline_rounded_rectangle(group.rectangle, 3, pixel.x, {0.35, 0.35, 0.35, 1})
     }
 }
 
@@ -380,7 +385,11 @@ _track_manager_confirm_delete :: proc(manager: ^Track_Manager, rectangle: Rectan
         {290, 128},
     }
 
-    fill_rounded_rectangle(prompt_rectangle, 3, {0.4, 0.4, 0.4, 0.8})
+    shadow_rectangle := prompt_rectangle
+    shadow_rectangle.position += {3, 5}
+    box_shadow(shadow_rectangle, 3, 10, {0, 0, 0, 0.3}, {0, 0, 0, 0})
+
+    fill_rounded_rectangle(prompt_rectangle, 3, {0.4, 0.4, 0.4, 0.6})
     outline_rounded_rectangle(prompt_rectangle, 3, pixel.x, {1, 1, 1, 0.3})
 
     scoped_clip(prompt_rectangle)
