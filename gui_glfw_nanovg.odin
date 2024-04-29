@@ -335,7 +335,7 @@ _glfw_on_mouse_enter_exit :: proc "c" (window: glfw.WindowHandle, entered: c.int
 _glfw_on_keyboard_key :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods: c.int) {
     context = _glfw_odin_context
     window := cast(^Window)glfw.GetWindowUserPointer(window)
-    if action == glfw.PRESS {
+    if action == glfw.PRESS || action == glfw.REPEAT {
         input_key_press(window, _glfw_key_to_keyboard_key(key))
     } else if action == glfw.RELEASE {
         input_key_release(window, _glfw_key_to_keyboard_key(key))

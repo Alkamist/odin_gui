@@ -3,35 +3,54 @@ package main
 import "core:fmt"
 import "core:mem"
 
-running := true
+// This is a track manager I made to help with organizing large projects
+// in the DAW Reaper. It runs as an extension in Reaper, but this is a
+// standalone version of it for demonstration.
+//
+// The idea is to enable the user to be able to create track groups and
+// arrange them in 2D space. The user can assign multiple tracks to
+// multiple groups. When the user selects these groups in the editor,
+// the tracks in Reaper become visible.
+//
+// There are two kinds of track groups: regular (green), and sections (purple).
+// Regular groups represent categories, such as drums, vocals, guitars, etc...
+// Sections represent parts of the song, such as Verse, Chorus, Bridge, etc...
+// These categories behave slightly differently in how they affect track visibility.
+//
+// The controls are as follows:
+//
+// Double click to make a new group, which will immediately be renamable.
+// Use the left mouse button to select groups.
+// Use the right mouse button and drag to box-select groups.
+// Hold shift while selecting to add to the current selection.
+// Hold control while selecting to toggle the selection.
+// Push the "Edit" button in the upper left corner to enable the groups to be relatively positioned.
+// Drag groups with the left mouse button to move them.
+// Drag anywhere with the middle mouse button to move all groups.
+// Push F2 to rename the selected groups.
+// Push C to center existing groups.
+// Use the green and purple buttons on the toolbar to change the type of selected groups.
+// The - and + buttons are for adding tracks in Reaper to selected groups.
+// Push Delete while some groups are selected to open a prompt to confirm deleting those groups.
 
-other_window: Window
+running := true
 
 init :: proc() {
     window_init(&track_manager_window, {{100, 100}, {400, 300}})
     track_manager_window.should_open = true
     track_manager_window.background_color = {0.2, 0.2, 0.2, 1}
 
-    window_init(&other_window, {{600, 100}, {400, 300}})
-    other_window.should_open = true
-    other_window.background_color = {0.3, 0, 0.2, 1}
-
     track_manager_init(&track_manager)
 }
 
 shutdown :: proc() {
     track_manager_destroy(&track_manager)
-    window_destroy(&other_window)
     window_destroy(&track_manager_window)
 }
 
 update :: proc() {
     if window_update(&track_manager_window) {
         track_manager_update(&track_manager)
-    }
-
-    if window_update(&other_window) {
-        fill_circle({50, 50}, 25, {1, 0, 0, 1})
     }
 
     if !track_manager_window.is_open {
