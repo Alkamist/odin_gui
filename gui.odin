@@ -359,8 +359,8 @@ window_init :: proc(window: ^Window, rectangle: Rectangle) {
 }
 
 window_destroy :: proc(window: ^Window) {
-    backend_window_destroy(window)
     _window_close(window)
+    backend_window_destroy(window)
     delete(window.child_windows)
     delete(window.loaded_fonts)
     delete(window.mouse_presses)
@@ -435,12 +435,12 @@ window_end :: proc() {
     strings.builder_reset(&window.text_input)
 
     if window.position != window.actual_rectangle.position {
-        backend_set_window_position(window, window.position)
+        backend_window_set_position(window, window.position)
     }
 
     if window.size != window.actual_rectangle.size {
         window.actual_rectangle.size = window.size
-        backend_set_window_size(window, window.size)
+        backend_window_set_size(window, window.size)
     }
 
     if window.should_open {

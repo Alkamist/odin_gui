@@ -5,15 +5,23 @@ import "core:mem"
 
 running := true
 
+other_window: Window
+
 init :: proc() {
     window_init(&track_manager_window, {{100, 100}, {400, 300}})
     track_manager_window.should_open = true
     track_manager_window.background_color = {0.2, 0.2, 0.2, 1}
+
+    window_init(&other_window, {{600, 100}, {400, 300}})
+    other_window.should_open = true
+    other_window.background_color = {0.3, 0, 0.2, 1}
+
     track_manager_init(&track_manager)
 }
 
 shutdown :: proc() {
     track_manager_destroy(&track_manager)
+    window_destroy(&other_window)
     window_destroy(&track_manager_window)
 }
 
@@ -21,6 +29,11 @@ update :: proc() {
     if window_update(&track_manager_window) {
         track_manager_update(&track_manager)
     }
+
+    if window_update(&other_window) {
+        fill_circle({50, 50}, 25, {1, 0, 0, 1})
+    }
+
     if !track_manager_window.is_open {
         running = false
     }
