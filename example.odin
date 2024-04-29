@@ -3,28 +3,25 @@ package main
 import "core:fmt"
 import "core:mem"
 
-default_font := Font{
-    name = "consola_13",
-    size = 13,
-    data = #load("consola.ttf"),
-}
-
 running := true
 
-window: Window
+init :: proc() {
+    window_init(&track_manager_window, {{100, 100}, {400, 300}})
+    track_manager_window.should_open = true
+    track_manager_window.background_color = {0.2, 0.2, 0.2, 1}
+    track_manager_init(&track_manager)
+}
 
-track_manager: Track_Manager
+shutdown :: proc() {
+    track_manager_destroy(&track_manager)
+    window_destroy(&track_manager_window)
+}
 
 update :: proc() {
-    if key_pressed(.Escape) && track_manager.state == .Editing {
-        running = false
-    }
-
-    if window_update(&window) {
+    if window_update(&track_manager_window) {
         track_manager_update(&track_manager)
     }
-
-    if !window.is_open {
+    if !track_manager_window.is_open {
         running = false
     }
 }
@@ -53,15 +50,8 @@ main :: proc() {
         }
     }
 
-    gui_startup(update)
+    gui_startup()
     defer gui_shutdown()
-
-    window_init(&window, {{100, 100}, {400, 300}})
-    defer window_destroy(&window)
-    window.background_color = {0.2, 0.2, 0.2, 1}
-
-    track_manager_init(&track_manager, default_font)
-    defer track_manager_destroy(&track_manager)
 
     for running {
         gui_update()

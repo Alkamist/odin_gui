@@ -2,12 +2,13 @@ package main
 
 import "base:runtime"
 import "base:intrinsics"
-// import "core:fmt"
 import "core:math"
 import "core:time"
 import "core:slice"
 import "core:strings"
 import cte "core:text/edit"
+
+@(thread_local) _window_stack: [dynamic]^Window
 
 Vector2 :: [2]f32
 Id :: u64
@@ -17,106 +18,24 @@ get_id :: proc "contextless" () -> Id {
     return 1 + intrinsics.atomic_add(&id, 1)
 }
 
-//==========================================================================
-// Context
-//==========================================================================
-
-@(thread_local) _gui_context: Context
-
-Context :: struct {
-    update: proc(),
-
-    screen_mouse_position: Vector2,
-    mouse_down: [Mouse_Button]bool,
-    mouse_presses: [dynamic]Mouse_Button,
-    mouse_releases: [dynamic]Mouse_Button,
-    mouse_wheel: Vector2,
-    mouse_repeat_start_position: Vector2,
-    mouse_repeat_ticks: [Mouse_Button]time.Tick,
-    mouse_repeat_counts: [Mouse_Button]int,
-
-    key_down: [Keyboard_Key]bool,
-    key_presses: [dynamic]Keyboard_Key,
-    key_repeats: [dynamic]Keyboard_Key,
-    key_releases: [dynamic]Keyboard_Key,
-    text_input: strings.Builder,
-
-    keyboard_focus: Id,
-    mouse_hit: Id,
-    mouse_hover: Id,
-    previous_mouse_hover: Id,
-    mouse_hover_capture: Id,
-    final_mouse_hover_request: Id,
-
-    is_first_frame: bool,
-
-    window_stack: [dynamic]^Window,
-
-    previous_screen_mouse_position: Vector2,
-}
-
-gui_context :: proc() -> ^Context {
-    return &_gui_context
-}
-
-gui_startup :: proc(update: proc()) {
-    ctx := gui_context()
-    ctx.update = update
-    ctx.is_first_frame = true
+gui_startup :: proc() {
     backend_startup()
+    init()
 }
 
 gui_shutdown :: proc() {
-    ctx := gui_context()
+    shutdown()
     backend_shutdown()
-    delete(ctx.mouse_presses)
-    delete(ctx.mouse_releases)
-    delete(ctx.key_presses)
-    delete(ctx.key_repeats)
-    delete(ctx.key_releases)
-    strings.builder_destroy(&ctx.text_input)
     free_all(context.temp_allocator)
 }
 
-gui_update :: proc() {
-    context_update(gui_context())
-    backend_poll_events()
+gui_update :: proc(poll_events := true) {
+    _window_stack = make([dynamic]^Window, context.temp_allocator)
+    update()
+    if poll_events {
+        backend_poll_events()
+    }
     free_all(context.temp_allocator)
-}
-
-context_update :: proc(ctx: ^Context) {
-    if ctx.is_first_frame {
-        ctx.previous_screen_mouse_position = ctx.screen_mouse_position
-    }
-
-    ctx.window_stack = make([dynamic]^Window, context.temp_allocator)
-
-    if ctx.update != nil {
-        ctx.update()
-    }
-
-    ctx.previous_mouse_hover = ctx.mouse_hover
-    ctx.mouse_hit = ctx.final_mouse_hover_request
-
-    if ctx.mouse_hover_capture != 0 {
-        ctx.mouse_hover = ctx.mouse_hover_capture
-    } else {
-        ctx.mouse_hover = ctx.final_mouse_hover_request
-    }
-
-    ctx.final_mouse_hover_request = 0
-
-    ctx.mouse_wheel = {0, 0}
-    ctx.previous_screen_mouse_position = ctx.screen_mouse_position
-
-    ctx.is_first_frame = false
-
-    clear(&ctx.mouse_presses)
-    clear(&ctx.mouse_releases)
-    clear(&ctx.key_presses)
-    clear(&ctx.key_repeats)
-    clear(&ctx.key_releases)
-    strings.builder_reset(&ctx.text_input)
 }
 
 //==========================================================================
@@ -166,112 +85,141 @@ Keyboard_Key :: enum {
     Pad_Decimal, Print_Screen,
 }
 
-input_mouse_move :: proc(ctx: ^Context, screen_position: Vector2) {
-    ctx.screen_mouse_position = screen_position
+input_window_move :: proc(window: ^Window, position: Vector2) {
+    window.position = position
+    window.actual_rectangle.position = position
 }
 
-input_mouse_press :: proc(ctx: ^Context, button: Mouse_Button) {
-    ctx.mouse_down[button] = true
-    previous_mouse_repeat_tick := ctx.mouse_repeat_ticks[button]
+input_window_resize :: proc(window: ^Window, size: Vector2) {
+    window.size = size
+    window.actual_rectangle.size = size
+}
 
-    ctx.mouse_repeat_ticks[button] = time.tick_now()
+input_gain_focus :: proc(window: ^Window) {
+    window.is_focused = true
+}
 
-    delta := time.tick_diff(previous_mouse_repeat_tick, ctx.mouse_repeat_ticks[button])
+input_lose_focus :: proc(window: ^Window) {
+    window.is_focused = false
+    for button in Mouse_Button {
+        if window.mouse_down[button] {
+            input_mouse_release(window, button)
+        }
+    }
+    for key in Keyboard_Key {
+        if window.key_down[key] {
+            input_key_release(window, key)
+        }
+    }
+}
+
+input_mouse_enter :: proc(window: ^Window) {
+    window.is_mouse_hovered = true
+}
+
+input_mouse_exit :: proc(window: ^Window) {
+    window.is_mouse_hovered = false
+}
+
+input_mouse_move :: proc(window: ^Window, position: Vector2) {
+    window.mouse_position = position
+}
+
+input_mouse_press :: proc(window: ^Window, button: Mouse_Button) {
+    window.mouse_down[button] = true
+    previous_mouse_repeat_tick := window.mouse_repeat_ticks[button]
+
+    window.mouse_repeat_ticks[button] = time.tick_now()
+
+    delta := time.tick_diff(previous_mouse_repeat_tick, window.mouse_repeat_ticks[button])
     if delta <= 300 * time.Millisecond {
-        ctx.mouse_repeat_counts[button] += 1
+        window.mouse_repeat_counts[button] += 1
     } else {
-        ctx.mouse_repeat_counts[button] = 1
+        window.mouse_repeat_counts[button] = 1
     }
 
     TOLERANCE :: 3
-    movement := ctx.screen_mouse_position - ctx.mouse_repeat_start_position
+    movement := window.mouse_position - window.mouse_repeat_start_position
     if abs(movement.x) > TOLERANCE || abs(movement.y) > TOLERANCE {
-        ctx.mouse_repeat_counts[button] = 1
+        window.mouse_repeat_counts[button] = 1
     }
 
-    if ctx.mouse_repeat_counts[button] == 1 {
-        ctx.mouse_repeat_start_position = ctx.screen_mouse_position
+    if window.mouse_repeat_counts[button] == 1 {
+        window.mouse_repeat_start_position = window.mouse_position
     }
 
-    append(&ctx.mouse_presses, button)
+    append(&window.mouse_presses, button)
 }
 
-input_mouse_release :: proc(ctx: ^Context, button: Mouse_Button) {
-    ctx.mouse_down[button] = false
-    append(&ctx.mouse_releases, button)
+input_mouse_release :: proc(window: ^Window, button: Mouse_Button) {
+    window.mouse_down[button] = false
+    append(&window.mouse_releases, button)
 }
 
-input_mouse_scroll :: proc(ctx: ^Context, amount: Vector2) {
-    ctx.mouse_wheel = amount
+input_mouse_scroll :: proc(window: ^Window, amount: Vector2) {
+    window.mouse_wheel = amount
 }
 
-input_key_press :: proc(ctx: ^Context, key: Keyboard_Key) {
-    already_down := ctx.key_down[key]
-    ctx.key_down[key] = true
+input_key_press :: proc(window: ^Window, key: Keyboard_Key) {
+    already_down := window.key_down[key]
+    window.key_down[key] = true
     if !already_down {
-        append(&ctx.key_presses, key)
+        append(&window.key_presses, key)
     }
-    append(&ctx.key_repeats, key)
+    append(&window.key_repeats, key)
 }
 
-input_key_release :: proc(ctx: ^Context, key: Keyboard_Key) {
-    ctx.key_down[key] = false
-    append(&ctx.key_releases, key)
+input_key_release :: proc(window: ^Window, key: Keyboard_Key) {
+    window.key_down[key] = false
+    append(&window.key_releases, key)
 }
 
-input_rune :: proc(ctx: ^Context, r: rune) {
-    strings.write_rune(&ctx.text_input, r)
+input_rune :: proc(window: ^Window, r: rune) {
+    strings.write_rune(&window.text_input, r)
 }
 
 is_first_frame :: proc() -> bool {
-    return gui_context().is_first_frame
+    return current_window().is_first_frame
 }
 
 clipboard :: backend_clipboard
 set_clipboard :: backend_set_clipboard
 
 mouse_position :: proc() -> (res: Vector2) {
-    ctx := gui_context()
-    res = ctx.screen_mouse_position
     window := current_window()
-    if window == nil {
-        return
-    }
-    res -= window.position
+    res = window.mouse_position
     res -= global_offset()
     return
 }
 
 global_mouse_position :: proc() -> (res: Vector2) {
-    ctx := gui_context()
-    res = ctx.screen_mouse_position
     window := current_window()
-    if window == nil {
-        return
-    }
-    res -= window.position
+    res = window.mouse_position
     return
 }
 
 screen_mouse_position :: proc() -> (res: Vector2) {
-    return gui_context().screen_mouse_position
+    window := current_window()
+    res = window.mouse_position - window.position
+    return
 }
 
-mouse_delta :: proc() -> Vector2 {
-    ctx := gui_context()
-    return ctx.screen_mouse_position - ctx.previous_screen_mouse_position
+mouse_delta :: proc() -> (res: Vector2) {
+    window := current_window()
+    res = window.mouse_position - window.previous_mouse_position
+    return
 }
 
 mouse_down :: proc(button: Mouse_Button) -> bool {
-    return gui_context().mouse_down[button]
+    return current_window().mouse_down[button]
 }
 
 key_down :: proc(key: Keyboard_Key) -> bool {
-    return gui_context().key_down[key]
+    return current_window().key_down[key]
 }
 
 mouse_wheel :: proc() -> Vector2 {
-    return gui_context().mouse_wheel
+    return current_window().mouse_wheel
 }
 
 mouse_moved :: proc() -> bool {
@@ -279,65 +227,65 @@ mouse_moved :: proc() -> bool {
 }
 
 mouse_wheel_moved :: proc() -> bool {
-    return gui_context().mouse_wheel != {0, 0}
+    return mouse_wheel() != {0, 0}
 }
 
 mouse_pressed :: proc(button: Mouse_Button) -> bool {
-    return slice.contains(gui_context().mouse_presses[:], button)
+    return slice.contains(current_window().mouse_presses[:], button)
 }
 
 mouse_repeat_count :: proc(button: Mouse_Button) -> int {
-    return gui_context().mouse_repeat_counts[button]
+    return current_window().mouse_repeat_counts[button]
 }
 
 mouse_released :: proc(button: Mouse_Button) -> bool {
-    return slice.contains(gui_context().mouse_releases[:], button)
+    return slice.contains(current_window().mouse_releases[:], button)
 }
 
 any_mouse_pressed :: proc() -> bool {
-    return len(gui_context().mouse_presses) > 0
+    return len(current_window().mouse_presses) > 0
 }
 
 any_mouse_released :: proc() -> bool {
-    return len(gui_context().mouse_releases) > 0
+    return len(current_window().mouse_releases) > 0
 }
 
 key_pressed :: proc(key: Keyboard_Key, repeating := false) -> bool {
-    ctx := gui_context()
-    return slice.contains(ctx.key_presses[:], key) ||
-           repeating && slice.contains(ctx.key_repeats[:], key)
+    window := current_window()
+    return slice.contains(window.key_presses[:], key) ||
+           repeating && slice.contains(window.key_repeats[:], key)
 }
 
 key_released :: proc(key: Keyboard_Key) -> bool {
-    return slice.contains(gui_context().key_releases[:], key)
+    return slice.contains(current_window().key_releases[:], key)
 }
 
 any_key_pressed :: proc(repeating := false) -> bool {
     if repeating {
-        return len(gui_context().key_repeats) > 0
+        return len(current_window().key_repeats) > 0
     } else {
-        return len(gui_context().key_presses) > 0
+        return len(current_window().key_presses) > 0
     }
 }
 
 any_key_released :: proc() -> bool {
-    return len(gui_context().key_releases) > 0
+    return len(current_window().key_releases) > 0
 }
 
 key_presses :: proc(repeating := false) -> []Keyboard_Key {
     if repeating {
-        return gui_context().key_repeats[:]
+        return current_window().key_repeats[:]
     } else {
-        return gui_context().key_presses[:]
+        return current_window().key_presses[:]
     }
 }
 
 key_releases :: proc() -> []Keyboard_Key {
-    return gui_context().key_releases[:]
+    return current_window().key_releases[:]
 }
 
 text_input :: proc() -> string {
-    return strings.to_string(gui_context().text_input)
+    return strings.to_string(current_window().text_input)
 }
 
 set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) {
@@ -352,30 +300,61 @@ set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) {
 
 Window_Base :: struct {
     using rectangle: Rectangle,
+    actual_rectangle: Rectangle,
+
+    mouse_position: Vector2,
+    previous_mouse_position: Vector2,
+    mouse_down: [Mouse_Button]bool,
+    mouse_presses: [dynamic]Mouse_Button,
+    mouse_releases: [dynamic]Mouse_Button,
+    mouse_wheel: Vector2,
+    mouse_repeat_start_position: Vector2,
+    mouse_repeat_ticks: [Mouse_Button]time.Tick,
+    mouse_repeat_counts: [Mouse_Button]int,
+
+    key_down: [Keyboard_Key]bool,
+    key_presses: [dynamic]Keyboard_Key,
+    key_repeats: [dynamic]Keyboard_Key,
+    key_releases: [dynamic]Keyboard_Key,
+    text_input: strings.Builder,
+
+    keyboard_focus: Id,
+    mouse_hit: Id,
+    mouse_hover: Id,
+    previous_mouse_hover: Id,
+    mouse_hover_capture: Id,
+    final_mouse_hover_request: Id,
+
     is_open: bool,
     should_open: bool,
     should_close: bool,
     is_focused: bool,
     is_mouse_hovered: bool,
+    is_first_frame: bool,
+
     content_scale: Vector2,
+
     loaded_fonts: map[string]struct{},
+
     child_windows: [dynamic]^Window,
+
     mouse_cursor_style: Mouse_Cursor_Style,
     previous_mouse_cursor_style: Mouse_Cursor_Style,
+
     global_clip_rectangle_stack: [dynamic]Rectangle,
     local_offset_stack: [dynamic]Vector2,
     global_offset_stack: [dynamic]Vector2,
 }
 
 current_window :: proc() -> ^Window {
-    ctx := gui_context()
-    if len(ctx.window_stack) <= 0 do return nil
-    return ctx.window_stack[len(ctx.window_stack) - 1]
+    if len(_window_stack) <= 0 do return nil
+    return _window_stack[len(_window_stack) - 1]
 }
 
 window_init :: proc(window: ^Window, rectangle: Rectangle) {
     window.content_scale = {1, 1}
     window.rectangle = rectangle
+    window.is_first_frame = true
     backend_window_init(window, rectangle)
 }
 
@@ -384,23 +363,34 @@ window_destroy :: proc(window: ^Window) {
     _window_close(window)
     delete(window.child_windows)
     delete(window.loaded_fonts)
+    delete(window.mouse_presses)
+    delete(window.mouse_releases)
+    delete(window.key_presses)
+    delete(window.key_repeats)
+    delete(window.key_releases)
+    strings.builder_destroy(&window.text_input)
 }
 
 window_begin :: proc(window: ^Window) -> bool {
     parent := current_window()
 
-    ctx := gui_context()
-
-    append(&ctx.window_stack, window)
+    append(&_window_stack, window)
 
     window.global_clip_rectangle_stack = make([dynamic]Rectangle, context.temp_allocator)
     window.local_offset_stack = make([dynamic]Vector2, context.temp_allocator)
     window.global_offset_stack = make([dynamic]Vector2, context.temp_allocator)
 
     clear(&window.child_windows)
+
+    if window.is_first_frame {
+        window.actual_rectangle = window.rectangle
+        window.previous_mouse_position = window.mouse_position
+    }
+
     backend_window_begin_frame(window)
 
     if window.is_open {
+        window.should_open = false
         backend_activate_gl_context(window)
         if parent != nil {
             append(&parent.child_windows, window)
@@ -412,8 +402,6 @@ window_begin :: proc(window: ^Window) -> bool {
 }
 
 window_end :: proc() {
-    ctx := gui_context()
-
     window := current_window()
 
     backend_window_end_frame(window)
@@ -423,6 +411,38 @@ window_end :: proc() {
     }
     window.previous_mouse_cursor_style = window.mouse_cursor_style
 
+    window.previous_mouse_hover = window.mouse_hover
+    window.mouse_hit = window.final_mouse_hover_request
+
+    if window.mouse_hover_capture != 0 {
+        window.mouse_hover = window.mouse_hover_capture
+    } else {
+        window.mouse_hover = window.final_mouse_hover_request
+    }
+
+    window.final_mouse_hover_request = 0
+
+    window.mouse_wheel = {0, 0}
+    window.previous_mouse_position = window.mouse_position
+
+    window.is_first_frame = false
+
+    clear(&window.mouse_presses)
+    clear(&window.mouse_releases)
+    clear(&window.key_presses)
+    clear(&window.key_repeats)
+    clear(&window.key_releases)
+    strings.builder_reset(&window.text_input)
+
+    if window.position != window.actual_rectangle.position {
+        backend_set_window_position(window, window.position)
+    }
+
+    if window.size != window.actual_rectangle.size {
+        window.actual_rectangle.size = window.size
+        backend_set_window_size(window, window.size)
+    }
+
     if window.should_open {
         _window_open(window)
     }
@@ -430,7 +450,7 @@ window_end :: proc() {
         _window_close(window)
     }
 
-    pop(&ctx.window_stack)
+    pop(&_window_stack)
 
     parent := current_window()
     if parent != nil {
@@ -453,8 +473,6 @@ _window_open :: proc(window: ^Window) {
 }
 
 _window_close :: proc(window: ^Window) {
-    ctx := gui_context()
-
     for child in window.child_windows {
         _window_close(child)
     }
@@ -462,6 +480,7 @@ _window_close :: proc(window: ^Window) {
     if window.is_open {
         backend_activate_gl_context(window)
         backend_window_close(window)
+        clear(&window.loaded_fonts)
         window.is_open = false
         window.should_close = false
     }
@@ -681,6 +700,12 @@ fill_rounded_rectangle :: proc(rectangle: Rectangle, radius: f32, color: Color) 
     fill_path(path, color)
 }
 
+fill_circle :: proc(center: Vector2, radius: f32, color: Color) {
+    path := temp_path()
+    path_circle(&path, center, radius)
+    fill_path(path, color)
+}
+
 outline_rounded_rectangle :: proc(rectangle: Rectangle, radius, thickness: f32, color: Color) {
     path := temp_path()
     path_rounded_rectangle(&path, rectangle, radius)
@@ -704,60 +729,54 @@ _load_font_if_not_loaded :: proc(window: ^Window, font: Font) {
 //==========================================================================
 
 mouse_hover :: proc() -> Id {
-    ctx := gui_context()
-    return ctx.mouse_hover
+    return current_window().mouse_hover
 }
 
 mouse_hover_entered :: proc() -> Id {
-    ctx := gui_context()
-    if ctx.mouse_hover != ctx.previous_mouse_hover {
-        return ctx.mouse_hover
+    window := current_window()
+    if window.mouse_hover != window.previous_mouse_hover {
+        return window.mouse_hover
     } else {
         return 0
     }
 }
 
 mouse_hover_exited :: proc() -> Id {
-    ctx := gui_context()
-    if ctx.mouse_hover != ctx.previous_mouse_hover {
-        return ctx.previous_mouse_hover
+    window := current_window()
+    if window.mouse_hover != window.previous_mouse_hover {
+        return window.previous_mouse_hover
     } else {
         return 0
     }
 }
 
 mouse_hit :: proc() -> Id {
-    ctx := gui_context()
-    return ctx.mouse_hit
+    return current_window().mouse_hit
 }
 
 request_mouse_hover :: proc(id: Id) {
-    gui_context().final_mouse_hover_request = id
+    current_window().final_mouse_hover_request = id
 }
 
 capture_mouse_hover :: proc() {
-    ctx := gui_context()
-    ctx.mouse_hover_capture = ctx.final_mouse_hover_request
+    window := current_window()
+    window.mouse_hover_capture = window.final_mouse_hover_request
 }
 
 release_mouse_hover :: proc() {
-    ctx := gui_context()
-    ctx.mouse_hover_capture = 0
+    current_window().mouse_hover_capture = 0
 }
 
 keyboard_focus :: proc() -> Id {
-    ctx := gui_context()
-    return ctx.keyboard_focus
+    return current_window().keyboard_focus
 }
 
 set_keyboard_focus :: proc(id: Id) {
-    ctx := gui_context()
-    ctx.keyboard_focus = id
+    current_window().keyboard_focus = id
 }
 
 release_keyboard_focus :: proc() {
-    ctx := gui_context()
-    ctx.keyboard_focus = 0
+    current_window().keyboard_focus = 0
 }
 
 hit_test :: proc(rectangle: Rectangle, target: Vector2) -> bool {
@@ -908,7 +927,9 @@ rectangle_snap :: proc(rectangle: ^Rectangle, increment: Vector2) {
 }
 
 rectangle_intersection :: proc(a, b: Rectangle) -> Rectangle {
-    assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
+    if a.size.x < 0 || a.size.y < 0 || b.size.x < 0 || b.size.y < 0 {
+        return {}
+    }
 
     x1 := max(a.position.x, b.position.x)
     y1 := max(a.position.y, b.position.y)
@@ -926,8 +947,9 @@ rectangle_intersection :: proc(a, b: Rectangle) -> Rectangle {
 }
 
 rectangle_intersects :: proc(a, b: Rectangle, include_borders := false) -> bool {
-    assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
-
+    if a.size.x < 0 || a.size.y < 0 || b.size.x < 0 || b.size.y < 0 {
+        return false
+    }
     if include_borders {
         if a.position.x > b.position.x + b.size.x {
             return false
@@ -965,7 +987,9 @@ rectangle_encloses :: proc{
 }
 
 rectangle_encloses_rect :: proc(a, b: Rectangle, include_borders := false) -> bool {
-    assert(a.size.x >= 0 && a.size.y >= 0 && b.size.x >= 0 && b.size.y >= 0)
+    if a.size.x < 0 || a.size.y < 0 || b.size.x < 0 || b.size.y < 0 {
+        return false
+    }
     if include_borders {
         return b.position.x >= a.position.x &&
                b.position.y >= a.position.y &&
@@ -980,7 +1004,9 @@ rectangle_encloses_rect :: proc(a, b: Rectangle, include_borders := false) -> bo
 }
 
 rectangle_encloses_vector2 :: proc(a: Rectangle, b: Vector2, include_borders := false) -> bool {
-    assert(a.size.x >= 0 && a.size.y >= 0)
+    if a.size.x < 0 || a.size.y < 0 {
+        return false
+    }
     if include_borders {
         return b.x >= a.position.x && b.x <= a.position.x + a.size.x &&
                b.y >= a.position.y && b.y <= a.position.y + a.size.y

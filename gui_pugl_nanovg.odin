@@ -194,27 +194,27 @@ backend_activate_gl_context :: proc(window: ^Window) {
     pugl.EnterContext(window.view)
 }
 
-// backend_window_native_handle :: proc(window: ^Window) -> Window_Native_Handle {
-//     return cast(rawptr)pugl.GetNativeView(window.view)
-// }
+backend_window_native_handle :: proc(window: ^Window) -> Window_Native_Handle {
+    return cast(rawptr)pugl.GetNativeView(window.view)
+}
 
-// backend_show_window :: proc(window: ^Window) {
-//     pugl.Show(window.view, .RAISE)
-// }
+backend_show_window :: proc(window: ^Window) {
+    pugl.Show(window.view, .RAISE)
+}
 
-// backend_hide_window :: proc(window: ^Window) {
-//     pugl.Hide(window.view)
-// }
+backend_hide_window :: proc(window: ^Window) {
+    pugl.Hide(window.view)
+}
 
-// backend_set_window_position :: proc(window: ^Window, position: Vector2) {
-//     pugl.SetPosition(window.view, i32(position.x), i32(position.y))
-//     pugl.EnterContext(window.view)
-// }
+backend_set_window_position :: proc(window: ^Window, position: Vector2) {
+    pugl.SetPosition(window.view, i32(position.x), i32(position.y))
+    pugl.EnterContext(window.view)
+}
 
-// backend_set_window_size :: proc(window: ^Window, size: Vector2) {
-//     pugl.SetSize(window.view, c.uint(size.x), c.uint(size.y))
-//     pugl.EnterContext(window.view)
-// }
+backend_set_window_size :: proc(window: ^Window, size: Vector2) {
+    pugl.SetSize(window.view, c.uint(size.x), c.uint(size.y))
+    pugl.EnterContext(window.view)
+}
 
 backend_set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) {
     pugl.SetCursor(current_window().view, _cursor_style_to_pugl_cursor(style))
@@ -356,7 +356,6 @@ _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Stat
     window := cast(^Window)pugl.GetHandle(view)
     window.view = view
     context = _pugl_odin_context
-    ctx := gui_context()
 
     #partial switch event.type {
     case .UPDATE:
@@ -376,55 +375,63 @@ _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Stat
 
     case .CONFIGURE:
         event := event.configure
-        window.position = Vector2{f32(event.x), f32(event.y)}
-        window.size = Vector2{f32(event.width), f32(event.height)}
+
+        position := Vector2{f32(event.x), f32(event.y)}
+        input_window_move(window, position)
+
+        size := Vector2{f32(event.width), f32(event.height)}
+        refresh := size != window.actual_rectangle.size
+        input_window_resize(window, size)
+        if refresh {
+            gui_update(false)
+        }
 
     case .POINTER_IN:
-        window.is_mouse_hovered = true
+        input_mouse_enter(window)
 
     case .POINTER_OUT:
-        window.is_mouse_hovered = false
+        input_mouse_exit(window)
 
     case .FOCUS_IN:
-        window.is_focused = true
+        input_gain_focus(window)
 
     case .FOCUS_OUT:
-        window.is_focused = false
+        input_lose_focus(window)
 
     case .MOTION:
         event := event.motion
-        input_mouse_move(ctx, {f32(event.xRoot), f32(event.yRoot)})
-        context_update(ctx)
+        input_mouse_move(window, {f32(event.x), f32(event.y)})
+        gui_update(false)
         pugl.PostRedisplay(view)
 
     case .SCROLL:
         event := &event.scroll
-        input_mouse_scroll(ctx, {f32(event.dx), f32(event.dy)})
-        context_update(ctx)
+        input_mouse_scroll(window, {f32(event.dx), f32(event.dy)})
+        gui_update(false)
         pugl.PostRedisplay(view)
 
     case .BUTTON_PRESS:
         event := &event.button
-        input_mouse_press(ctx, _pugl_button_to_mouse_button(event.button))
-        context_update(ctx)
+        input_mouse_press(window, _pugl_button_to_mouse_button(event.button))
+        gui_update(false)
         pugl.PostRedisplay(view)
 
     case .BUTTON_RELEASE:
         event := &event.button
-        input_mouse_release(ctx, _pugl_button_to_mouse_button(event.button))
-        context_update(ctx)
+        input_mouse_release(window, _pugl_button_to_mouse_button(event.button))
+        gui_update(false)
         pugl.PostRedisplay(view)
 
     case .KEY_PRESS:
         event := &event.key
-        input_key_press(ctx, _pugl_key_event_to_keyboard_key(event))
-        context_update(ctx)
+        input_key_press(window, _pugl_key_event_to_keyboard_key(event))
+        gui_update(false)
         pugl.PostRedisplay(view)
 
     case .KEY_RELEASE:
         event := &event.key
-        input_key_release(ctx, _pugl_key_event_to_keyboard_key(event))
-        context_update(ctx)
+        input_key_release(window, _pugl_key_event_to_keyboard_key(event))
+        gui_update(false)
         pugl.PostRedisplay(view)
 
     case .TEXT:
@@ -438,8 +445,8 @@ _pugl_event_proc :: proc "c" (view: ^pugl.View, event: ^pugl.Event) -> pugl.Stat
 
         if !skip {
             r, len := utf8.decode_rune(event.string[:4])
-            input_rune(ctx, r)
-            context_update(ctx)
+            input_rune(window, r)
+            gui_update(false)
             pugl.PostRedisplay(view)
         }
 
