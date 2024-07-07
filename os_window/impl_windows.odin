@@ -132,7 +132,7 @@ swap_buffers :: proc(window: ^Window) {
     win32.SwapBuffers(window.hdc)
 }
 
-open :: proc(window: ^Window, title: string, x, y, width, height: int, parent_handle: rawptr = nil) {
+open :: proc(window: ^Window, title: string, x, y, width, height: int, parent_handle: rawptr = nil, kind := Child_Kind.Transient) {
     window.odin_context = context
 
     open_window_count := sync.atomic_load(&_open_window_count)
@@ -150,7 +150,12 @@ open :: proc(window: ^Window, title: string, x, y, width, height: int, parent_ha
     style: win32.UINT
     if parent_handle != nil {
         hwndParent = cast(win32.HWND)parent_handle
-        style = win32.WS_CHILDWINDOW | win32.WS_CLIPCHILDREN | win32.WS_CLIPSIBLINGS
+        switch kind {
+        case .Transient:
+            style = win32.WS_OVERLAPPEDWINDOW | win32.WS_CLIPCHILDREN | win32.WS_CLIPSIBLINGS
+        case .Embedded:
+            style = win32.WS_CHILDWINDOW | win32.WS_CLIPCHILDREN | win32.WS_CLIPSIBLINGS
+        }
     } else {
         hwndParent = GetDesktopWindow()
         style = win32.WS_OVERLAPPEDWINDOW | win32.WS_CLIPCHILDREN | win32.WS_CLIPSIBLINGS

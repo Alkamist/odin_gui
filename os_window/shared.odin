@@ -42,6 +42,11 @@ Keyboard_Key :: enum {
     Pad_Decimal, Print_Screen,
 }
 
+Child_Kind :: enum {
+    Transient,
+    Embedded,
+}
+
 Event :: union {
     Event_Close,
     Event_Gain_Focus,

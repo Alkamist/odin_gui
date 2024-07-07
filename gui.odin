@@ -46,6 +46,8 @@ Gui_Event_Key_Press :: osw.Event_Key_Press
 Gui_Event_Key_Release :: osw.Event_Key_Release
 Gui_Event_Rune_Input :: osw.Event_Rune_Input
 
+Window_Child_Kind :: osw.Child_Kind
+
 //==========================================================================
 // Input
 //==========================================================================
@@ -311,6 +313,9 @@ Window :: struct {
     mouse_hover_capture: Id,
     final_mouse_hover_request: Id,
 
+    title: string,
+    child_kind: Window_Child_Kind,
+
     is_open: bool,
     opened: bool,
     is_visible: bool,
@@ -474,10 +479,11 @@ window_update :: proc(window: ^Window) -> bool {
 _window_do_open :: proc(window: ^Window) {
     if window.is_open do return
     osw.open(window,
-        "",
+        window.title,
         int(window.x), int(window.y),
         int(window.size.x), int(window.size.y),
         window.parent_handle,
+        window.child_kind,
     )
     window.is_open = true
     window.opened = true
