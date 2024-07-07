@@ -35,7 +35,25 @@ import "core:mem"
 
 running := true
 
-gui_update :: proc() {
+gui_event :: proc(window: ^Window, event: Gui_Event) {
+    #partial switch event in event {
+    case Gui_Event_Loop_Timer:
+        update()
+    }
+}
+
+init :: proc() {
+    window_init(&track_manager_window, {{100, 100}, {400, 300}})
+    track_manager_window.open_requested = true
+    track_manager_init(&track_manager)
+}
+
+destroy :: proc() {
+    track_manager_destroy(&track_manager)
+    window_destroy(&track_manager_window)
+}
+
+update :: proc() {
     if window_update(&track_manager_window) {
         clear_background({0.2, 0.2, 0.2, 1})
         track_manager_update(&track_manager)
@@ -70,15 +88,11 @@ main :: proc() {
         }
     }
 
-    window_init(&track_manager_window, {{100, 100}, {400, 300}})
-    defer window_destroy(&track_manager_window)
-    track_manager_window.open_requested = true
-
-    track_manager_init(&track_manager)
-    defer track_manager_destroy(&track_manager)
+    init()
+    defer destroy()
 
     for running {
         poll_window_events()
-        gui_update()
+        update()
     }
 }
