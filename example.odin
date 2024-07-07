@@ -35,24 +35,12 @@ import "core:mem"
 
 running := true
 
-init :: proc() {
-    window_init(&track_manager_window, {{100, 100}, {400, 300}})
-    track_manager_window.should_open = true
-    track_manager_window.background_color = {0.2, 0.2, 0.2, 1}
-
-    track_manager_init(&track_manager)
-}
-
-shutdown :: proc() {
-    track_manager_destroy(&track_manager)
-    window_destroy(&track_manager_window)
-}
-
-update :: proc() {
+gui_update :: proc() {
     if window_update(&track_manager_window) {
+        clear_background({0.2, 0.2, 0.2, 1})
         track_manager_update(&track_manager)
+        free_all(context.temp_allocator)
     }
-
     if !track_manager_window.is_open {
         running = false
     }
@@ -82,10 +70,15 @@ main :: proc() {
         }
     }
 
-    gui_startup()
-    defer gui_shutdown()
+    window_init(&track_manager_window, {{100, 100}, {400, 300}})
+    defer window_destroy(&track_manager_window)
+    track_manager_window.open_requested = true
+
+    track_manager_init(&track_manager)
+    defer track_manager_destroy(&track_manager)
 
     for running {
+        poll_window_events()
         gui_update()
     }
 }

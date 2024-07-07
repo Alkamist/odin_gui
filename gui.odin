@@ -2,11 +2,14 @@ package main
 
 import "base:runtime"
 import "base:intrinsics"
+import "core:fmt"
 import "core:math"
 import "core:time"
 import "core:slice"
 import "core:strings"
+import gl "vendor:OpenGL"
 import cte "core:text/edit"
+import osw "os_window"
 
 @(thread_local) _window_stack: [dynamic]^Window
 
@@ -18,172 +21,25 @@ get_id :: proc "contextless" () -> Id {
     return 1 + intrinsics.atomic_add(&id, 1)
 }
 
-gui_startup :: proc() {
-    backend_startup()
-    init()
-}
+Mouse_Cursor_Style :: osw.Mouse_Cursor_Style
+Mouse_Button :: osw.Mouse_Button
+Keyboard_Key :: osw.Keyboard_Key
 
-gui_shutdown :: proc() {
-    shutdown()
-    backend_shutdown()
-    free_all(context.temp_allocator)
-}
-
-gui_update :: proc(poll_events := true) {
-    _window_stack = make([dynamic]^Window, context.temp_allocator)
-    update()
-    if poll_events {
-        backend_poll_events()
-    }
-    free_all(context.temp_allocator)
-}
+poll_window_events :: osw.poll_events
+set_window_focus :: osw.set_focus
+set_window_focus_native :: osw.set_focus_native
 
 //==========================================================================
 // Input
 //==========================================================================
 
-Mouse_Cursor_Style :: enum {
-    Arrow,
-    I_Beam,
-    Crosshair,
-    Hand,
-    Resize_Left_Right,
-    Resize_Top_Bottom,
-    Resize_Top_Left_Bottom_Right,
-    Resize_Top_Right_Bottom_Left,
-    Scroll,
+is_first_frame_ever :: proc() -> bool {
+    return current_window().is_first_frame_ever
 }
 
-Mouse_Button :: enum {
-    Unknown,
-    Left, Middle, Right,
-    Extra_1, Extra_2,
+delta_time :: proc() -> f32 {
+    return current_window().delta_time
 }
-
-Keyboard_Key :: enum {
-    Unknown,
-    A, B, C, D, E, F, G, H, I,
-    J, K, L, M, N, O, P, Q, R,
-    S, T, U, V, W, X, Y, Z,
-    Key_1, Key_2, Key_3, Key_4, Key_5,
-    Key_6, Key_7, Key_8, Key_9, Key_0,
-    Pad_1, Pad_2, Pad_3, Pad_4, Pad_5,
-    Pad_6, Pad_7, Pad_8, Pad_9, Pad_0,
-    F1, F2, F3, F4, F5, F6, F7,
-    F8, F9, F10, F11, F12,
-    Backtick, Minus, Equal, Backspace,
-    Tab, Caps_Lock, Enter, Left_Shift,
-    Right_Shift, Left_Control, Right_Control,
-    Left_Alt, Right_Alt, Left_Meta, Right_Meta,
-    Left_Bracket, Right_Bracket, Space,
-    Escape, Backslash, Semicolon, Apostrophe,
-    Comma, Period, Slash, Scroll_Lock,
-    Pause, Insert, End, Page_Up, Delete,
-    Home, Page_Down, Left_Arrow, Right_Arrow,
-    Down_Arrow, Up_Arrow, Num_Lock, Pad_Divide,
-    Pad_Multiply, Pad_Subtract, Pad_Add, Pad_Enter,
-    Pad_Decimal, Print_Screen,
-}
-
-input_window_move :: proc(window: ^Window, position: Vector2) {
-    window.position = position
-    window.actual_rectangle.position = position
-}
-
-input_window_resize :: proc(window: ^Window, size: Vector2) {
-    window.size = size
-    window.actual_rectangle.size = size
-}
-
-input_gain_focus :: proc(window: ^Window) {
-    window.is_focused = true
-}
-
-input_lose_focus :: proc(window: ^Window) {
-    window.is_focused = false
-    for button in Mouse_Button {
-        if window.mouse_down[button] {
-            input_mouse_release(window, button)
-        }
-    }
-    for key in Keyboard_Key {
-        if window.key_down[key] {
-            input_key_release(window, key)
-        }
-    }
-}
-
-input_mouse_enter :: proc(window: ^Window) {
-    window.is_mouse_hovered = true
-}
-
-input_mouse_exit :: proc(window: ^Window) {
-    window.is_mouse_hovered = false
-}
-
-input_mouse_move :: proc(window: ^Window, position: Vector2) {
-    window.mouse_position = position
-}
-
-input_mouse_press :: proc(window: ^Window, button: Mouse_Button) {
-    window.mouse_down[button] = true
-    previous_mouse_repeat_tick := window.mouse_repeat_ticks[button]
-
-    window.mouse_repeat_ticks[button] = time.tick_now()
-
-    delta := time.tick_diff(previous_mouse_repeat_tick, window.mouse_repeat_ticks[button])
-    if delta <= 300 * time.Millisecond {
-        window.mouse_repeat_counts[button] += 1
-    } else {
-        window.mouse_repeat_counts[button] = 1
-    }
-
-    TOLERANCE :: 3
-    movement := window.mouse_position - window.mouse_repeat_start_position
-    if abs(movement.x) > TOLERANCE || abs(movement.y) > TOLERANCE {
-        window.mouse_repeat_counts[button] = 1
-    }
-
-    if window.mouse_repeat_counts[button] == 1 {
-        window.mouse_repeat_start_position = window.mouse_position
-    }
-
-    append(&window.mouse_presses, button)
-}
-
-input_mouse_release :: proc(window: ^Window, button: Mouse_Button) {
-    window.mouse_down[button] = false
-    append(&window.mouse_releases, button)
-}
-
-input_mouse_scroll :: proc(window: ^Window, amount: Vector2) {
-    window.mouse_wheel = amount
-}
-
-input_key_press :: proc(window: ^Window, key: Keyboard_Key) {
-    already_down := window.key_down[key]
-    window.key_down[key] = true
-    if !already_down {
-        append(&window.key_presses, key)
-    }
-    append(&window.key_repeats, key)
-}
-
-input_key_release :: proc(window: ^Window, key: Keyboard_Key) {
-    window.key_down[key] = false
-    append(&window.key_releases, key)
-}
-
-input_rune :: proc(window: ^Window, r: rune) {
-    strings.write_rune(&window.text_input, r)
-}
-
-is_first_frame :: proc() -> bool {
-    return current_window().is_first_frame
-}
-
-clipboard :: backend_clipboard
-set_clipboard :: backend_set_clipboard
 
 mouse_position :: proc() -> (res: Vector2) {
     window := current_window()
@@ -250,33 +106,36 @@ any_mouse_released :: proc() -> bool {
     return len(current_window().mouse_releases) > 0
 }
 
-key_pressed :: proc(key: Keyboard_Key, repeating := false) -> bool {
+key_pressed :: proc(key: Keyboard_Key) -> bool {
     window := current_window()
-    return slice.contains(window.key_presses[:], key) ||
-           repeating && slice.contains(window.key_repeats[:], key)
+    return window.key_down[key] && !window.previous_key_down[key]
 }
 
-key_released :: proc(key: Keyboard_Key) -> bool {
-    return slice.contains(current_window().key_releases[:], key)
+key_released :: proc(key: Keyboard_Key, respect_focus := true) -> bool {
+    window := current_window()
+    return !window.key_down[key] && window.previous_key_down[key]
 }
 
-any_key_pressed :: proc(repeating := false) -> bool {
-    if repeating {
-        return len(current_window().key_repeats) > 0
-    } else {
-        return len(current_window().key_presses) > 0
+any_key_pressed :: proc(respect_focus := true, repeat := false) -> bool {
+    for key in Keyboard_Key {
+        if key_pressed(key) do return true
     }
+    return false
 }
 
 any_key_released :: proc() -> bool {
-    return len(current_window().key_releases) > 0
+    for key in Keyboard_Key {
+        if key_released(key) do return true
+    }
+    return false
 }
 
-key_presses :: proc(repeating := false) -> []Keyboard_Key {
-    if repeating {
-        return current_window().key_repeats[:]
+key_presses :: proc(repeat := false) -> []Keyboard_Key {
+    window := current_window()
+    if repeat {
+        return window.key_repeats[:]
     } else {
-        return current_window().key_presses[:]
+        return window.key_presses[:]
     }
 }
 
@@ -288,17 +147,127 @@ text_input :: proc() -> string {
     return strings.to_string(current_window().text_input)
 }
 
+clipboard :: proc(allocator := context.allocator) -> string {
+    return osw.clipboard(current_window(), allocator)
+}
+
+set_clipboard :: proc(str: string) {
+    osw.set_clipboard(current_window(), str)
+}
+
 set_mouse_cursor_style :: proc(style: Mouse_Cursor_Style) {
     window := current_window()
     if window == nil do return
     window.mouse_cursor_style = style
 }
 
+_window_event_proc :: proc(window: ^osw.Window, msg: osw.Event) {
+    window := cast(^Window)window
+
+    switch msg in msg {
+    case osw.Event_Close:
+        window.close_requested = true
+
+    case osw.Event_Gain_Focus:
+        window.is_focused = true
+
+    case osw.Event_Lose_Focus:
+        window.is_focused = false
+        for button in Mouse_Button {
+            if window.mouse_down[button] {
+                _window_event_proc(window, osw.Event_Mouse_Release{button = button})
+            }
+        }
+
+    case osw.Event_Loop_Timer:
+        gui_update()
+
+    case osw.Event_Move:
+        position := Vector2{f32(msg.x), f32(msg.y)}
+        window.position = position
+        window.actual_rectangle.position = position
+
+    case osw.Event_Resize:
+        size := Vector2{f32(msg.width), f32(msg.height)}
+        window.size = size
+        window.actual_rectangle.size = size
+
+    case osw.Event_Mouse_Enter:
+        window.is_mouse_hovered = true
+
+    case osw.Event_Mouse_Exit:
+        window.is_mouse_hovered = false
+
+    case osw.Event_Mouse_Move:
+        window.mouse_position = {f32(msg.x), f32(msg.y)}
+
+    case osw.Event_Mouse_Press:
+        button := msg.button
+
+        window.mouse_down[button] = true
+        previous_mouse_repeat_tick := window.mouse_repeat_ticks[button]
+
+        window.mouse_repeat_ticks[button] = time.tick_now()
+
+        delta := time.tick_diff(previous_mouse_repeat_tick, window.mouse_repeat_ticks[button])
+        if delta <= 300 * time.Millisecond {
+            window.mouse_repeat_counts[button] += 1
+        } else {
+            window.mouse_repeat_counts[button] = 1
+        }
+
+        TOLERANCE :: 3
+        movement := window.mouse_position - window.mouse_repeat_start_position
+        if abs(movement.x) > TOLERANCE || abs(movement.y) > TOLERANCE {
+            window.mouse_repeat_counts[button] = 1
+        }
+
+        if window.mouse_repeat_counts[button] == 1 {
+            window.mouse_repeat_start_position = window.mouse_position
+        }
+
+        append(&window.mouse_presses, button)
+
+    case osw.Event_Mouse_Release:
+        button := msg.button
+        window.mouse_down[button] = false
+        append(&window.mouse_releases, button)
+
+    case osw.Event_Mouse_Scroll:
+        window.mouse_wheel = {f32(msg.x), f32(msg.y)}
+
+    case osw.Event_Key_Press:
+        key := msg.key
+        if !window.key_toggle[key] {
+            append(&window.key_presses, key)
+        }
+        append(&window.key_repeats, key)
+        window.key_toggle[key] = true
+
+    case osw.Event_Key_Release:
+        key := msg.key
+        append(&window.key_releases, key)
+        window.key_toggle[key] = false
+
+    case osw.Event_Rune_Input:
+        skip := false
+        switch msg.r {
+        case 0 ..< 32, 127: skip = true
+        }
+        if !skip {
+            strings.write_rune(&window.text_input, msg.r)
+        }
+    }
+}
+
 //==========================================================================
 // Window
 //==========================================================================
 
-Window_Base :: struct {
+Window :: struct {
+    using backend: osw.Window,
+    vg_ctx: Vg_Context,
+
     using rectangle: Rectangle,
     actual_rectangle: Rectangle,
 
@@ -313,12 +282,13 @@ Window_Base :: struct {
     mouse_repeat_counts: [Mouse_Button]int,
 
     key_down: [Keyboard_Key]bool,
+    previous_key_down: [Keyboard_Key]bool,
+    key_toggle: [Keyboard_Key]bool,
     key_presses: [dynamic]Keyboard_Key,
     key_repeats: [dynamic]Keyboard_Key,
     key_releases: [dynamic]Keyboard_Key,
     text_input: strings.Builder,
 
-    keyboard_focus: Id,
     mouse_hit: Id,
     mouse_hover: Id,
     previous_mouse_hover: Id,
@@ -326,11 +296,16 @@ Window_Base :: struct {
     final_mouse_hover_request: Id,
 
     is_open: bool,
-    should_open: bool,
-    should_close: bool,
+    opened: bool,
+    is_visible: bool,
+    open_requested: bool,
+    close_requested: bool,
     is_focused: bool,
     is_mouse_hovered: bool,
-    is_first_frame: bool,
+    is_first_frame_ever: bool,
+
+    delta_time: f32,
+    previous_tick: time.Tick,
 
     content_scale: Vector2,
 
@@ -354,13 +329,12 @@ current_window :: proc() -> ^Window {
 window_init :: proc(window: ^Window, rectangle: Rectangle) {
     window.content_scale = {1, 1}
     window.rectangle = rectangle
-    window.is_first_frame = true
-    backend_window_init(window, rectangle)
+    window.is_first_frame_ever = true
+    window.event_proc = _window_event_proc
 }
 
 window_destroy :: proc(window: ^Window) {
-    _window_close(window)
-    backend_window_destroy(window)
+    _window_do_close(window)
     delete(window.child_windows)
     delete(window.loaded_fonts)
     delete(window.mouse_presses)
@@ -382,20 +356,28 @@ window_begin :: proc(window: ^Window) -> bool {
 
     clear(&window.child_windows)
 
-    if window.is_first_frame {
+    if window.is_first_frame_ever {
+        osw.set_mouse_cursor_style(window, window.mouse_cursor_style)
         window.actual_rectangle = window.rectangle
         window.previous_mouse_position = window.mouse_position
+        window.previous_tick = time.tick_now()
     }
 
-    backend_window_begin_frame(window)
+    current_tick := time.tick_now()
+    window.delta_time = f32(time.duration_seconds(time.tick_diff(window.previous_tick, current_tick)))
+    window.previous_tick = current_tick
 
     if window.is_open {
-        window.should_open = false
-        backend_activate_gl_context(window)
+        window.open_requested = false
+        osw.activate_context(window)
         if parent != nil {
             append(&parent.child_windows, window)
         }
         window.mouse_cursor_style = .Arrow
+        for key in Keyboard_Key {
+            window.key_down[key] = osw.poll_key_state(key)
+        }
+        vg_begin_frame(&window.vg_ctx, window.size, window.content_scale.x)
     }
 
     return window.is_open
@@ -404,10 +386,12 @@ window_begin :: proc(window: ^Window) -> bool {
 window_end :: proc() {
     window := current_window()
 
-    backend_window_end_frame(window)
+    if window.is_open {
+        vg_end_frame(&window.vg_ctx)
+    }
 
-    if window.mouse_cursor_style != window.previous_mouse_cursor_style {
-        backend_set_mouse_cursor_style(window.mouse_cursor_style)
+    if window.is_open && window.mouse_cursor_style != window.previous_mouse_cursor_style {
+        osw.set_mouse_cursor_style(window, window.mouse_cursor_style)
     }
     window.previous_mouse_cursor_style = window.mouse_cursor_style
 
@@ -425,8 +409,12 @@ window_end :: proc() {
     window.mouse_wheel = {0, 0}
     window.previous_mouse_position = window.mouse_position
 
-    window.is_first_frame = false
+    window.is_first_frame_ever = false
+    window.opened = false
 
+    for key in Keyboard_Key {
+        window.previous_key_down[key] = window.key_down[key]
+    }
     clear(&window.mouse_presses)
     clear(&window.mouse_releases)
     clear(&window.key_presses)
@@ -434,27 +422,31 @@ window_end :: proc() {
     clear(&window.key_releases)
     strings.builder_reset(&window.text_input)
 
-    if window.position != window.actual_rectangle.position {
-        backend_window_set_position(window, window.position)
+    if window.is_open && window.position != window.actual_rectangle.position {
+        osw.set_position(window, int(window.position.x), int(window.position.y))
     }
 
-    if window.size != window.actual_rectangle.size {
+    if window.is_open && window.size != window.actual_rectangle.size {
         window.actual_rectangle.size = window.size
-        backend_window_set_size(window, window.size)
+        osw.set_size(window, int(window.size.x), int(window.size.y))
     }
 
-    if window.should_open {
-        _window_open(window)
+    if window.open_requested {
+        _window_do_open(window)
     }
-    if window.should_close {
-        _window_close(window)
+    if window.close_requested {
+        _window_do_close(window)
+    }
+
+    if window.is_open {
+        osw.swap_buffers(window)
     }
 
     pop(&_window_stack)
 
     parent := current_window()
     if parent != nil {
-        backend_activate_gl_context(parent)
+        osw.activate_context(parent)
     }
 }
 
@@ -463,27 +455,33 @@ window_update :: proc(window: ^Window) -> bool {
     return window_begin(window)
 }
 
-_window_open :: proc(window: ^Window) {
-    if !window.is_open {
-        backend_window_open(window)
-        backend_activate_gl_context(window)
-        window.is_open = true
-        window.should_open = false
-    }
+_window_do_open :: proc(window: ^Window) {
+    if window.is_open do return
+    osw.open(window,
+        "",
+        int(window.x), int(window.y),
+        int(window.size.x), int(window.size.y),
+        window.parent_handle,
+    )
+    window.is_open = true
+    window.opened = true
+    window.open_requested = false
+    osw.show(window)
+    vg_init(&window.vg_ctx)
 }
 
-_window_close :: proc(window: ^Window) {
+_window_do_close :: proc(window: ^Window) {
+    if !window.is_open do return
+
     for child in window.child_windows {
-        _window_close(child)
+        _window_do_close(child)
     }
 
-    if window.is_open {
-        backend_activate_gl_context(window)
-        backend_window_close(window)
-        clear(&window.loaded_fonts)
-        window.is_open = false
-        window.should_close = false
-    }
+    vg_destroy(&window.vg_ctx)
+    osw.close(window)
+    clear(&window.loaded_fonts)
+    window.is_open = false
+    window.close_requested = false
 }
 
 //==========================================================================
@@ -591,6 +589,13 @@ Box_Shadow_Command :: struct {
     outer_color: Color,
 }
 
+clear_background :: proc(color: Color) {
+    size := current_window().size
+    gl.Viewport(0, 0, i32(size.x), i32(size.y))
+    gl.ClearColor(color.r, color.g, color.b, color.a)
+    gl.Clear(gl.COLOR_BUFFER_BIT)
+}
+
 pixel_size :: proc() -> Vector2 {
     return 1.0 / current_window().content_scale
 }
@@ -615,7 +620,7 @@ rectangle_pixel_snapped :: proc(rectangle: Rectangle) -> Rectangle {
 fill_string :: proc(str: string, position: Vector2, font: Font, color: Color) {
     window := current_window()
     _load_font_if_not_loaded(window, font)
-    backend_render_draw_command(window, Fill_String_Command{str, global_offset() + position, font, color})
+    vg_render_draw_command(&window.vg_ctx, Fill_String_Command{str, global_offset() + position, font, color})
 }
 
 fill_string_aligned :: proc(str: string, rectangle: Rectangle, font: Font, color: Color, alignment := Vector2{}) {
@@ -626,14 +631,14 @@ fill_string_aligned :: proc(str: string, rectangle: Rectangle, font: Font, color
 
 fill_path :: proc(path: Path, color: Color) {
     window := current_window()
-    backend_render_draw_command(window, Fill_Path_Command{path, global_offset(), color})
+    vg_render_draw_command(&window.vg_ctx, Fill_Path_Command{path, global_offset(), color})
 }
 
 set_clip_rectangle :: proc(rectangle: Rectangle) {
     window := current_window()
     rectangle := rectangle
     rectangle.position += global_offset()
-    backend_render_draw_command(window, Set_Clip_Rectangle_Command{rectangle})
+    vg_render_draw_command(&window.vg_ctx, Set_Clip_Rectangle_Command{rectangle})
 }
 
 box_shadow :: proc(
@@ -644,7 +649,7 @@ box_shadow :: proc(
     window := current_window()
     rectangle := rectangle
     rectangle.position += global_offset()
-    backend_render_draw_command(window, Box_Shadow_Command{rectangle, corner_radius, feather, inner_color, outer_color})
+    vg_render_draw_command(&window.vg_ctx, Box_Shadow_Command{rectangle, corner_radius, feather, inner_color, outer_color})
 }
 
 measure_string :: proc(str: string, font: Font) -> (size: Vector2) {
@@ -663,13 +668,13 @@ measure_string :: proc(str: string, font: Font) -> (size: Vector2) {
 measure_glyphs :: proc(str: string, font: Font, glyphs: ^[dynamic]Text_Glyph) {
     window := current_window()
     _load_font_if_not_loaded(window, font)
-    backend_measure_glyphs(window, str, font, glyphs)
+    vg_measure_glyphs(&window.vg_ctx, str, font, glyphs)
 }
 
 font_metrics :: proc(font: Font) -> Font_Metrics {
     window := current_window()
     _load_font_if_not_loaded(window, font)
-    return backend_font_metrics(window, font)
+    return vg_font_metrics(&window.vg_ctx, font)
 }
 
 font_height :: proc(font: Font) -> f32 {
@@ -719,7 +724,7 @@ pixel_outline_rounded_rectangle :: proc(rectangle: Rectangle, radius: f32, color
 
 _load_font_if_not_loaded :: proc(window: ^Window, font: Font) {
     if font.name not_in window.loaded_fonts {
-        backend_load_font(window, font)
+        vg_load_font(&window.vg_ctx, font)
         window.loaded_fonts[font.name] = {}
     }
 }
@@ -765,18 +770,6 @@ capture_mouse_hover :: proc() {
 
 release_mouse_hover :: proc() {
     current_window().mouse_hover_capture = 0
-}
-
-keyboard_focus :: proc() -> Id {
-    return current_window().keyboard_focus
-}
-
-set_keyboard_focus :: proc(id: Id) {
-    current_window().keyboard_focus = id
-}
-
-release_keyboard_focus :: proc() {
-    current_window().keyboard_focus = 0
 }
 
 hit_test :: proc(rectangle: Rectangle, target: Vector2) -> bool {
@@ -852,7 +845,7 @@ begin_clip :: proc(rectangle: Rectangle, intersect := true) {
     }
 
     append(&window.global_clip_rectangle_stack, global_rect)
-    backend_render_draw_command(window, Set_Clip_Rectangle_Command{global_rect})
+    vg_render_draw_command(&window.vg_ctx, Set_Clip_Rectangle_Command{global_rect})
 }
 
 end_clip :: proc() {
@@ -861,13 +854,13 @@ end_clip :: proc() {
     pop(&window.global_clip_rectangle_stack)
 
     if len(window.global_clip_rectangle_stack) <= 0 {
-        backend_render_draw_command(window, Set_Clip_Rectangle_Command{{{0, 0}, window.size}})
+        vg_render_draw_command(&window.vg_ctx, Set_Clip_Rectangle_Command{{{0, 0}, window.size}})
         return
     }
 
     global_rect := window.global_clip_rectangle_stack[len(window.global_clip_rectangle_stack) - 1]
 
-    backend_render_draw_command(window, Set_Clip_Rectangle_Command{global_rect})
+    vg_render_draw_command(&window.vg_ctx, Set_Clip_Rectangle_Command{global_rect})
 }
 
 @(deferred_none=end_clip)
@@ -1512,6 +1505,152 @@ _path_circle :: #force_inline proc(path: ^Path, cx, cy: f32, radius: f32, is_hol
 }
 
 //==========================================================================
+// Nanovg Implementation
+//==========================================================================
+
+import nvg "vendor:nanovg"
+import nvg_gl "vendor:nanovg/gl"
+
+Vg_Context :: struct {
+    nvg_ctx: ^nvg.Context,
+}
+
+vg_init :: proc(ctx: ^Vg_Context) {
+    ctx.nvg_ctx = nvg_gl.Create({.ANTI_ALIAS, .STENCIL_STROKES})
+}
+
+vg_destroy :: proc(ctx: ^Vg_Context) {
+    nvg_gl.Destroy(ctx.nvg_ctx)
+    ctx.nvg_ctx = nil
+}
+
+vg_begin_frame :: proc(ctx: ^Vg_Context, size: Vector2, content_scale: f32) {
+    nvg.BeginFrame(ctx.nvg_ctx, size.x, size.y, content_scale)
+}
+
+vg_end_frame :: proc(ctx: ^Vg_Context) {
+    nvg.EndFrame(ctx.nvg_ctx)
+}
+
+vg_load_font :: proc(ctx: ^Vg_Context, font: Font) {
+    if len(font.data) <= 0 do return
+    if nvg.CreateFontMem(ctx.nvg_ctx, font.name, font.data, false) == -1 {
+        fmt.eprintf("Failed to load font: %v\n", font.name)
+    }
+}
+
+vg_measure_glyphs :: proc(ctx: ^Vg_Context, str: string, font: Font, glyphs: ^[dynamic]Text_Glyph) {
+    nvg_ctx := ctx.nvg_ctx
+
+    clear(glyphs)
+
+    if len(str) == 0 {
+        return
+    }
+
+    nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
+    nvg.FontFace(nvg_ctx, font.name)
+    nvg.FontSize(nvg_ctx, f32(font.size))
+
+    nvg_positions := make([dynamic]nvg.Glyph_Position, len(str), context.temp_allocator)
+
+    temp_slice := nvg_positions[:]
+    position_count := nvg.TextGlyphPositions(nvg_ctx, 0, 0, str, &temp_slice)
+
+    resize(glyphs, position_count)
+
+    for i in 0 ..< position_count {
+        glyphs[i] = Text_Glyph{
+            byte_index = nvg_positions[i].str,
+            position = nvg_positions[i].x,
+            width = nvg_positions[i].maxx - nvg_positions[i].minx,
+            kerning = (nvg_positions[i].x - nvg_positions[i].minx),
+        }
+    }
+}
+
+vg_font_metrics :: proc(ctx: ^Vg_Context, font: Font) -> (metrics: Font_Metrics) {
+    nvg_ctx := ctx.nvg_ctx
+    nvg.FontFace(nvg_ctx, font.name)
+    nvg.FontSize(nvg_ctx, f32(font.size))
+    metrics.ascender, metrics.descender, metrics.line_height = nvg.TextMetrics(nvg_ctx)
+    return
+}
+
+vg_render_draw_command :: proc(ctx: ^Vg_Context, command: Draw_Command) {
+    nvg_ctx := ctx.nvg_ctx
+
+    switch cmd in command {
+    case Fill_Path_Command:
+        nvg.Save(nvg_ctx)
+
+        nvg.Translate(nvg_ctx, cmd.position.x, cmd.position.y)
+        nvg.BeginPath(nvg_ctx)
+
+        for sub_path in cmd.path.sub_paths {
+            nvg.MoveTo(nvg_ctx, sub_path.points[0].x, sub_path.points[0].y)
+
+            for i := 1; i < len(sub_path.points); i += 3 {
+                c1 := sub_path.points[i]
+                c2 := sub_path.points[i + 1]
+                point := sub_path.points[i + 2]
+                nvg.BezierTo(nvg_ctx,
+                    c1.x, c1.y,
+                    c2.x, c2.y,
+                    point.x, point.y,
+                )
+            }
+
+            if sub_path.is_closed {
+                nvg.ClosePath(nvg_ctx)
+                if sub_path.is_hole {
+                    nvg.PathWinding(nvg_ctx, .CW)
+                }
+            }
+        }
+
+        nvg.FillColor(nvg_ctx, cmd.color)
+        nvg.Fill(nvg_ctx)
+
+        nvg.Restore(nvg_ctx)
+
+    case Fill_String_Command:
+        nvg.Save(nvg_ctx)
+        position := pixel_snapped(cmd.position)
+        nvg.TextAlign(nvg_ctx, .LEFT, .TOP)
+        nvg.FontFace(nvg_ctx, cmd.font.name)
+        nvg.FontSize(nvg_ctx, f32(cmd.font.size))
+        nvg.FillColor(nvg_ctx, cmd.color)
+        nvg.Text(nvg_ctx, position.x, position.y, cmd.text)
+        nvg.Restore(nvg_ctx)
+
+    case Set_Clip_Rectangle_Command:
+        rect := pixel_snapped(cmd.global_clip_rectangle)
+        nvg.Scissor(nvg_ctx, rect.position.x, rect.position.y, max(0, rect.size.x), max(0, rect.size.y))
+
+    case Box_Shadow_Command:
+        nvg.Save(nvg_ctx)
+        rect := cmd.rectangle
+        paint := nvg.BoxGradient(
+            rect.x, rect.y,
+            rect.size.x, rect.size.y,
+            cmd.corner_radius,
+            cmd.feather,
+            cmd.inner_color,
+            cmd.outer_color,
+        )
+        nvg.BeginPath(nvg_ctx)
+        nvg.Rect(nvg_ctx,
+            rect.x - cmd.feather, rect.y - cmd.feather,
+            rect.size.x + cmd.feather * 2, rect.size.y + cmd.feather * 2,
+        )
+        nvg.FillPaint(nvg_ctx, paint)
+        nvg.Fill(nvg_ctx)
+        nvg.Restore(nvg_ctx)
+    }
+}
+
+//==========================================================================
 // Button
 //==========================================================================
 
@@ -1555,8 +1694,6 @@ button_base_update :: proc(
             button.clicked = true
         }
     }
-
-    return
 }
 
 invisible_button_update :: proc(
@@ -1570,7 +1707,6 @@ invisible_button_update :: proc(
         mouse_pressed(mouse_button),
         mouse_released(mouse_button),
     )
-    return
 }
 
 button_update :: proc(
@@ -1590,8 +1726,6 @@ button_update :: proc(
     } else if mouse_hover() == button.id {
         fill_path(path, {1, 1, 1, 0.05})
     }
-
-    return
 }
 
 //==========================================================================
@@ -1627,8 +1761,7 @@ slider_update :: proc(
     reset_grab_info := false
 
     if slider.held {
-        if key_pressed(precision_key) ||
-           key_released(precision_key) {
+        if key_pressed(precision_key) || key_released(precision_key) {
             reset_grab_info = true
         }
     }
@@ -1746,7 +1879,7 @@ editable_text_line_init :: proc(
     cte.init(&text.edit_state, allocator, allocator)
     cte.setup_once(&text.edit_state, text.builder)
     text.edit_state.get_clipboard = proc(user_data: rawptr) -> (data: string, ok: bool) {
-        data = clipboard()
+        data = clipboard(context.temp_allocator)
         return _quick_remove_line_ends_UNSAFE(data), true
     }
     text.edit_state.set_clipboard = proc(user_data: rawptr, data: string) -> (ok: bool) {
@@ -1796,10 +1929,8 @@ editable_text_line_update :: proc(
     ctrl := key_down(.Left_Control) || key_down(.Right_Control)
     shift := key_down(.Left_Shift) || key_down(.Right_Shift)
 
-    for key in key_presses(repeating = true) {
+    for key in key_presses(true) {
         #partial switch key {
-        case .Escape: release_keyboard_focus()
-
         case .A: if ctrl do cte.perform_command(edit_state, .Select_All)
         case .C: if ctrl do cte.perform_command(edit_state, .Copy)
         case .V: if ctrl do cte.perform_command(edit_state, .Paste)
@@ -1971,6 +2102,9 @@ editable_text_line_update :: proc(
     }
 
     // Draw caret.
+    rectangle_extended_by_caret_width := rectangle
+    rectangle_extended_by_caret_width.size.x += CARET_WIDTH
+    scoped_clip(rectangle_extended_by_caret_width)
     fill_rectangle({text_position + {caret_x, 0}, {CARET_WIDTH, text_size.y}}, {0.7, 0.9, 1, 1})
 }
 
