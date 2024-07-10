@@ -1,5 +1,12 @@
 package oswindow
 
+Window_Base :: struct {
+    event_proc: proc(^Window, Event),
+    handle: rawptr,
+    parent_handle: rawptr,
+    child_kind: Child_Kind,
+}
+
 Mouse_Cursor_Style :: enum {
     Arrow,
     I_Beam,

@@ -10,7 +10,7 @@ import gl "vendor:OpenGL"
 foreign import user32 "system:User32.lib"
 @(default_calling_convention="system")
 foreign user32 {
-	GetDesktopWindow :: proc() -> win32.HWND ---
+    GetDesktopWindow :: proc() -> win32.HWND ---
     SetFocus :: proc(hWnd: win32.HWND) -> win32.HWND ---
     GetFocus :: proc() -> win32.HWND ---
     OpenClipboard :: proc(hWndNewOwner: win32.HWND) -> win32.BOOL ---
@@ -42,10 +42,7 @@ _open_window_count: int
 _open_gl_is_loaded: bool
 
 Window :: struct {
-    event_proc: proc(^Window, Event),
-    handle: rawptr,
-    parent_handle: rawptr,
-
+    using _base: Window_Base,
     _hdc: win32.HDC,
     _hglrc: win32.HGLRC,
     _high_surrogate: win32.WCHAR,
@@ -57,7 +54,6 @@ Window :: struct {
     _last_y: int,
     _last_width: int,
     _last_height: int,
-    _child_kind: Child_Kind,
 }
 
 poll_events :: proc() {
@@ -139,14 +135,17 @@ swap_buffers :: proc(window: ^Window) {
     win32.SwapBuffers(window._hdc)
 }
 
-open :: proc(window: ^Window, title: string, x, y, width, height: int, parent_handle: rawptr = nil, kind := Child_Kind.Transient) {
+open :: proc(window: ^Window, title: string, x, y, width, height: int, parent_handle: rawptr = nil, child_kind := Child_Kind.Transient) {
     window._odin_context = context
+
+    hInstance := cast(win32.HANDLE)_get_dll_handle()
 
     if sync.atomic_load(&_open_window_count) <= 0 {
         sync.atomic_store(&_open_window_count, 0)
         window_class: win32.WNDCLASSW
         window_class.lpfnWndProc = window_proc
         window_class.lpszClassName = intrinsics.constant_utf16_cstring(WIN32_WINDOW_CLASS)
+        window_class.hInstance = hInstance
         // window_class.hCursor = win32.LoadCursorA(nil, win32.IDC_ARROW)
         window_class.style = win32.CS_DBLCLKS | win32.CS_OWNDC
         win32.RegisterClassW(&window_class)
@@ -156,7 +155,7 @@ open :: proc(window: ^Window, title: string, x, y, width, height: int, parent_ha
     style: win32.UINT
     if parent_handle != nil {
         hwndParent = cast(win32.HWND)parent_handle
-        switch kind {
+        switch child_kind {
         case .Transient:
             style = win32.WS_OVERLAPPEDWINDOW | win32.WS_CLIPCHILDREN | win32.WS_CLIPSIBLINGS
         case .Embedded:
@@ -168,15 +167,15 @@ open :: proc(window: ^Window, title: string, x, y, width, height: int, parent_ha
     }
 
     window.parent_handle = parent_handle
-    window._child_kind = kind
+    window.child_kind = child_kind
 
 	window.handle = win32.CreateWindowW(
         intrinsics.constant_utf16_cstring(WIN32_WINDOW_CLASS),
         win32.utf8_to_wstring(title),
         style,
-		0, 0, 400, 300,
+        0, 0, 400, 300,
         hwndParent,
-        nil, nil, nil,
+        nil, hInstance, nil,
     )
     win32.SetWindowLongPtrW(cast(win32.HWND)window.handle, win32.GWLP_USERDATA, win32.LONG_PTR(cast(uintptr)window))
 
@@ -499,9 +498,15 @@ gl_set_proc_address :: proc(p: rawptr, name: cstring) {
     (^rawptr)(p)^ = fn
 }
 
+_get_dll_handle :: proc "system" () -> win32.HMODULE {
+    info: win32.MEMORY_BASIC_INFORMATION
+    len := win32.VirtualQueryEx(win32.GetCurrentProcess(), cast(rawptr)_get_dll_handle, &info, size_of(info))
+    return len > 0 ? cast(win32.HMODULE)info.AllocationBase : nil
+}
+
 _window_flags :: proc(window: ^Window) -> win32.UINT {
     common_flags := win32.WS_CLIPCHILDREN | win32.WS_CLIPSIBLINGS
-    if window.parent_handle != nil && window._child_kind == .Embedded {
+    if window.parent_handle != nil && window.child_kind == .Embedded {
         return common_flags | win32.WS_CHILD
     }
 

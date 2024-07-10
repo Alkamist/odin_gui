@@ -307,12 +307,9 @@ Window :: struct {
     final_mouse_hover_request: Id,
 
     title: string,
-    child_kind: Window_Child_Kind,
-
     is_open: bool,
     opened: bool,
     closed: bool,
-    is_visible: bool,
     should_open: bool,
     should_close: bool,
     is_focused: bool,
