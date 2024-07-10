@@ -506,7 +506,7 @@ track_manager_editing :: proc(manager: ^Track_Manager, rectangle: Rectangle) {
     }
 
     if key_pressed(.Escape) {
-        track_manager_window.close_requested = true
+        track_manager_window.should_close = true
     }
 }
 

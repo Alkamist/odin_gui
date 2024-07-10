@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:mem"
+import osw "os_window"
 
 // This is a track manager I made to help with organizing large projects
 // in the DAW Reaper. It runs as an extension in Reaper, but this is a
@@ -37,14 +38,14 @@ running := true
 
 gui_event :: proc(window: ^Window, event: Gui_Event) {
     #partial switch event in event {
-    case Gui_Event_Loop_Timer:
-        update()
+    case Gui_Event_Close_Button_Pressed: window.should_close = true
+    case Gui_Event_Loop_Timer: update()
     }
 }
 
 init :: proc() {
-    window_init(&track_manager_window, {{100, 100}, {400, 300}})
-    track_manager_window.open_requested = true
+    window_init(&track_manager_window, {{200, 100}, {400, 300}})
+    track_manager_window.should_open = true
     track_manager_init(&track_manager)
 }
 
@@ -57,9 +58,8 @@ update :: proc() {
     if window_update(&track_manager_window) {
         clear_background({0.2, 0.2, 0.2, 1})
         track_manager_update(&track_manager)
-        free_all(context.temp_allocator)
     }
-    if !track_manager_window.is_open {
+    if track_manager_window.closed {
         running = false
     }
 }
@@ -94,5 +94,6 @@ main :: proc() {
     for running {
         poll_window_events()
         update()
+        free_all(context.temp_allocator)
     }
 }

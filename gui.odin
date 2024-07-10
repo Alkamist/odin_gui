@@ -30,7 +30,7 @@ set_window_focus :: osw.set_focus
 set_window_focus_native :: osw.set_focus_native
 
 Gui_Event :: osw.Event
-Gui_Event_Close :: osw.Event_Close
+Gui_Event_Close_Button_Pressed :: osw.Event_Close_Button_Pressed
 Gui_Event_Gain_Focus :: osw.Event_Gain_Focus
 Gui_Event_Lose_Focus :: osw.Event_Lose_Focus
 Gui_Event_Loop_Timer :: osw.Event_Loop_Timer
@@ -51,10 +51,6 @@ Window_Child_Kind :: osw.Child_Kind
 //==========================================================================
 // Input
 //==========================================================================
-
-is_first_frame_ever :: proc() -> bool {
-    return current_window().is_first_frame_ever
-}
 
 delta_time :: proc() -> f32 {
     return current_window().delta_time
@@ -184,9 +180,6 @@ _window_event_proc :: proc(window: ^osw.Window, msg: osw.Event) {
     window := cast(^Window)window
 
     #partial switch msg in msg {
-    case osw.Event_Close:
-        window.close_requested = true
-
     case osw.Event_Gain_Focus:
         window.is_focused = true
 
@@ -318,12 +311,12 @@ Window :: struct {
 
     is_open: bool,
     opened: bool,
+    closed: bool,
     is_visible: bool,
-    open_requested: bool,
-    close_requested: bool,
+    should_open: bool,
+    should_close: bool,
     is_focused: bool,
     is_mouse_hovered: bool,
-    is_first_frame_ever: bool,
 
     delta_time: f32,
     previous_tick: time.Tick,
@@ -350,12 +343,11 @@ current_window :: proc() -> ^Window {
 window_init :: proc(window: ^Window, rectangle: Rectangle) {
     window.content_scale = {1, 1}
     window.rectangle = rectangle
-    window.is_first_frame_ever = true
     window.event_proc = _window_event_proc
 }
 
 window_destroy :: proc(window: ^Window) {
-    _window_do_close(window)
+    window_close(window)
     delete(window.child_windows)
     delete(window.loaded_fonts)
     delete(window.mouse_presses)
@@ -377,7 +369,7 @@ window_begin :: proc(window: ^Window) -> bool {
 
     clear(&window.child_windows)
 
-    if window.is_first_frame_ever {
+    if window.opened {
         osw.set_mouse_cursor_style(window, window.mouse_cursor_style)
         window.actual_rectangle = window.rectangle
         window.previous_mouse_position = window.mouse_position
@@ -389,7 +381,7 @@ window_begin :: proc(window: ^Window) -> bool {
     window.previous_tick = current_tick
 
     if window.is_open {
-        window.open_requested = false
+        window.should_open = false
         osw.activate_context(window)
         if parent != nil {
             append(&parent.child_windows, window)
@@ -430,8 +422,8 @@ window_end :: proc() {
     window.mouse_wheel = {0, 0}
     window.previous_mouse_position = window.mouse_position
 
-    window.is_first_frame_ever = false
     window.opened = false
+    window.closed = false
 
     for key in Keyboard_Key {
         window.previous_key_down[key] = window.key_down[key]
@@ -452,11 +444,11 @@ window_end :: proc() {
         osw.set_size(window, int(window.size.x), int(window.size.y))
     }
 
-    if window.open_requested {
-        _window_do_open(window)
+    if window.should_open {
+        window_open(window)
     }
-    if window.close_requested {
-        _window_do_close(window)
+    if window.should_close {
+        window_close(window)
     }
 
     if window.is_open {
@@ -476,7 +468,7 @@ window_update :: proc(window: ^Window) -> bool {
     return window_begin(window)
 }
 
-_window_do_open :: proc(window: ^Window) {
+window_open :: proc(window: ^Window) {
     if window.is_open do return
     osw.open(window,
         window.title,
@@ -487,23 +479,26 @@ _window_do_open :: proc(window: ^Window) {
     )
     window.is_open = true
     window.opened = true
-    window.open_requested = false
-    osw.show(window)
+    window.should_open = false
+    osw.activate_context(window)
     vg_init(&window.vg_ctx)
+    osw.show(window)
 }
 
-_window_do_close :: proc(window: ^Window) {
+window_close :: proc(window: ^Window) {
     if !window.is_open do return
 
     for child in window.child_windows {
-        _window_do_close(child)
+        window_close(child)
     }
 
+    osw.activate_context(window)
     vg_destroy(&window.vg_ctx)
     osw.close(window)
     clear(&window.loaded_fonts)
     window.is_open = false
-    window.close_requested = false
+    window.closed = true
+    window.should_close = false
 }
 
 //==========================================================================

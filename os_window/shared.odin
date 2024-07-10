@@ -48,7 +48,7 @@ Child_Kind :: enum {
 }
 
 Event :: union {
-    Event_Close,
+    Event_Close_Button_Pressed,
     Event_Gain_Focus,
     Event_Lose_Focus,
     Event_Loop_Timer,
@@ -65,7 +65,7 @@ Event :: union {
     Event_Rune_Input,
 }
 
-Event_Close :: struct {}
+Event_Close_Button_Pressed :: struct {}
 Event_Gain_Focus :: struct {}
 Event_Lose_Focus :: struct {}
 
