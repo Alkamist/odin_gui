@@ -1,4 +1,17 @@
-package oswindow
+package os_window
+
+//
+// This is a module that is meant to wrap windowing logic
+// in a platform independent way, like GLFW and others.
+//
+// The reason for not using other libs is because I want
+// it to be in 100% Odin, and I need the library to be
+// compatible with being embedded in other windows and
+// hosted as a DLL.
+//
+
+// TODO: Make the OpenGL context a higher version on Windows
+// Implement OSX
 
 Window_Base :: struct {
     event_proc: proc(^Window, Event),

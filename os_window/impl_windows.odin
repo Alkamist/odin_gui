@@ -1,4 +1,4 @@
-package oswindow
+package os_window
 
 import "base:runtime"
 import "base:intrinsics"
@@ -135,7 +135,13 @@ swap_buffers :: proc(window: ^Window) {
     win32.SwapBuffers(window._hdc)
 }
 
-open :: proc(window: ^Window, title: string, x, y, width, height: int, parent_handle: rawptr = nil, child_kind := Child_Kind.Transient) {
+open :: proc(
+    window: ^Window,
+    title: string,
+    x, y, width, height: int,
+    parent_handle: rawptr = nil,
+    child_kind := Child_Kind.Transient,
+) {
     window._odin_context = context
 
     hInstance := cast(win32.HANDLE)_get_dll_handle()
@@ -169,7 +175,7 @@ open :: proc(window: ^Window, title: string, x, y, width, height: int, parent_ha
     window.parent_handle = parent_handle
     window.child_kind = child_kind
 
-	window.handle = win32.CreateWindowW(
+    window.handle = win32.CreateWindowW(
         intrinsics.constant_utf16_cstring(WIN32_WINDOW_CLASS),
         win32.utf8_to_wstring(title),
         style,
@@ -183,7 +189,7 @@ open :: proc(window: ^Window, title: string, x, y, width, height: int, parent_ha
     set_size(window, width, height)
 
     use_dark_mode: win32.BOOL = win32.TRUE
-    win32.DwmSetWindowAttribute( cast(win32.HWND)window.handle, DWMWA_USE_IMMERSIVE_DARK_MODE, &use_dark_mode, size_of(use_dark_mode))
+    win32.DwmSetWindowAttribute(cast(win32.HWND)window.handle, DWMWA_USE_IMMERSIVE_DARK_MODE, &use_dark_mode, size_of(use_dark_mode))
 
     _create_opengl_context(window)
 
@@ -197,7 +203,7 @@ close :: proc(window: ^Window) {
 
     style := win32.GetWindowLongPtrW(cast(win32.HWND)window.handle, win32.GWL_STYLE)
     if win32.UINT(style) & win32.WS_CHILDWINDOW == 0 {
-	    win32.DestroyWindow(cast(win32.HWND)window.handle)
+        win32.DestroyWindow(cast(win32.HWND)window.handle)
     }
 
     sync.atomic_sub(&_open_window_count, 1)
@@ -284,7 +290,7 @@ dpi :: proc(window: ^Window) -> f64 {
 }
 
 window_proc :: proc "system" (hwnd: win32.HWND, msg: win32.UINT, wParam: win32.WPARAM, lParam: win32.LPARAM) -> win32.LRESULT {
-	window := cast(^Window)(cast(uintptr)(win32.GetWindowLongPtrW(hwnd, win32.GWLP_USERDATA)))
+    window := cast(^Window)(cast(uintptr)(win32.GetWindowLongPtrW(hwnd, win32.GWLP_USERDATA)))
     if window == nil || window.event_proc == nil {
         return win32.DefWindowProcW(hwnd, msg, wParam, lParam)
     }

@@ -8,8 +8,29 @@ import "core:time"
 import "core:slice"
 import "core:strings"
 import gl "vendor:OpenGL"
+import nvg "vendor:nanovg"
+import nvg_gl "vendor:nanovg/gl"
 import cte "core:text/edit"
 import osw "os_window"
+
+//
+// The idea of this file is to provide platform independent
+// GUI logic. When placed in your project next to your other code,
+// it provides you with many convenient functions for making GUIs
+// in a semi-immediate mode way.
+//
+// I call it semi-immediate mode because you still hold and pass
+// in all of your own state. Although there are Ids to represent
+// entities that are hovered, it doesn't do any hashing of strings
+// or anything like that.
+//
+// There is an os_window module that I made which is the generic backend
+// for windowing. Right now only Windows is implemented.
+//
+// There is one function that is used that the user needs to implement:
+//
+// gui_event :: proc(window: ^Window, event: Gui_Event)
+//
 
 @(thread_local) _window_stack: [dynamic]^Window
 
@@ -1027,6 +1048,8 @@ rectangle_encloses_vector2 :: proc(a: Rectangle, b: Vector2, include_borders := 
 // Path
 //==========================================================================
 
+// This is basically the logic from Nanovg, but it has been lifted out into this file.
+
 KAPPA :: 0.5522847493
 
 Sub_Path :: struct {
@@ -1521,9 +1544,6 @@ _path_circle :: #force_inline proc(path: ^Path, cx, cy: f32, radius: f32, is_hol
 //==========================================================================
 // Nanovg Implementation
 //==========================================================================
-
-import nvg "vendor:nanovg"
-import nvg_gl "vendor:nanovg/gl"
 
 Vg_Context :: struct {
     nvg_ctx: ^nvg.Context,
